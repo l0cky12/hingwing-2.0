@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto'
 import type { HttpAnswer, ReadHermes } from '@highwing/hermes'
-import type { BotId } from '@highwing/hermes/domain'
+import { pythonStrip, type BotId } from '@highwing/hermes/domain'
 import { describe, expect, it } from 'vitest'
 import { readBotMemory } from '../src/main/memory'
 
 const RAE = 'rae' as BotId
-const fingerprint = (text: string) => createHash('sha256').update(text.trim(), 'utf8').digest('hex').slice(0, 12)
+const fingerprint = (text: string) => createHash('sha256').update(pythonStrip(text), 'utf8').digest('hex').slice(0, 12)
 
 const LONG = `${'x'.repeat(1200)}tail`
 const SHORT = 'Keeps the budget in the shared drive.'
@@ -102,5 +102,19 @@ describe('readBotMemory', () => {
     expect(await readBotMemory(read, RAE)).toEqual({ ok: false, refusal: REFUSALS.unreadable })
     expect(asked).toContain('/api/learning/node?id=n%3Ashort&profile=rae')
     expect(asked).toContain('/api/learning/node?id=n%3Aplain&profile=rae')
+  })
+
+  it('keeps a trailing byte-order mark in an entry, as Python strips it, and reads the entry as whole', async () => {
+    const marked = 'Keeps notes in plain text.\ufeff'
+    const graph = { memory: [{ source: 'memory', timestamp: 1, title: 'marked', body: marked, fingerprint: createHash('sha256').update(marked, 'utf8').digest('hex').slice(0, 12) }], nodes: [{ id: 'n:marked', kind: 'memory', memorySource: 'memory', label: 'marked' }] }
+    const { read, asked } = reading({ [GRAPH_PATH]: { status: 200, body: graph }, [CONFIG_PATH]: { status: 200, body: CONFIG } })
+    expect(await readBotMemory(read, RAE)).toMatchObject({ ok: true, value: { files: [{ entries: [marked] }, { entries: [] }] } })
+    expect(asked).toEqual([GRAPH_PATH, CONFIG_PATH])
+  })
+
+  it('reads nothing for a bot named current, which Hermes takes for the bot it runs as', async () => {
+    const { read, asked } = reading(OK)
+    expect(await readBotMemory(read, 'current' as BotId)).toEqual({ ok: false, refusal: { kind: 'unsupported', message: "Hermes can't tell a bot named current from the bot it runs as, so Highwing can't show its memory. Rename the bot to see it." } })
+    expect(asked).toEqual([])
   })
 })

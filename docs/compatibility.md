@@ -937,7 +937,7 @@ the tab opens, and it never writes memory there.
 | --- | --- |
 | `GET /api/learning/graph?profile=<bot>` | The `memory` list. Each card's `source` names its file: `memory` is MEMORY.md and `profile` is USER.md. Its `body` is the entry's text and its `fingerprint` identifies the whole entry (`agent/learning_graph.py:143-185`) |
 | `GET /api/config?profile=<bot>` | `memory.memory_char_limit` and `memory.user_char_limit`. The route merges Hermes's defaults into the bot's config.yaml, so each cap is there even when config.yaml leaves it out |
-| `GET /api/learning/node?id=<node id>&profile=<bot>` | The whole entry, only for a card whose `body` is cut short. The graph cuts a long entry's body. Highwing knows a body is cut when the first 12 hex digits of the SHA-256 of its trimmed text differ from the card's `fingerprint`. The node id is the `id` of the graph's matching `kind: "memory"` node, which comes in the same order as the cards. Highwing never reads anything out of the id |
+| `GET /api/learning/node?id=<node id>&profile=<bot>` | The whole entry, only for a card whose `body` is cut short. The graph cuts a long entry's body. Highwing knows a body is cut when the first 12 hex digits of the SHA-256 of its text, trimmed as Python's `str.strip()` trims it, differ from the card's `fingerprint`. The node id is the `id` of the graph's matching `kind: "memory"` node, which comes in the same order as the cards. Highwing never reads anything out of the id |
 
 Each read sends the credential the [task board](#task-board) does. For this
 computer and another machine, the line Highwing writes to `--serve` also names
@@ -946,6 +946,12 @@ a ticket on a route whose `?profile=` names another bot, with
 `403 profile_scope_mismatch` (`hermes_cli/dashboard_auth/native_http.py`), and
 mints a ticket for another bot of the same gateway when the line names it
 (`hermes_cli/gateway_runtime_tickets.py`).
+
+Hermes takes `?profile=current` to mean the profile it runs as
+(`hermes_cli/web_server_profiles.py`), yet `current` is a valid profile name.
+Highwing reads nothing for a bot named `current` and says "Hermes can't tell a
+bot named current from the bot it runs as, so Highwing can't show its memory.
+Rename the bot to see it."
 
 Each meter counts a file the way Hermes's memory tool does
 (`tools/memory_tool_store.py:314-315`): the entries joined by Hermes's
@@ -956,8 +962,9 @@ On an older Hermes:
 
 - If the graph route answers 404, the tab says "This Hermes can't show memory
   yet."
-- If the config route gives no cap for a file, the tab shows that file's
-  entries and its size, with no meter.
+- If the config route gives no cap for a file, or does not answer, the tab
+  shows that file's entries and its size with no meter, and says Highwing
+  couldn't read how much the file may hold.
 - If no ticket can be had, the read gets no answer, or Hermes refuses it, the
   tab says "Highwing couldn't read this bot's memory from Hermes." A Hermes
   whose `--serve` does not take `profile` gets this answer too.

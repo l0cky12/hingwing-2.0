@@ -2,9 +2,10 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { BotId } from '../src/domain/bots'
-import { botMemoryOf, memoryCapsPath, memoryEntryPath, memoryGraphPath, NO_MEMORY_CAPS, parseMemoryCaps, parseMemoryEntry, parseMemoryGraph } from '../src/domain/memory'
+import { botMemoryOf, memoryCapsPath, memoryEntryPath, memoryGraphPath, NO_MEMORY_CAPS, parseMemoryCaps, parseMemoryEntry, parseMemoryGraph, pythonStrip } from '../src/domain/memory'
 import type { MemoryScript } from '../src/testing/fixture'
 import { fixtureRead } from '../src/testing/kanban'
+import { memoryReads } from '../src/testing/memory-book'
 
 const RAE = 'rae' as BotId
 const BOTS = JSON.parse(readFileSync(fileURLToPath(new URL('../../../fixtures/memory/bots.json', import.meta.url)), 'utf8')) as MemoryScript
@@ -131,7 +132,7 @@ describe("the fixture's memory routes", () => {
     expect(await read(memoryEntryPath(RAE, 'memory:memory:9:nope'))).toMatchObject({ status: 404 })
   })
 
-  it('answer the launch profile from the top level, and a profile not listed with no entries under the top level limits', async () => {
+  it('answer the launch profile from the top level, and a profile not listed with no entries under Hermes defaults', async () => {
     expect(parseMemoryGraph((await read(memoryGraphPath('default' as BotId))).body)?.map(card => card.text)).toEqual(['Prefers short answers.', 'Lives in Lisbon.'])
     expect(parseMemoryGraph((await read(memoryGraphPath('zed' as BotId))).body)).toEqual([])
     expect(parseMemoryCaps((await read(memoryCapsPath('zed' as BotId))).body)).toEqual({ 'MEMORY.md': 2200, 'USER.md': 1375 })
@@ -139,10 +140,25 @@ describe("the fixture's memory routes", () => {
 
   it("answer a profile's own limits, which leave its MEMORY.md past nine tenths of its cap", async () => {
     const caps = parseMemoryCaps((await read(memoryCapsPath(RAE))).body)!
-    expect(caps['MEMORY.md']).toBe(1500)
+    expect(caps).toEqual({ 'MEMORY.md': 1500, 'USER.md': 1375 })
     const cards = parseMemoryGraph((await read(memoryGraphPath(RAE))).body)!
     const full = await Promise.all(cards.map(async card => ({ file: card.file, text: parseMemoryEntry((await read(memoryEntryPath(RAE, card.node))).body)! })))
     const [memory] = botMemoryOf(full, caps).files
     expect(memory.used / memory.cap!).toBeGreaterThanOrEqual(0.9)
+  })
+
+  it("never lends the launch profile's limits to another profile", async () => {
+    const reads = memoryReads({ entries: [], limits: { memory: 40, user: 30 }, profiles: { rae: { entries: [] } } })
+    expect(parseMemoryCaps(reads(memoryCapsPath(RAE))!.body)).toEqual({ 'MEMORY.md': 2200, 'USER.md': 1375 })
+    expect(parseMemoryCaps(reads(memoryCapsPath('zed' as BotId))!.body)).toEqual({ 'MEMORY.md': 2200, 'USER.md': 1375 })
+    expect(parseMemoryCaps(reads(memoryCapsPath('default' as BotId))!.body)).toEqual({ 'MEMORY.md': 40, 'USER.md': 30 })
+  })
+})
+
+describe('pythonStrip', () => {
+  it("trims the ends Python's str.strip() trims, keeping a byte-order mark and the inside", () => {
+    expect(pythonStrip(' \t\n a  b \u3000\r\n')).toBe('a  b')
+    expect(pythonStrip('\x1cnote\x85')).toBe('note')
+    expect(pythonStrip('\ufeffnote\ufeff')).toBe('\ufeffnote\ufeff')
   })
 })

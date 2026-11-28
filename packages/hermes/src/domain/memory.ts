@@ -20,7 +20,15 @@ export type MemoryCaps = { readonly [F in MemoryFileName]: number | null }
 export const NO_MEMORY_CAPS: MemoryCaps = { 'MEMORY.md': null, 'USER.md': null }
 
 /** What Hermes writes between a file's entries (tools/memory_tool_store.py), and so what its size counts. */
-export const HERMES_ENTRY_SEPARATOR = '\n§\n'
+const HERMES_ENTRY_SEPARATOR = '\n§\n'
+
+/** Python's `str.strip()`, which Hermes trims an entry with before it digests it. JavaScript's `trim()` also drops U+FEFF and keeps U+001C to U+001F and U+0085. */
+const PYTHON_SPACE = '[\\t\\n\\v\\f\\r\\x1c-\\x1f \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]'
+const PYTHON_ENDS = new RegExp(`^${PYTHON_SPACE}+|${PYTHON_SPACE}+$`, 'g')
+export const pythonStrip = (text: string): string => text.replace(PYTHON_ENDS, '')
+
+/** Hermes cannot tell a bot named `current` from the one it runs as on a web address: it reads `?profile=current` as its own (hermes_cli/web_server_profiles.py). */
+export const isAmbiguousProfile = (bot: BotId): boolean => bot.toLowerCase() === 'current'
 
 export const memoryGraphPath = (bot: BotId): string => `/api/learning/graph?profile=${encodeURIComponent(bot)}`
 export const memoryCapsPath = (bot: BotId): string => `/api/config?profile=${encodeURIComponent(bot)}`

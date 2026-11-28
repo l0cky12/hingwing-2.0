@@ -50,6 +50,7 @@ function MemorySection({ file }: { readonly file: MemoryFile }) {
         <meter className="memory-meter" min={0} max={cap} high={Math.ceil(cap * NEAR_FULL) - 1} optimum={0} value={used} aria-label={size} />
       )}
       <p className="memory-size" aria-hidden={cap === null ? undefined : true}>{size}</p>
+      {cap === null ? <p className="memory-note">Highwing couldn't read how much this file may hold from Hermes, so it has no meter.</p> : null}
       {entries.length === 0 ? <p className="memory-note">Nothing yet.</p> : (
         <ul className="memory-entries" aria-label={`${name} entries`}>
           {entries.map((text, at) => <li key={at}>{text}</li>)}

@@ -59,6 +59,7 @@ describe('the Memory tab', () => {
     const html = ready({ files: [{ ...memory.files[0], cap: null }, { ...memory.files[1], cap: null }] })
     expect(html).not.toContain('<meter')
     expect(html).toContain('MEMORY.md: 1,234 characters')
+    expect(html).toContain("Highwing couldn&#x27;t read how much this file may hold from Hermes, so it has no meter.")
   })
 
   it('offers nothing to change', () => {

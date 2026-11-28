@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { pythonStrip } from '../domain/memory'
 import type { MemoryFiles, MemoryScript } from './fixture'
 
 const DELIMITER = '\n§\n'
@@ -9,7 +10,7 @@ const FILES = { memory: 'MEMORY.md', profile: 'USER.md' } as const
 type Source = keyof typeof FILES
 
 const grouped = (n: number) => n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-const fingerprint = (text: string) => createHash('sha256').update(text.trim(), 'utf8').digest('hex').slice(0, 12)
+const fingerprint = (text: string) => createHash('sha256').update(pythonStrip(text), 'utf8').digest('hex').slice(0, 12)
 
 export interface MemoryBook {
   /** The dashboard API's `GET /api/learning/graph`. */
@@ -107,8 +108,7 @@ export function memoryBook(script: MemoryFiles): MemoryBook {
 function bookFor(script: MemoryScript, profile: string): MemoryFiles {
   if (profile === 'default') return script
   const own = script.profiles?.[profile]
-  const limits = own?.limits ?? script.limits
-  return { entries: own?.entries ?? [], ...(limits === undefined ? {} : { limits }) }
+  return { entries: own?.entries ?? [], ...(own?.limits === undefined ? {} : { limits: own.limits }) }
 }
 
 export const GRAPH_ROUTE = '/api/learning/graph'
