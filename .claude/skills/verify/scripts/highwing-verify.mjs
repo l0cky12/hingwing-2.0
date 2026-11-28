@@ -589,13 +589,13 @@ const STEPS = {
   tile: {
     arity: 2,
     run: async (ctx, name, drawn) => {
-      if (drawn !== 'picture' && drawn !== 'letter') throw new Error(`tile takes "picture" or "letter", not "${drawn}"`)
+      if (drawn !== 'picture' && drawn !== 'letter' && drawn !== 'blank') throw new Error(`tile takes "picture", "letter" or "blank", not "${drawn}"`)
       const card = ctx.page.locator('li.hub-card').filter({ has: ctx.page.locator('.hub-name', { hasText: name }) }).first()
       const read = () => card.evaluate(item => {
         const tile = item.querySelector('.hub-tile')
         const image = tile?.querySelector('img')
         if (image) return image.complete && image.naturalWidth > 0 ? 'picture' : 'unloaded picture'
-        return tile?.textContent ? 'letter' : 'nothing'
+        return tile?.textContent ? 'letter' : 'blank'
       }, undefined, { timeout: ctx.timeout })
       const held = await poll(ctx, read, found => found === drawn)
       log(ctx, `  the tile of "${name}" draws ${held}`)
