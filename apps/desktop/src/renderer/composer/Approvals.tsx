@@ -1,4 +1,4 @@
-import { APPROVAL_MODES, type ApprovalMode, type CommandOutcome } from '@highwing/hermes/domain'
+import { APPROVAL_MODES, APPROVAL_WORDS, type ApprovalMode, type CommandOutcome } from '@highwing/hermes/domain'
 import { useEffect, useId, useRef, useState } from 'react'
 import { usePickMenu } from '../chat/menu'
 import { Check } from '../chrome/ModeSwitch'
@@ -17,13 +17,6 @@ type Asking =
   | { readonly at: 'confirming' }
   | { readonly at: 'sending' }
   | { readonly at: 'refused'; readonly message: string }
-
-// The readout shows the name alone; its text and accessible name read "Manual approvals", "Smart approvals" or "Approvals Off".
-const MODES: { readonly [M in ApprovalMode]: { readonly name: string; readonly line: string } } = {
-  manual: { name: 'Manual', line: 'Asks you before every risky command.' },
-  smart: { name: 'Smart', line: 'Runs safe commands, refuses dangerous ones, asks about the rest.' },
-  off: { name: 'Off', line: 'Runs every command without asking.' }
-}
 
 export function Approvals({ mode, yolo, onMode, onYolo }: ApprovalsProps) {
   const [asking, setAsking] = useState<Asking>({ at: 'idle' })
@@ -77,7 +70,7 @@ export function Approvals({ mode, yolo, onMode, onYolo }: ApprovalsProps) {
         >
           <svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14"><path d="M8 2 3 4v3.6c0 3 2.1 5.4 5 6.4 2.9-1 5-3.4 5-6.4V4z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" /></svg>
           {shown === 'off' && <span className="sr">Approvals </span>}
-          <span className="value">{MODES[shown].name}</span>
+          <span className="value">{APPROVAL_WORDS[shown].name}</span>
           {shown !== 'off' && <span className="sr"> approvals</span>}
           <span className="chev" aria-hidden="true" />
         </button>
@@ -89,8 +82,8 @@ export function Approvals({ mode, yolo, onMode, onYolo }: ApprovalsProps) {
                 tabIndex={-1} onClick={() => pick(item)}
               >
                 <span className="mode-check" aria-hidden="true">{item === shown && <Check />}</span>
-                <span>{MODES[item].name}</span>
-                <span className="approvals-line" id={`${lines}-${item}`} aria-hidden="true">{MODES[item].line}</span>
+                <span>{APPROVAL_WORDS[item].name}</span>
+                <span className="approvals-line" id={`${lines}-${item}`} aria-hidden="true">{APPROVAL_WORDS[item].line}</span>
               </button>
             ))}
           </div>

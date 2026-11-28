@@ -265,6 +265,13 @@ export interface Tuning {
 export const APPROVAL_MODES = ['manual', 'smart', 'off'] as const
 export type ApprovalMode = typeof APPROVAL_MODES[number]
 
+/** Each mode's name and what it does, for the composer's approval menu and a template's setup dialog. */
+export const APPROVAL_WORDS: { readonly [M in ApprovalMode]: { readonly name: string; readonly line: string } } = {
+  manual: { name: 'Manual', line: 'Asks you before every risky command.' },
+  smart: { name: 'Smart', line: 'Runs safe commands, refuses dangerous ones, asks about the rest.' },
+  off: { name: 'Off', line: 'Runs every command without asking.' }
+}
+
 /** The reasoning levels Hermes takes (persistence/authority/runtime.py:84-87). `none` turns reasoning off. */
 export const EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const
 export type Effort = typeof EFFORTS[number]

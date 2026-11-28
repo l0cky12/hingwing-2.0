@@ -91,7 +91,7 @@ export function TemplateDialog({ template, problemOf, onCreate, onOpen, onClose 
               <dt>Tools</dt>
               <dd>{toolWords(template.toolsets)}</dd>
               <dt>Approval</dt>
-              <dd>{approval.label}: {approval.says}</dd>
+              <dd>{approval.name}: {approval.line}</dd>
               {template.schedule !== null && <><dt>Schedule</dt><dd>{isRunTime(time) ? scheduleWords(time) : 'Pick a run time'}</dd></>}
             </dl>
           </section>

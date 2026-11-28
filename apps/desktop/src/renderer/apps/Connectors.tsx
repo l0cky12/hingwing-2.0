@@ -545,7 +545,7 @@ function TemplatesPanel() {
         {BOT_TEMPLATES.map(template => (
           <Card
             key={template.id} name={template.name} kind="Template" detail={template.summary} tile={TEMPLATE_TILES[template.id]}
-            lines={[turnsOn(template), `Approval: ${APPROVAL_WORDS[template.approval].label}`, ...(template.schedule === null ? [] : [scheduleWords(template.schedule.defaultTime)])]}
+            lines={[turnsOn(template), `Approval: ${APPROVAL_WORDS[template.approval].name}`, ...(template.schedule === null ? [] : [scheduleWords(template.schedule.defaultTime)])]}
           >
             <div className="hub-actions">
               <button type="button" aria-label={`Use template ${template.name}`} onClick={event => { opener.current = event.currentTarget; setChosen(template) }}>Use template</button>
