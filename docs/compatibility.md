@@ -1071,20 +1071,32 @@ Hermes can't manage tool servers from Highwing."
 ### A bot's plugins and Hermes's toolsets
 
 The Connectors screen's Plugins tab lists the bot's plugins with a switch on
-each card, and its Tools tab lists Hermes's toolsets read-only. None of these calls is canonical, so each reaches its
-legacy handler only on a socket with the interactive grant.
+each card, installs a plugin from Hermes's catalog, and its Tools tab lists
+Hermes's toolsets read-only. None of these calls is canonical, so each reaches
+its legacy handler only on a socket with the interactive grant.
 
 | Method | Params | What Highwing does with the answer |
 | --- | --- | --- |
 | `plugins.manage` | `{action: "list"}`, with the bot's `profile` when the screen has one | Lists each plugin with its version, where Hermes found it (`bundled`, `user` or `entrypoint`), its description, and On when its `status` is `enabled`. `disabled` and `not enabled` read Off (`hermes_cli/plugins_cmd.py:933-946`). |
 | `plugins.manage` | `{action: "toggle", key, enable}`, with the bot's `profile` when the screen has one | Turns the plugin on or off by its canonical `key`, since a bare name can match a plugin of another category. Highwing then lists the plugins again and refuses the change, "Hermes kept <name> on.", when the list still shows the old state. When the reply says `restart_required`, the card says the change waits for Hermes to restart. A failure is 5026 in Hermes's words (`tui_gateway/methods_tools.py:1743-1762`). |
+| `plugins.manage` | `{action: "install", catalog_name, enable: true}`, with the bot's `profile` when the screen has one | Installs and turns on the catalog entry of that name. Hermes resolves the repository and the pinned commit from its own catalog and kill list, so Highwing sends no repository (`tui_gateway/methods_tools.py:1772-1786`). The answer's `plugin_name`, `restart_required` and `missing_env` say what is left to do. A failed install is error 5026 with Hermes's words, which Highwing shows as they are. |
 | `tools.list` | `{session_id}` of the open chat, or `{}` when the chat has no session yet | Lists each toolset with its description, its tools and whether it is on. Hermes reads the toolsets of the chat it holds by that id, and the launch profile's otherwise (`tui_gateway/methods_tools.py:220-247`). |
 
 On an older Hermes, or a socket bound to one profile, the Plugins tab says
 "This Hermes can't list its plugins." and the Tools tab says "This Hermes can't
 list its tools." An older Hermes that lists plugins answers a toggle as an
 unknown action (4017), and the Plugins tab then says "This Hermes can't turn
-plugins on or off." with every switch disabled.
+plugins on or off." with every switch disabled. An install there is refused
+with "This Hermes can't install plugins."
+
+The gateway has no call that lists the catalog itself. `plugins.catalog.lookup`
+reads one entry by name. So Highwing's main process reads the same public
+snapshot Hermes desktop browses,
+`https://nousresearch.github.io/hermes-agent/docs/api/plugins.json`, through
+Electron's `net.fetch` with no credentials. It keeps the snapshot 30 minutes, as
+Hermes desktop does (`apps/desktop/src/app/capabilities/catalog/catalog-data.ts`).
+This read needs no connection to Hermes. A row with no name or an unknown
+`tier` is dropped.
 
 ## Task board
 
