@@ -5,6 +5,7 @@ import {
   type BotActivities, type CatalogPlugin, type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type Quote, type Recording, type RelayDesk, type RequestId, type RequestReply,
   type PickMode, type RestoreScope, type ResultOf, type RoutineId, type ScreenView, type Server, type ServerId, type ServerSetup, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SkillLibrary, type SlashCatalog, type Target, type TaskBoard, type TaskChat, type Timed, type TurnId, type Unstarted
 } from '@highwing/hermes/domain'
+import { isAppearance, type Appearance } from './appearance'
 import type { Intro } from './intro'
 
 /**
@@ -157,17 +158,20 @@ export const isNoticeKind = (raw: unknown): raw is NoticeKind => NOTICE_KINDS.in
 export const isNotices = (raw: unknown): raw is Notices =>
   isObject(raw) && Object.keys(raw).length === NOTICE_KINDS.length && NOTICE_KINDS.every(kind => typeof raw[kind] === 'boolean')
 
+/** The whole appearance after one pick. A window merges its pick into the one it shows, so main keeps no rules of its own about fields. */
+export type AppearanceCommand = { readonly do: 'setAppearance'; readonly appearance: Appearance }
+
 export type IntroCommand = { readonly do: 'examples' } | { readonly do: 'done' }
 
 /** Hermes's public plugin catalog, which main reads from the web and keeps for a while. It needs no connection to Hermes. */
 export type PluginCatalogCommand = { readonly do: 'pluginCatalog' }
 
-export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand | ThemeCommand | AccentCommand | SidebarWidthCommand | SendKeyCommand | ShowWorkCommand | SpellCheckCommand | SnoozeCommand | NoticeCommand | OnCloseCommand | IntroCommand | PluginCatalogCommand
+export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand | ThemeCommand | AccentCommand | SidebarWidthCommand | SendKeyCommand | ShowWorkCommand | SpellCheckCommand | SnoozeCommand | NoticeCommand | OnCloseCommand | AppearanceCommand | IntroCommand | PluginCatalogCommand
 export type WindowCommand = Exclude<AppCommand, { readonly do: 'setBotPicture' | 'refreshBots' }>
 export type HubResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
 export type AppResult<C extends AppCommand> = C extends { do: 'export' } ? string | null : C extends PluginCatalogCommand ? readonly CatalogPlugin[] : HubResult<C>
 
-/** Every topic and what it carries. Each has one value per connection, except `preview`, `mode`, `theme`, `accent`, `sidebarWidth`, `sendKey`, `showWork`, `spellCheck`, `snoozes`, `notices`, `onClose` and `intro`, which belong to the window. */
+/** Every topic and what it carries. Each has one value per connection, except `preview`, `mode`, `theme`, `accent`, `sidebarWidth`, `sendKey`, `showWork`, `spellCheck`, `snoozes`, `notices`, `onClose`, `appearance` and `intro`, which belong to the window. */
 export interface AppTopics {
   readonly setup: Setup
   readonly servers: ServerBook
@@ -203,11 +207,12 @@ export interface AppTopics {
   readonly snoozes: Snoozes
   readonly notices: Notices
   readonly onClose: OnClose
+  readonly appearance: Appearance
   readonly intro: Intro
 }
 export type AppTopic = keyof AppTopics
 
-const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, servers: true, link: true, about: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, routines: true, activity: true, screen: true, skills: true, preview: true, mode: true, theme: true, accent: true, sidebarWidth: true, sendKey: true, showWork: true, spellCheck: true, snoozes: true, notices: true, onClose: true, intro: true }
+const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, servers: true, link: true, about: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, routines: true, activity: true, screen: true, skills: true, preview: true, mode: true, theme: true, accent: true, sidebarWidth: true, sendKey: true, showWork: true, spellCheck: true, snoozes: true, notices: true, onClose: true, appearance: true, intro: true }
 
 export const isAppTopic = (raw: unknown): raw is AppTopic => typeof raw === 'string' && Object.hasOwn(APP_TOPICS, raw)
 
@@ -841,7 +846,8 @@ export const validators: Validators = {
     const sessionId = sessionIdOf(raw)
     return sessionId && (raw.until === null || isTime(raw.until)) ? { do: 'snooze', sessionId, until: raw.until } : null
   },
-  setNotice: raw => (isNoticeKind(raw.kind) && typeof raw.on === 'boolean' ? { do: 'setNotice', kind: raw.kind, on: raw.on } : null)
+  setNotice: raw => (isNoticeKind(raw.kind) && typeof raw.on === 'boolean' ? { do: 'setNotice', kind: raw.kind, on: raw.on } : null),
+  setAppearance: raw => (isAppearance(raw.appearance) ? { do: 'setAppearance', appearance: raw.appearance } : null)
 }
 
 export function parseCommand(raw: unknown): WindowCommand | null {

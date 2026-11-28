@@ -16,6 +16,13 @@ const DIAGRAM_CONFIGS = [
 ] as const satisfies readonly (keyof MermaidConfig)[]
 
 const token = (style: CSSStyleDeclaration, name: string) => style.getPropertyValue(name).trim()
+/** Mermaid parses plain colors only, and a Contrast other than 100 draws the quiet colors as a mix. A canvas resolves it to hex. */
+function plain(color: string): string {
+  const paint = color.startsWith('color-mix(') ? document.createElement('canvas').getContext('2d') : null
+  if (paint === null) return color
+  paint.fillStyle = color
+  return paint.fillStyle
+}
 
 export type Palette = 'light' | 'dark'
 const darkQuery = () => matchMedia('(prefers-color-scheme: dark)')
@@ -46,7 +53,7 @@ function configFromPage(): MermaidConfig {
       primaryTextColor: token(style, '--ink'),
       secondaryColor: token(style, '--caution-soft'),
       tertiaryColor: token(style, '--paper'),
-      lineColor: token(style, '--graphite'),
+      lineColor: plain(token(style, '--graphite')),
       edgeLabelBackground: token(style, '--sheet'),
       textColor: token(style, '--ink'),
       fontFamily: token(style, '--sans')
