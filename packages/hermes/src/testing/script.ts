@@ -2,6 +2,7 @@ import { dialWith, systemClock, wireSocket, type Clock, type Dialer, type WireSo
 import type { Fixture } from './fixture'
 import { RING_FRAMES, ScriptedGateway } from './gateway'
 import { loopback, type Loopback, type Upgrade } from './loopback'
+import type { RuleBook } from './rules'
 
 export interface ScriptOptions {
   /** `'instant'` for tests, `'recorded'` for the dev app (`HIGHWING_FIXTURE=fixtures/errand.jsonl pnpm dev`). */
@@ -41,6 +42,8 @@ export interface ScriptedDialer extends Dialer {
   readonly step: number
   /** Chats a `branch` made. A retry the gateway answered from its receipt is not counted. */
   readonly branchesMade: number
+  /** The command rules every profile starts with, as the header's `rules` set them. null: the header has none. A fixture run's HTTP calls share it. */
+  readonly rules: RuleBook | null
   /** Loopback only: every upgrade the listener saw. */
   readonly upgrades: readonly Upgrade[]
   /** Stops the loopback listener. */
@@ -145,6 +148,7 @@ export function scriptedDialer(fixture: Fixture, options: ScriptOptions = {}): S
     received: { get: () => gateway.received },
     step: { get: () => gateway.step },
     branchesMade: { get: () => gateway.branchesMade },
+    rules: { value: gateway.rules },
     upgrades: { get: () => upgrades },
     close: { value: async () => (await listener)?.close() }
   }) as ScriptedDialer

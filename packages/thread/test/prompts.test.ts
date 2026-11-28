@@ -188,3 +188,30 @@ describe('an approval Hermes waits on for a limited time', () => {
     expect(threadView(session([prompt(approval(null))]), CLOCK).changesAt).toBeNull()
   })
 })
+
+describe('an approval answered with Always allow', () => {
+  const saved = (reply: PromptReply | null) => {
+    const card = cardOf(prompt(approval('delete in root path'), { s: 'answered', reply }))
+    return card.state === 'answered' ? card.savesRule : null
+  }
+
+  it('says it saved a rule only when this window chose Always allow', () => {
+    expect(saved({ kind: 'choice', value: 'always' })).toBe(true)
+    for (const reply of [{ kind: 'choice', value: 'once' }, { kind: 'choice', value: 'session' }, { kind: 'choice', value: 'deny' }, { kind: 'deny', tell: 'Use trash.' }, null] as const) {
+      expect(saved(reply), JSON.stringify(reply)).toBe(false)
+    }
+  })
+
+  it('says it for no question, and not for a request Hermes withdrew', () => {
+    const question = prompt({ kind: 'clarify', question: 'Where?', choices: ['always'], multi: false }, { s: 'answered', reply: { kind: 'choice', value: 'always' } })
+    const card = cardOf(question)
+    expect(card.state === 'answered' && card.savesRule).toBe(false)
+    const withdrawn = cardOf(prompt(approval(null), { s: 'withdrawn' }))
+    expect(withdrawn.state === 'answered' && withdrawn.savesRule).toBe(false)
+  })
+
+  it('adds a line to the outline that says where the rule went', () => {
+    const view = threadView(session([prompt(approval(null), { s: 'answered', reply: { kind: 'choice', value: 'always' } })]), CLOCK)
+    expect(outline(view).split('\n').slice(1, 3)).toEqual(['○ You allowed commands like this from now on. `rm -rf scratch`', '    Saved as an allow rule. [Open Permissions]'])
+  })
+})

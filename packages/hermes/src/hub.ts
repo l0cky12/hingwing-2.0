@@ -3,7 +3,7 @@ import { DONE, refused, SessionActor, type Upload } from './actor'
 import { activityDesk, busyOf, type Attached } from './activity'
 import { appSignIn, connectApp, listApps, removeApp } from './apps'
 import {
-  addToolServer, botModels, botModelSettings, botPicture, canGeneratePicture, createBot, denyRules, describeBot, editBot, generatePicture, listPets, markBot, passwordManagers, petPicture, readSkills, removeToolServer, setBotBackup, setBotModel,
+  addToolServer, botModels, botModelSettings, botPicture, canGeneratePicture, createBot, configStamp, describeBot, editBot, generatePicture, listPets, markBot, passwordManagers, petPicture, readSkills, removeToolServer, setBotBackup, setBotModel,
   installPlugin, listPlugins, listToolsets, setBotPicture, setPlugin, setSkill, skillText, toolServers
 } from './bot-admin'
 import type { BotActivities, UnreadChat } from './domain/activity'
@@ -630,7 +630,7 @@ export function openHermes(options: HermesOptions): Hermes {
       return started.ok ? run({ do: 'send', sessionId: started.value, text: command.text, attachments: command.attachments ?? [] }) : started
     }
     if (command.do === 'botModels') return botModels(conn, command.bot)
-    if (command.do === 'denyRules') return denyRules(conn, command.bot)
+    if (command.do === 'configStamp') return configStamp(conn, command.bot)
     if (command.do === 'botModelSettings') return botModelSettings(conn, command.bot)
     if (command.do === 'setBotModel') return setBotModel(conn, command.bot, command.model, command.confirm === true)
     if (command.do === 'setBotBackup') return setBotBackup(conn, command.bot, command.model)

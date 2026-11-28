@@ -153,11 +153,12 @@ app.whenReady().then(async () => {
     dial, client: { name: 'highwing', version }, onPane: pane.ask, uploads: attachments,
     unread: { chats: unread.load(place), keep: chats => unread.keep(place, chats) }
   })
-  const owner = fixture
-    ? pinnedConnection(open(scriptedDialer(fixture, {
-      timing: 'recorded', latencyMs: fixtureLatency(HIGHWING_FIXTURE_LATENCY_MS),
-      ...(HIGHWING_FIXTURE_CALLS ? { onReceived: (frame: unknown) => appendFileSync(HIGHWING_FIXTURE_CALLS, `${JSON.stringify(maskedFrame(frame))}\n`) } : {})
-    }), 'fixture'), fixtureCall(fixture.header.kanban), fixtureTranscribe(fixture.header.transcribe))
+  const played = fixture && scriptedDialer(fixture, {
+    timing: 'recorded', latencyMs: fixtureLatency(HIGHWING_FIXTURE_LATENCY_MS),
+    ...(HIGHWING_FIXTURE_CALLS ? { onReceived: (frame: unknown) => appendFileSync(HIGHWING_FIXTURE_CALLS, `${JSON.stringify(maskedFrame(frame))}\n`) } : {})
+  })
+  const owner = fixture && played
+    ? pinnedConnection(open(played, 'fixture'), fixtureCall(fixture.header.kanban, played.rules), fixtureTranscribe(fixture.header.transcribe))
     : await savedConnection(settingsDir, opener, open, intro.armIntro)
   pane.follow(owner.setup)
   const pictureDeps = { choose: pictureFile, read: readHead, set: (bot: BotId, data: string) => owner.run({ do: 'setBotPicture', bot, data }) }

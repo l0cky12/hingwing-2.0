@@ -1,8 +1,7 @@
-import { shownBot, shownChat, type AvatarTone } from '@highwing/hermes/domain'
+import { shownChat, type AvatarTone } from '@highwing/hermes/domain'
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import type { Accent, Mode, NoticeKind, OnClose, ShowWork, Theme } from '../../ipc-contract'
-import { botIn } from '../bots/roster-view'
 import { accentTone, toneOfBot } from '../chrome/accent'
 import { COMMAND_KEY, MAC } from '../keys'
 import { capsOf, SHORTCUTS } from '../shortcuts'
@@ -11,7 +10,9 @@ import { AppearanceRows } from './AppearanceRows'
 import { Bubble, ConnectionCard, line, People, Segmented, Server, type Look, type Segment } from './ConnectionCard'
 import { Models } from './Models'
 import { PasswordManagers } from './PasswordManagers'
+import { CommandRulesCard } from './Permissions'
 import type { CardSetup } from './screens'
+import { takeOpeningPage } from './settings-page'
 import { PAGES, settingsViewOf, whereOf, type Check, type Page, type RowId } from './settings-view'
 import { UNREPORTED, usageNeedsRead, usageView, type UsageAsk, type UsageView } from './usage-view'
 
@@ -244,7 +245,7 @@ export function Settings({ setup, mode, theme, accent, onRequestClose, onShowSho
   const ids = useId()
   const search = useRef<HTMLInputElement>(null)
   const pane = useRef<HTMLElement>(null)
-  const [page, setPage] = useState<Page>('connection')
+  const [page, setPage] = useState<Page>(() => takeOpeningPage() ?? 'connection')
   const [query, setQuery] = useState('')
   const [seen, setSeen] = useState(setup.at)
   if (seen !== setup.at) {
@@ -315,7 +316,7 @@ export function Settings({ setup, mode, theme, accent, onRequestClose, onShowSho
           <div className="text"><p className="label">Commands are approved on the composer.</p></div>
         </div>
         {/* Mounted only while shown: it asks Hermes as it mounts. */}
-        {!off('denied') && <DenyRules />}
+        {!(off('allowed') && off('denied') && off('add-rule')) && <CommandRulesCard off={off} />}
       </div>
     ),
     keys: (
@@ -403,54 +404,5 @@ export function Settings({ setup, mode, theme, accent, onRequestClose, onShowSho
         <button type="button" aria-keyshortcuts="Escape" disabled={saving} onClick={onRequestClose}>Close</button>
       </header>
     </div>
-  )
-}
-
-type DenyRead =
-  | { readonly at: 'reading' }
-  | { readonly at: 'read'; readonly rules: readonly string[] }
-  | { readonly at: 'refused'; readonly words: string }
-
-/** Read again when the window comes back to the front: the rules change only in the bot's config.yaml, outside Highwing. */
-function DenyRules() {
-  const bot = shownBot(useTopic('open'))
-  const bots = useTopic('bots')
-  const name = bot === null ? null : botIn(bots, bot)?.name ?? null
-  const [read, setRead] = useState<DenyRead>({ at: 'reading' })
-  const ids = useId()
-
-  useEffect(() => {
-    setRead({ at: 'reading' })
-    let asked = 0
-    const ask = () => {
-      const mine = ++asked
-      void run({ do: 'denyRules', bot }).then(outcome => {
-        if (mine === asked) setRead(outcome.ok ? { at: 'read', rules: outcome.value } : { at: 'refused', words: outcome.refusal.message })
-      })
-    }
-    ask()
-    window.addEventListener('focus', ask)
-    return () => {
-      asked = -1
-      window.removeEventListener('focus', ask)
-    }
-  }, [bot])
-
-  return (
-    <>
-      <div className="row">
-        <div className="text">
-          <p className="label" id={`${ids}-denied`}>Denied commands</p>
-          <p className="desc">{name ?? 'This bot'} never runs a command that matches one of these, even with YOLO on. To change them, edit approvals.deny in the bot’s config.yaml.</p>
-          {read.at === 'read' && read.rules.length === 0 && <p className="desc">No commands are denied.</p>}
-          {read.at === 'refused' && <p className="desc">{read.words}</p>}
-        </div>
-      </div>
-      {read.at === 'read' && read.rules.length > 0 && (
-        <ul className="rules" aria-labelledby={`${ids}-denied`}>
-          {read.rules.map((rule, index) => <li key={index} className="row"><code>{rule}</code></li>)}
-        </ul>
-      )}
-    </>
   )
 }

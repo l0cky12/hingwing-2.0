@@ -6,9 +6,11 @@ import { APPROVAL_MODES, type ApprovalMode, type SessionId } from '../domain/ses
 import { systemClock, type Reach } from '../wire/link'
 import { transcriptOf, type Transcribe } from '../wire/transcribe'
 import { isKanban, type Kanban } from './kanban'
+import type { RulesHeader } from './rules'
 
 export { play, playToEnd, type Moment } from './play'
-export { fixtureCall } from './kanban'
+export { fixtureCall } from './calls'
+export { RuleBook, type RulesHeader } from './rules'
 export { maskedFrame, recordingDialer } from './record'
 export { fixtureLatency, scriptedDialer, type ScriptedDialer, type ScriptOptions } from './script'
 
@@ -81,8 +83,12 @@ export interface Fixture {
      * `info.yolo` stays the chat's own flag, as on Hermes. Absent: Hermes refuses both, as for a key it does not know.
      */
     readonly approvals?: ApprovalMode
-    /** Every bot's `approvals.deny`, which `config.get` of `full` answers. Absent: that key is refused as `controls` says. */
-    readonly deny?: readonly string[]
+    /**
+     * What every bot's Hermes always allows (`command_allowlist`) and denies (`approvals.deny`) at the start, which `GET /api/config` answers and a PUT
+     * of it changes, and the token `config.get` of `mtime` answers, which changes with each PUT. `locked`: a managed install, which takes no save.
+     * Absent: `/api/config` is a 404, as on a Hermes with no such route, and `mtime` is refused as `controls` says.
+     */
+    readonly rules?: RulesHeader
     /**
      * The story session's controls as `config.get` answers them, by key: `{ "show_reasoning": "1" }`.
      * `config.set` changes them, except a set of key `yolo`, which `yolo` serves. Absent: the gateway refuses both as unknown methods, as a Hermes
@@ -692,8 +698,11 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (yolo !== undefined && typeof yolo !== 'boolean') return '"yolo" must be true or false'
   if (approvals !== undefined && !APPROVAL_MODES.some(mode => mode === approvals)) return '"approvals" must be manual, smart or off'
   if (yoloDenied !== undefined && typeof yoloDenied !== 'boolean') return '"yoloDenied" must be true or false'
-  const { deny } = value
-  if (deny !== undefined && !(Array.isArray(deny) && deny.every(rule => typeof rule === 'string'))) return '"deny" must be a list of strings'
+  const { rules } = value
+  const lists = isObject(rules) ? [rules.allow, rules.deny] : []
+  if (rules !== undefined && !(isObject(rules) && Object.keys(rules).every(key => ['allow', 'deny', 'locked'].includes(key)) && lists.every(list => list === undefined || (Array.isArray(list) && list.every(rule => typeof rule === 'string'))) && (rules.locked === undefined || typeof rules.locked === 'boolean'))) {
+    return '"rules" must be { allow?, deny?, locked? }: two lists of strings, and true for a Hermes that takes no save'
+  }
   const { info } = value
   if (info !== undefined && !isObject(info)) return '"info" must be an object of attach info fields'
   const { controls } = value
@@ -815,7 +824,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(usage === undefined ? {} : { usage }),
     ...(accountUsage === undefined ? {} : { accountUsage }), ...(usageBars === undefined ? {} : { usageBars }), ...(insights === undefined ? {} : { insights }),
     ...(yolo === undefined ? {} : { yolo }), ...(yoloDenied === undefined ? {} : { yoloDenied }), ...(approvals === undefined ? {} : { approvals: approvals as ApprovalMode }),
-    ...(deny === undefined ? {} : { deny: deny as string[] }),
+    ...(rules === undefined ? {} : { rules: rules as RulesHeader }),
     ...(branches === undefined ? {} : { branches }), ...(tree === undefined ? {} : { tree }),
     ...(info === undefined ? {} : { info }),
     ...(controls === undefined ? {} : { controls: controls as Record<string, string> }),

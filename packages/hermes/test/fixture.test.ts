@@ -156,11 +156,15 @@ describe('loadFixture', () => {
     expect(() => loadFixture(path)).toThrow(`${path}:1: "createWarnings" must be a list of strings`)
   })
 
-  it("takes every bot's deny rules as a list of strings", () => {
-    expect(loadFixture(write([{ ...header, deny: ['git push --force*'] }])).header.deny).toEqual(['git push --force*'])
-    expect(loadFixture(write([header])).header).not.toHaveProperty('deny')
-    const path = write([{ ...header, deny: [7] }])
-    expect(() => loadFixture(path)).toThrow(`${path}:1: "deny" must be a list of strings`)
+  it("takes every bot's command rules as two lists of strings, and whether the install is managed", () => {
+    const rules = { allow: ['podman *'], deny: ['git push --force*'], locked: true }
+    expect(loadFixture(write([{ ...header, rules }])).header.rules).toEqual(rules)
+    expect(loadFixture(write([{ ...header, rules: { deny: [] } }])).header.rules).toEqual({ deny: [] })
+    expect(loadFixture(write([header])).header).not.toHaveProperty('rules')
+    for (const bad of [{ deny: [7] }, { allow: 'ls' }, { locked: 'yes' }, { ask: [] }, ['ls'], 'ls']) {
+      const path = write([{ ...header, rules: bad }])
+      expect(() => loadFixture(path)).toThrow(`${path}:1: "rules" must be { allow?, deny?, locked? }`)
+    }
   })
 
   it("takes each bot's persona as text, and the title of a clash as words", () => {
@@ -264,7 +268,7 @@ describe('loadFixture', () => {
     })
 
     it('answers the board, a card by its path, and a 404 for any other path', async () => {
-      const call = fixtureCall(kanban)
+      const call = fixtureCall(kanban, null)
       const get = (path: string) => call({ method: 'GET', path, profile: null })
       expect(await get(BOARD_PATH)).toEqual({ status: 200, body: kanban.board })
       expect(await get(taskPath('t_1'))).toEqual({ status: 200, body: kanban.tasks.t_1 })
@@ -273,7 +277,7 @@ describe('loadFixture', () => {
     })
 
     it('answers 404 to every path when the fixture has no kanban, as a Hermes without the plugin does', async () => {
-      expect(await fixtureCall(undefined)({ method: 'GET', path: BOARD_PATH, profile: null })).toMatchObject({ status: 404 })
+      expect(await fixtureCall(undefined, null)({ method: 'GET', path: BOARD_PATH, profile: null })).toMatchObject({ status: 404 })
     })
   })
 

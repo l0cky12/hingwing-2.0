@@ -1461,11 +1461,9 @@ export function parsePets(reply: PetGalleryResult): readonly PetChoice[] {
   return [...listed.filter(held => held.curated), ...listed.filter(held => !held.curated)].map(held => held.pet)
 }
 
-/** `approvals.deny` from `config.get full` (gateway/session_config.py `_client_config`), each glob trimmed and blanks dropped as tools/approval_floors.py reads them. */
-export function parseDenyRules(reply: CanonicalConfigGetResult): readonly string[] {
-  const approvals = isObject(reply) && isObject(reply.config) ? reply.config.approvals : null
-  const deny = isObject(approvals) && Array.isArray(approvals.deny) ? approvals.deny : []
-  return deny.flatMap(rule => (typeof rule === 'string' && rule.trim() !== '' ? [rule.trim()] : []))
+/** The token of `config.get mtime` (gateway/session_config.py:96): the config.yaml's modification time, null when the file is not there. null: the reply carries no `mtime` at all. */
+export function parseConfigStamp(reply: CanonicalConfigGetResult): string | null {
+  return isObject(reply) && 'mtime' in reply && (reply.mtime === null || typeof reply.mtime === 'number') ? String(reply.mtime) : null
 }
 
 const WEB_PAGE = /^https?:\/\//

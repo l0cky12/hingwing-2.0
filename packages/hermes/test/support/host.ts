@@ -3,6 +3,7 @@ import { settle } from '../../src/testing/clock'
 import { fakeHost, type FakeHost, type Gateway, type Hold, type ScenarioName } from '../../src/testing/fake-host'
 import { RING_FRAMES, ScriptedGateway } from '../../src/testing/gateway'
 import { loopback, type Loopback } from '../../src/testing/loopback'
+import type { RulesHeader } from '../../src/testing/rules'
 import { systemClock } from '../../src/wire/link'
 import { ERRAND } from './errand'
 
@@ -17,7 +18,9 @@ export const closing = <T>(held: T, close: (held: T) => unknown): T => {
   return held
 }
 
-export const errandGateway = () => new ScriptedGateway(ERRAND, { clock: systemClock, timing: 'instant', ringFrames: RING_FRAMES, drop: null })
+/** `rules`: the command rules every bot of the gateway starts with. Absent: a Hermes with no `/api/config` for Highwing to read. */
+export const errandGateway = (rules?: RulesHeader) =>
+  new ScriptedGateway(rules === undefined ? ERRAND : { ...ERRAND, header: { ...ERRAND.header, rules } }, { clock: systemClock, timing: 'instant', ringFrames: RING_FRAMES, drop: null })
 
 export const listen = async (gateway: ScriptedGateway): Promise<Loopback> => closing(await loopback(gateway, systemClock), held => held.close())
 
