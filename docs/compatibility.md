@@ -1235,6 +1235,50 @@ On an older Hermes, or one without the route:
 - If the reply has no `runs` list, the tab says "Hermes answered with runs
   Highwing can't read."
 
+### Running a routine now and changing its schedule
+
+The Routines tab changes a job through two more routes of the same router
+(`hermes_cli/web_routers/cron.py`). Hermes has no socket method for either, and
+no route that previews when a schedule would next run, so Highwing never works a
+time out. It shows the `next_run_at` of Hermes's own answer. A schedule is sent as
+the user typed it, and Hermes reads it (`cron/jobs.py` `parse_schedule`).
+
+| Route | When |
+| --- | --- |
+| `GET /api/cron/jobs/<job_id>/runs?profile=<bot>&limit=1` | Once per bot when its tab lists a routine, and again when the first routine listed changes. It is how the tab learns that this Hermes has both of the routes below, and a `200` with a `runs` list is the answer. Neither route can be asked about without using it: a `GET` of the trigger route is not answered 405 but 404 `No such API endpoint`, because Hermes's catch-all `GET` route takes it (`hermes_cli/web_server_dashboard.py`). The run list came after both, on 2026-06-06 against 2026-04-12 (`git log -S` of each path in `hermes_cli/web_server.py`), and it answers `200` for any job id |
+| `POST /api/cron/jobs/<job_id>/trigger?profile=<bot>` | Run now, on a routine that is not paused. Hermes runs the whole job inside the request and answers the job once it has run, so Highwing waits up to 24 hours for it, as Hermes's own desktop app does |
+| `PUT /api/cron/jobs/<job_id>?profile=<bot>` | Edit schedule… Save. The body is `{"updates": {"schedule": "<text>"}}` and nothing else, so Hermes keeps the job's id, skills, model, delivery target and run history. Hermes reads the text, refreshes `schedule_display` and `next_run_at`, and gives a paused job no new next run |
+
+Both answer `200` with the job's raw record, the shape of `cron/jobs.json`. It
+names its id `id` and the words of its schedule `schedule_display`, where a
+`cron.manage` row says `job_id` and `schedule`, so Highwing reads those two and
+the fields the list reads (`name`, `state`, `enabled`, `next_run_at`), and not the
+record's `schedule`, which is a dict. The row is replaced by what Hermes answered.
+A paused job is not offered Run now, because Hermes would run it and resume it.
+
+The writes send the credential that the [Task board](#task-board) section
+describes, and a new ticket for each one. They go over `node:http`, not `fetch`,
+because `fetch` gives up on an answer that has not begun within 300 s, and a
+routine can run for hours. For another machine, the request's own relay waits that
+long for the first byte. Closing the connection cancels a write that is waiting.
+
+| Answer | What the tab says |
+| --- | --- |
+| `200` with a job record | Run now: "Ran <name>." Edit schedule…: "Saved. Hermes runs it next <time>.", "Saved. It's paused, so it has no next run." or "Saved. Hermes has no next run for it." |
+| `409` `Job is already running or was claimed by another scheduler` | "This routine is already running." |
+| `400` with a `detail` | Under the field: "Hermes couldn't use that schedule: <detail>" |
+| `404` `Job not found` | "That routine isn't there any more." The list is read again |
+| `404` `Not Found`, or `405`, after the probe passed | "This Hermes can't run a routine now from Highwing." or "This Hermes can't change a routine's schedule from Highwing." That control is hidden for the tab |
+| No ticket, no answer, or any other status | "Highwing couldn't reach Hermes to run that routine." or "...to change that routine." |
+| `200` with a body that is no job, or another job | "Hermes answered, but Highwing can't tell how that routine stands now." The list is read again |
+
+On an older Hermes, or one without the run list, the probe answers 404, or gets no
+answer, and the tab shows neither Run now nor Edit schedule…, with no words about
+it. A Hermes from before 2026-06-06 has the two routes and no run list, so it
+shows neither, which is the safe side. Pause, Resume, Delete… and Past runs work as they did. A `200` for a run does
+not say whether the run went well: "Ran <name>." means Hermes ran it, and the
+Past runs list says how it ended.
+
 ## Task board
 
 Hermes has no socket method that reads its kanban board. The Tasks view reads
