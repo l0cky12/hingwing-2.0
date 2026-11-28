@@ -141,7 +141,7 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
   const relay = useTopic('relay')
   const open = useTopic('open')
   const own = shownChat(open)?.bot ?? null
-  const botName = own === null ? null : botIn(roster, own)?.name ?? null
+  const ownBot = own === null ? null : botIn(roster, own)
   const draft = useDraft(slot)
   const [caret, setCaret] = useState(0)
   const [focused, setFocused] = useState(false)
@@ -438,7 +438,7 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
           <form id={FORM_ID} onSubmit={submit}>
             <textarea
               ref={box} autoFocus={autoFocus} rows={1} value={draft}
-              placeholder={group !== undefined ? 'Message the group, or type @ to ask specific bots' : quote === null ? `Message ${botName ?? 'Hermes'}` : 'Reply…'}
+              placeholder={group !== undefined ? 'Message the group, or type @ to ask specific bots' : quote === null ? `Message ${ownBot?.name ?? 'Hermes'}` : 'Reply…'}
               aria-label={group === undefined ? 'Message Hermes' : `Message ${group.name}`}
               aria-autocomplete="list" aria-controls={menu.open ? MENU_ID : undefined}
               aria-activedescendant={menu.open ? optionId(menu.active) : undefined} aria-describedby={hint === null ? undefined : HINT_ID}
@@ -460,7 +460,7 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
                 <svg aria-hidden="true" viewBox="0 0 10 10" width="10" height="10"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="currentColor" /></svg>
               </button>
             )}
-            <button type="submit" form={FORM_ID} className={blocked || draft.trim() === '' ? 'send' : 'send ready'} aria-label="Send" title={`Send (${SEND_KEY_LABEL[sendKey]})`} disabled={blocked}>
+            <button type="submit" form={FORM_ID} className={`send tone-${ownBot?.tone ?? 'ink'}${blocked || draft.trim() === '' ? '' : ' ready'}`} aria-label="Send" title={`Send (${SEND_KEY_LABEL[sendKey]})`} disabled={blocked}>
               <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
             </button>
           </span>

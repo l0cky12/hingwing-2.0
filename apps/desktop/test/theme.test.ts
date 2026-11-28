@@ -171,6 +171,7 @@ describe('the accent in app.css', () => {
   const accentRules = rules.filter(rule => rule.media.length === 0 && /^\[data-accent="\w+"\]$/.test(rule.selector))
   const TONES = ['ink', 'slate', 'plum', 'olive', 'mauve', 'umber']
   const tokenOf = (tone: string) => /^var\(--([\w-]+)\)$/.exec(accentRules.find(rule => rule.selector === `[data-accent="${tone}"]`)?.declarations.get('--accent') ?? '')?.[1] ?? ''
+  const fillOf = (tone: string) => /^var\(--([\w-]+)\)$/.exec(rules.find(rule => rule.media.length === 0 && rule.selector === `.tone-${tone}`)?.declarations.get('background') ?? '')?.[1] ?? ''
   const bandShare = Number(/color-mix\(in srgb, var\(--accent, var\(--sheet\)\) ([\d.]+)%, var\(--sheet\)\)/.exec(rules.find(rule => rule.selector === '.top .bar :is(h1, .members, .pencil)')?.declarations.get('background') ?? '')?.[1]) / 100
   const mixed = (accent: string, sheet: string) => {
     const [a, b] = [channels(accent), channels(sheet)]
@@ -182,13 +183,13 @@ describe('the accent in app.css', () => {
     expect(bandShare).toBeGreaterThan(0)
   })
 
-  it.each(SCHEMES)('keeps the send label and the header text readable on every accent in %s', (_name, scheme) => {
+  it.each(SCHEMES)('keeps the send icon readable on every bot tone and the header text on every accent in %s', (_name, scheme) => {
     const palette = paletteOf(scheme)
     const colorOf = (name: string) => colorIn(palette, name)
     const short = TONES.flatMap(tone => {
       const accent = colorOf(tokenOf(tone))
       const band = mixed(accent, colorOf('sheet'))
-      return ([['sheet', accent, 'send label'], ['graphite', band, 'header text'], ['ink', band, 'header title']] as const).flatMap(([text, surface, what]) => {
+      return ([['sheet', colorOf(fillOf(tone)), 'send icon'], ['graphite', band, 'header text'], ['ink', band, 'header title']] as const).flatMap(([text, surface, what]) => {
         const ratio = contrast(colorOf(text), surface)
         return ratio >= 4.5 ? [] : [`${tone} ${what}: ${ratio.toFixed(2)}, under 4.5`]
       })

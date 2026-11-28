@@ -82,6 +82,7 @@
   --code-break: normal;
   --terminal-wrap: pre-wrap;
   --chat-width: 760px;
+  --bar-height: 56px;
   --measure: 66ch;
   --request-measure: 62ch;
   --space-1: 4px;
@@ -173,7 +174,7 @@ button:disabled { cursor: default; opacity: .45; }
 :focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; border-radius: var(--radius-xs); }
 code, pre { font-family: var(--mono); }
 
-.bar { display: flex; align-items: center; gap: var(--space-6); min-height: 56px; padding: var(--space-3) var(--space-7); border-bottom: 1px solid var(--rule); }
+.bar { display: flex; align-items: center; gap: var(--space-6); min-height: var(--bar-height); padding: var(--space-3) var(--space-7); border-bottom: 1px solid var(--rule); }
 .top { position: relative; z-index: 2; min-width: 0; }
 /* The chat's bar floats over the top of the thread, under the connection banner, so messages scroll beneath it. */
 .top .bar { position: absolute; top: 100%; left: 0; right: 0; border-bottom: 0; pointer-events: none; }
@@ -201,7 +202,8 @@ code, pre { font-family: var(--mono); }
 .banner button { margin-left: auto; padding: 4px 14px; border-radius: var(--radius-sm); border: 1px solid var(--ink); background: transparent; }
 .banner button:hover { background: var(--sheet); }
 
-.screen > main { grid-row: 2; grid-column: 1; padding-top: 56px; }
+.screen > main { grid-row: 2; grid-column: 1; }
+.top ~ main { padding-top: var(--bar-height); scroll-padding-block-start: var(--bar-height); }
 .screen > .composer { grid-row: 3; grid-column: 1; }
 main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: thin; scrollbar-color: var(--edge) transparent; }
 #transcript { max-width: var(--chat-width); margin: 0 auto; padding: 36px 28px 56px; }
@@ -605,8 +607,8 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .pill .clip:hover:not(:disabled) { color: var(--ink); background: var(--rule); }
 .pill .clip.mic[aria-pressed="true"] { color: var(--sheet); background: var(--brick); }
 .tools button:disabled { cursor: default; opacity: .45; }
-/* The send button is filled with the open bot's colour, or the accent picked in Settings. */
-.pill .send { border: 1.5px solid var(--accent, var(--ink)); background: var(--accent, var(--ink)); color: var(--sheet); }
+/* Its `.tone-<name>` class fills the send button with the open bot's colour, whatever accent Settings picks. */
+.pill .send { border: 0; color: var(--sheet); }
 .pill .send:not(.ready) { opacity: .45; }
 .pill .stop { border: 1.5px solid var(--ink); background: transparent; color: var(--ink); }
 .editing { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; max-width: var(--chat-width); margin: 0 auto 8px; padding: 0 28px 0 calc(28px + var(--col)); font: 500 var(--text-sm)/1.4 var(--sans); color: var(--graphite); }

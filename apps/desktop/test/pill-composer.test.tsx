@@ -60,9 +60,14 @@ describe('the pill composer', () => {
     expect(namesIn(parts(draw()).row)).toEqual(CONTROLS)
   })
 
-  it('fills Send with the accent, which is the open bot’s colour unless Settings fixes one, and draws its icon in the sheet colour', () => {
-    const send = /\.pill \.send \{([^}]*)\}/.exec(CSS)?.[1] ?? ''
-    expect(send).toContain('background: var(--accent, var(--ink));')
+  it('fills Send with the open bot’s tone, or the default bot’s ink in a chat with no bot, whatever accent Settings picks', () => {
+    const sendClass = (html: string) => /<button type="submit"[^>]* class="([^"]*)"/.exec(html)?.[1]
+    expect(sendClass(draw())).toBe('send tone-umber')
+    topics.values.open = openWith(null)
+    expect(sendClass(draw())).toBe('send tone-ink')
+    const send = /^\.pill \.send \{([^}]*)\}/m.exec(CSS)?.[1] ?? ''
+    expect(send).not.toMatch(/background|--accent/)
     expect(send).toContain('color: var(--sheet);')
+    expect(/^\.tone-umber \{([^}]*)\}/m.exec(CSS)?.[1]).toContain('background: var(--avatar-umber);')
   })
 })
