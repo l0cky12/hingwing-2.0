@@ -241,10 +241,10 @@ export type PromptCard =
   /** Nobody answered before Hermes stopped waiting, so it did nothing. `askAgain` is the message that asks Hermes to retry. */
   | { readonly state: 'expired'; readonly heading: string; readonly command: string | null; readonly words: string; readonly askAgain: string }
   /**
-   * Hollow caution ring. `command` is null when the step next to the card already shows it. `savesRule`: this window chose Always allow,
-   * so Hermes holds an allow rule for it, which Settings lists.
+   * Hollow caution ring. `command` is null when the step next to the card already shows it. `chosenAlways`: this window chose Always allow. Hermes gives no word
+   * that it kept a rule for it, so the card points at Settings, which lists the rules Hermes holds.
    */
-  | { readonly state: 'answered'; readonly words: string; readonly command: string | null; readonly savesRule: boolean }
+  | { readonly state: 'answered'; readonly words: string; readonly command: string | null; readonly chosenAlways: boolean }
 
 /** One button per choice, with a typed answer for a clarify; or checkboxes for a question that takes several answers. */
 export type PromptPick =
@@ -827,7 +827,7 @@ function promptCard(prompt: PromptItem, paired: boolean, live: boolean, now: num
     state: 'answered',
     words: answeredWords(prompt, state),
     command: ask.kind === 'approval' && !paired ? ask.command : null,
-    savesRule: ask.kind === 'approval' && state.s === 'answered' && state.reply?.kind === 'choice' && state.reply.value === 'always'
+    chosenAlways: ask.kind === 'approval' && state.s === 'answered' && state.reply?.kind === 'choice' && state.reply.value === 'always'
   }
 }
 
@@ -1029,7 +1029,7 @@ function nodeLines(node: ThreadNode, live: boolean, elapsed: string | null, open
       ]
     case 'prompt': {
       const { card } = node
-      if (card.state === 'answered') return [`○ ${card.words}${card.command === null ? '' : ` \`${card.command}\``}`, ...(card.savesRule ? ['    Saved as an allow rule. [Open Permissions]'] : [])]
+      if (card.state === 'answered') return [`○ ${card.words}${card.command === null ? '' : ` \`${card.command}\``}`, ...(card.chosenAlways ? ['    See or remove it in Permissions. [Open Permissions]'] : [])]
       if (card.state === 'expired') return [`◇ ${card.heading}${card.command === null ? '' : ` \`${card.command}\``}`, `    ${card.words}`, '    [Ask again]']
       return [
         `◆ ${card.heading}${card.busy ? '  (busy)' : ''}`,

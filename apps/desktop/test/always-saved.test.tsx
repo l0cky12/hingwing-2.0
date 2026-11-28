@@ -11,22 +11,23 @@ vi.mock('../src/renderer/store', () => ({ Epoch: {}, run: async (command: unknow
 const { Node } = await import('../src/renderer/chat/Thread')
 const { openSettingsOn, takeOpeningPage } = await import('../src/renderer/setup/settings-page')
 
-const answered = (savesRule: boolean): ThreadNode => ({
-  kind: 'prompt', key: 't1/4', card: { state: 'answered', words: 'You allowed commands like this from now on.', command: 'rm -rf drafts', savesRule }
+const answered = (chosenAlways: boolean): ThreadNode => ({
+  kind: 'prompt', key: 't1/4', card: { state: 'answered', words: 'You allowed commands like this from now on.', command: 'rm -rf drafts', chosenAlways }
 })
 const draw = (node: ThreadNode) => renderToStaticMarkup(<Node node={node} endTone={null} elapsed={null} open={NONE_OPEN} onToggle={() => {}} onAnswer={async () => undefined} onAskAgain={async () => false} helpers={null} />)
 
 describe('the card of an approval answered with Always allow', () => {
-  it('says the rule was saved, with a button that opens Permissions, under the words of the answer', () => {
+  it('points at Permissions, with a button that opens it, under the words of the answer, and does not say Hermes saved a rule', () => {
     const html = draw(answered(true))
     expect(html).toContain('You allowed commands like this from now on.')
-    expect(html).toMatch(/Saved as an allow rule\. <button type="button" class="open-rules">Open Permissions<\/button>/)
-    expect(html.indexOf('You allowed commands')).toBeLessThan(html.indexOf('Saved as an allow rule.'))
+    expect(html).not.toMatch(/saved/i)
+    expect(html).toMatch(/See or remove it in Permissions\. <button type="button" class="open-rules">Open Permissions<\/button>/)
+    expect(html.indexOf('You allowed commands')).toBeLessThan(html.indexOf('See or remove it in Permissions.'))
   })
 
   it('says nothing of a rule for any other answer', () => {
     const html = draw(answered(false))
-    expect(html).not.toContain('Saved as an allow rule.')
+    expect(html).not.toContain('See or remove it in Permissions.')
     expect(html).not.toContain('Open Permissions')
   })
 })

@@ -63,9 +63,9 @@ function Prompt({ nodeKey, card, asking, onAnswer, onAskAgain }: PromptProps) {
         <p data-find={fieldId(nodeKey, 'words')}>{card.words}</p>
         {card.command !== null && <Command nodeKey={nodeKey} command={card.command} />}
         {toldWords !== null && <p className="notice">{toldWords}</p>}
-        {card.savesRule && (
+        {card.chosenAlways && (
           <p className="notice">
-            Saved as an allow rule. <button type="button" className="open-rules" onClick={() => openSettingsOn('permissions')}>Open Permissions</button>
+            See or remove it in Permissions. <button type="button" className="open-rules" onClick={() => openSettingsOn('permissions')}>Open Permissions</button>
           </p>
         )}
       </div>
