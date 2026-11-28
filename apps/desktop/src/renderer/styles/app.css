@@ -202,6 +202,7 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
   background: var(--surface-user); border-radius: var(--radius-lg);
   font-size: var(--text-lg); line-height: 1.5; max-width: min(62ch, 100% - 112px); white-space: pre-wrap; position: relative;
 }
+.request > .quoted { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; margin: 2px 0 6px; padding-left: 10px; border-left: 2px solid var(--edge); color: var(--graphite); font-size: var(--text-md); }
 
 .thread { position: relative; padding-left: var(--col); display: flex; flex-direction: column; gap: var(--gap); }
 .thread > * { position: relative; }
@@ -689,8 +690,11 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .chip .thumb { flex: none; width: 28px; height: 28px; border-radius: var(--radius-xs); object-fit: cover; background: var(--paper); }
 .chip .mark, .sent .mark { flex: none; display: grid; place-items: center; min-width: 28px; height: 28px; padding: 0 4px; box-sizing: border-box; border-radius: var(--radius-xs); background: var(--code-bg); font: 700 var(--text-2xs)/1 var(--mono); color: var(--graphite); }
 .chip .name, .sent .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chip .unchip { flex: none; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--radius-xs); background: none; color: var(--graphite); }
+.quote-chip { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 3px 3px 3px 11px; border: 1px solid var(--rule); border-radius: var(--radius-md); background: var(--paper); font: var(--text-md)/1.4 var(--sans); color: var(--graphite); }
+.quote-chip > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:is(.chip, .quote-chip) .unchip { flex: none; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--radius-xs); background: none; color: var(--graphite); }
 .chip .unchip:hover { background: var(--paper); color: var(--ink); }
+.quote-chip .unchip:hover { background: var(--rule); color: var(--ink); }
 .chip.image { position: relative; max-width: none; height: 120px; padding: 0; overflow: hidden; border-radius: var(--radius-md); }
 .chip.image .thumb { width: auto; min-width: 90px; max-width: 240px; height: 120px; border-radius: 0; }
 .chip.image span.thumb { width: 160px; }
@@ -1234,7 +1238,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
   .composer > .box { border-color: CanvasText; }
   .composer button { border: 1px solid ButtonText; }
   .tools .send.ready { background: ButtonText; color: ButtonFace; }
-  .chip, .sent .file, .chip .mark, .sent .mark { border: 1px solid CanvasText; }
+  .chip, .quote-chip, .sent .file, .chip .mark, .sent .mark { border: 1px solid CanvasText; }
   .composer.dragging > .box { border-color: Highlight; }
   .drop-line { color: Highlight; }
   .editing button, .approval .tell, .remove-choices button, .form-choices button { border: 1px solid ButtonText; }

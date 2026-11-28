@@ -8,7 +8,7 @@ const turn = (handed: boolean): TurnView => ({ key: 't1', time: null, request: '
 const draw = (handed: boolean) => renderToStaticMarkup(
   <Turn
     turn={turn(handed)} open={NONE_OPEN} onToggle={() => {}} onAnswer={async () => undefined} onAskAgain={async () => false} canEdit showsRegenerate={false} canRegenerate={false} canBranch
-    onEdit={() => {}} onRegenerate={() => {}} onBranch={() => {}} onNewChat={() => {}} versions={[]} onVersion={() => {}} canReact onReact={() => {}} helpers={null} showWork="all"
+    onEdit={() => {}} onRegenerate={() => {}} onReply={() => {}} onBranch={() => {}} onNewChat={() => {}} versions={[]} onVersion={() => {}} canReact onReact={() => {}} helpers={null} showWork="all"
   />
 )
 

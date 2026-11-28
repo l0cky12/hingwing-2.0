@@ -10,6 +10,7 @@ export interface Act { readonly disabled: boolean; readonly run: () => void }
 /** The actions a message has. `MessageActions` owns their order and which sit in the More menu. */
 export interface MessageActs {
   readonly copy?: { readonly text: string; readonly name: string }
+  readonly reply?: Act
   readonly edit?: Act
   readonly regenerate?: Act
   readonly react?: { readonly given: readonly Reaction[]; readonly disabled: boolean; readonly onReact: (emoji: string | null) => void }
@@ -38,6 +39,7 @@ function CopyIcon({ text, name }: { readonly text: string; readonly name: string
 
 const ICON_ROW: readonly ((acts: MessageActs) => ReactNode)[] = [
   ({ copy }) => copy && <CopyIcon key="copy" {...copy} />,
+  ({ reply }) => reply && <ActButton key="reply" name="Reply" act={reply} icon={<Svg><path d="m9 17-5-5 5-5" /><path d="M20 18v-2a4 4 0 0 0-4-4H4" /></Svg>} />,
   ({ edit }) => edit && <ActButton key="edit" name="Edit message" act={edit} icon={<Svg><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></Svg>} />,
   ({ regenerate }) => regenerate && <ActButton key="regenerate" name="Regenerate" act={regenerate} icon={<Svg><path d="M21 12a9 9 0 1 1-3-6.7L21 8" /><path d="M21 3v5h-5" /></Svg>} />,
   ({ react }) => react && <Reactions key="react" {...react} />

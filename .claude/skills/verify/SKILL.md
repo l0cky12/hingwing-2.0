@@ -142,6 +142,7 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `shot <name>` | file stem | moves the pointer off the page, then saves `<name>.png` and `<name>.aria.txt` |
 | `disabled <role> <name>` | ARIA role, exact accessible name or `/regex/` | fails unless that control is disabled now |
 | `value <label> <text>` | exact label, text | waits two frames, then fails unless the field holds exactly that text |
+| `placeholder <label> <text>` | exact label, text | waits until the field's placeholder is exactly that text, and fails at the timeout. An ARIA snapshot does not print it |
 | `field <label> <lines> <fits\|scrolls>` | exact label, a line count, `fits` or `scrolls` | logs how many lines the field shows and whether its text scrolls with a visible scrollbar, and fails unless both match |
 | `pinned` | none | logs where the thread sits, and fails unless it is scrolled to its end, its last row is in view (wholly, when it fits), and the composer does not cover it |
 | `disabled-at <role> <name> <n>` | ARIA role, exact accessible name, a number | fails unless the `n`th such control, counting from 1 in page order, is disabled now |

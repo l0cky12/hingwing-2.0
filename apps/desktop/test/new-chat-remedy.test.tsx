@@ -17,7 +17,7 @@ const turn = (end: ThreadEnd, request: string | null = MESSAGE): TurnView =>
   ({ key: 't1', time: null, request, handed: false, attachments: [], rowId: null, tokens: null, reactions: null, pages: [], nodes: [], end })
 const props = (more: Partial<Props>): Props => ({
   turn: turn(REFUSED), open: NONE_OPEN, onToggle: () => {}, onAnswer: async () => undefined, onAskAgain: async () => false, canEdit: true, showsRegenerate: false, canRegenerate: false,
-  canBranch: true, onEdit: () => {}, onRegenerate: () => {}, onBranch: () => {}, onNewChat: () => {}, versions: [], onVersion: () => {}, canReact: false, onReact: () => {}, helpers: null, showWork: 'all', ...more
+  canBranch: true, onEdit: () => {}, onRegenerate: () => {}, onReply: () => {}, onBranch: () => {}, onNewChat: () => {}, versions: [], onVersion: () => {}, canReact: false, onReact: () => {}, helpers: null, showWork: 'all', ...more
 })
 const draw = (more: Partial<Props>) => renderToStaticMarkup(<Turn {...props(more)} />)
 
@@ -67,12 +67,12 @@ describe("a refused message carried to a new chat's draft", () => {
   it('is the whole draft when the new chat had none', async () => {
     const { store, kept } = await loaded([])
     store.carryToNewChat(BOT, MESSAGE)
-    expect(kept).toEqual([{ key: 'new', bot: BOT, text: MESSAGE, attachments: [] }])
+    expect(kept).toEqual([{ key: 'new', bot: BOT, text: MESSAGE, attachments: [], quote: null }])
   })
 
   it('follows a blank line after the text the user left there', async () => {
-    const { store, kept } = await loaded([{ key: 'new', bot: BOT, text: 'Draft the weekly note', attachments: [] } as unknown as Draft])
+    const { store, kept } = await loaded([{ key: 'new', bot: BOT, text: 'Draft the weekly note', attachments: [], quote: null } as unknown as Draft])
     store.carryToNewChat(BOT, MESSAGE)
-    expect(kept).toEqual([{ key: 'new', bot: BOT, text: `Draft the weekly note\n\n${MESSAGE}`, attachments: [] }])
+    expect(kept).toEqual([{ key: 'new', bot: BOT, text: `Draft the weekly note\n\n${MESSAGE}`, attachments: [], quote: null }])
   })
 })

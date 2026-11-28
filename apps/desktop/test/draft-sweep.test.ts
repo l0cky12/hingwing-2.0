@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Draft } from '../src/ipc-contract'
 import type {} from '../src/renderer/store'
 
-const OLD = { key: 'chat:local-0007', bot: null, text: 'Ask about the lease', attachments: [] } as unknown as Draft
+const OLD = { key: 'chat:local-0007', bot: null, text: 'Ask about the lease', attachments: [], quote: null } as unknown as Draft
 const listing = (complete: boolean): Sidebar =>
   ({ bot: null, status: 'ready', complete, rows: [{ id: 'local-0100' as SessionId, title: 'Rent', preview: null, lastActiveAt: null, pinned: false, botChat: false, badge: 'none' }] })
 

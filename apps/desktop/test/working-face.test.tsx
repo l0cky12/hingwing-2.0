@@ -13,7 +13,7 @@ const drawn = (view: TurnView, bot: Bot | null, showWork: ShowWork = 'all') => r
   <ChatBotContext value={bot}>
     <Thread
       view={{ state: 'ready', turns: [view], pending: [], asks: [], earlier: 'none', changesAt: null } as ThreadView} relays={[]} sides={[]} onAnswer={async () => undefined} onAskAgain={async () => false} onAnswerRequest={async () => false}
-      onLoadEarlier={() => {}} onFindClosed={() => {}} onFindScrolled={() => {}} canEdit canRegenerate={false} regenerateTurnKey={null} canBranch onEdit={() => {}} onRegenerate={() => {}}
+      onLoadEarlier={() => {}} onFindClosed={() => {}} onFindScrolled={() => {}} canEdit canRegenerate={false} regenerateTurnKey={null} canBranch onEdit={() => {}} onRegenerate={() => {}} onReply={() => {}}
       onBranch={() => {}} onNewChat={() => {}} versions={[]} onVersion={() => {}} queue={{ canAct: true, pressed: new Map(), onAct: () => {} }} canReact onReact={() => {}} helpers={null} showWork={showWork}
     />
   </ChatBotContext>

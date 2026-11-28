@@ -28,12 +28,12 @@ describe("a branch's text in the new chat's draft", () => {
     await loaded()
     store.seedDraft(CHILD, SEED)
     vi.advanceTimersByTime(1_000)
-    expect(kept).toEqual([{ ...CHILD, text: SEED, attachments: [] }])
+    expect(kept).toEqual([{ ...CHILD, text: SEED, attachments: [], quote: null }])
   })
 
   it('waits for the saved drafts, and leaves a saved draft of that chat as it is', async () => {
     vi.useFakeTimers()
-    const { store, kept, loaded } = await openWindow([{ ...CHILD, text: 'Add a line about Friday', attachments: [] } as Draft])
+    const { store, kept, loaded } = await openWindow([{ ...CHILD, text: 'Add a line about Friday', attachments: [], quote: null }])
     store.seedDraft(CHILD, SEED)
     await loaded()
     expect(kept).toEqual([])
@@ -45,7 +45,7 @@ describe("a branch's text in the new chat's draft", () => {
     store.seedDraft(CHILD, SEED)
     expect(kept).toEqual([])
     await loaded()
-    expect(kept).toEqual([{ ...CHILD, text: SEED, attachments: [] }])
+    expect(kept).toEqual([{ ...CHILD, text: SEED, attachments: [], quote: null }])
   })
 
   it('never fills a box the user cleared', async () => {
@@ -55,6 +55,6 @@ describe("a branch's text in the new chat's draft", () => {
     store.writeDraft(CHILD, '')
     store.seedDraft(CHILD, SEED)
     vi.advanceTimersByTime(1_000)
-    expect(kept).toEqual([{ ...CHILD, text: '', attachments: [] }])
+    expect(kept).toEqual([{ ...CHILD, text: '', attachments: [], quote: null }])
   })
 })

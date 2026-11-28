@@ -20,7 +20,7 @@ const NO_SIDES: readonly SideRow[] = []
 const thread = ({ view, relays, sides }: Drawn) => (
   <Thread
     view={view} relays={relays} sides={sides} onAnswer={async () => undefined} onAskAgain={async () => false} onAnswerRequest={async () => false} onLoadEarlier={() => {}} onFindClosed={() => {}} onFindScrolled={() => {}}
-    canEdit canRegenerate={false} regenerateTurnKey={null} canBranch onEdit={() => {}} onRegenerate={() => {}} onBranch={() => {}} onNewChat={() => {}}
+    canEdit canRegenerate={false} regenerateTurnKey={null} canBranch onEdit={() => {}} onRegenerate={() => {}} onReply={() => {}} onBranch={() => {}} onNewChat={() => {}}
     versions={[]} onVersion={() => {}} queue={{ canAct: true, pressed: new Map(), onAct: () => {} }} canReact onReact={() => {}} helpers={null} showWork="all"
   />
 )

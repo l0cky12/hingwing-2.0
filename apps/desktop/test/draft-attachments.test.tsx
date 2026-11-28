@@ -27,7 +27,7 @@ describe('a draft with attachments', () => {
     const [a, b, c] = [attachment('a'), attachment('b'), attachment('c', 'file')]
     attachTo(chat, [a, b])
     attachTo(chat, [c])
-    expect(last()).toEqual({ key: 'chat:s1', bot: null, text: '', attachments: [a, b, c] })
+    expect(last()).toEqual({ key: 'chat:s1', bot: null, text: '', attachments: [a, b, c], quote: null })
     moveAttachment(chat, c.id, -1)
     expect(last()?.attachments).toEqual([a, c, b])
     moveAttachment(chat, a.id, -1)
@@ -42,8 +42,8 @@ describe('a draft with attachments', () => {
     const [sent, later] = [attachment('sent'), attachment('later')]
     writeDraft(chat, 'what is this')
     attachTo(chat, [sent, later])
-    draftSent(chat, 'what is this', new Set([sent.id]))
-    expect(last()).toEqual({ key: 'chat:s2', bot: null, text: '', attachments: [later] })
+    draftSent(chat, 'what is this', new Set([sent.id]), null)
+    expect(last()).toEqual({ key: 'chat:s2', bot: null, text: '', attachments: [later], quote: null })
   })
 
   it('moves a draft to the chat its refused first message made, and never over a draft that chat holds', async () => {
@@ -53,8 +53,8 @@ describe('a draft with attachments', () => {
     writeDraft(fresh, 'what is this')
     attachTo(fresh, [shot])
     moveDraft(fresh, made)
-    expect(saved.filter(draft => draft.key === made.key).at(-1)).toEqual({ key: 'chat:s5', bot: null, text: 'what is this', attachments: [shot] })
-    expect(saved.filter(draft => draft.key === fresh.key).at(-1)).toEqual({ key: 'new', bot: null, text: '', attachments: [] })
+    expect(saved.filter(draft => draft.key === made.key).at(-1)).toEqual({ key: 'chat:s5', bot: null, text: 'what is this', attachments: [shot], quote: null })
+    expect(saved.filter(draft => draft.key === fresh.key).at(-1)).toEqual({ key: 'new', bot: null, text: '', attachments: [], quote: null })
     attachTo(fresh, [attachment('other')])
     moveDraft(fresh, made)
     expect(saved.filter(draft => draft.key === made.key).at(-1)?.attachments, 'the chat keeps its own').toEqual([shot])

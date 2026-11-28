@@ -1,11 +1,11 @@
-import { activityOf, modelViewOf, sendPlan, type Attachment, type AttachmentId, type BackgroundProcess, type BranchId, type ChatVersions, type CommandOutcome, type HelperId, type ModelMenu, type PromptId, type PromptReply, type QueuedAction, type Relay, type SessionId, type Shown, type SideId, type TurnId, type Version } from '@highwing/hermes/domain'
+import { activityOf, modelViewOf, sendPlan, type Attachment, type AttachmentId, type BackgroundProcess, type BranchId, type ChatVersions, type CommandOutcome, type HelperId, type ModelMenu, type PromptId, type PromptReply, type QueuedAction, type Quote, type Relay, type SessionId, type Shown, type SideId, type TurnId, type Version } from '@highwing/hermes/domain'
 import { threadView } from '@highwing/thread'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react'
 import { isLocal } from '../../ipc-contract'
 import { botIn } from '../bots/roster-view'
 import { Approvals } from '../composer/Approvals'
 import { Composer } from '../composer/Composer'
-import { carryToNewChat, slotOf } from '../composer/drafts'
+import { carryToNewChat, quoteInto, slotOf } from '../composer/drafts'
 import { ContextMeter } from '../composer/ContextMeter'
 import { editingOf, type EditTarget } from '../composer/edit'
 import { FolderChip } from '../composer/FolderChip'
@@ -264,6 +264,12 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     if (outcome.ok || outcome.refusal.kind !== 'offline') branchKeys.current.delete(rowId)
     if (!outcome.ok) setRefused({ id, message: outcome.refusal.message })
   }, [id])
+  const onReply = useCallback((quote: Quote) => {
+    quoteInto(slotOf(chat), quote)
+    const box = composer.current
+    box?.focus()
+    box?.setSelectionRange(box.value.length, box.value.length)
+  }, [chat])
   const onNewChat = useCallback((text: string) => {
     carryToNewChat(chat.bot, text)
     void run({ do: 'open', ref: { kind: 'new', bot: chat.bot, draftId: crypto.randomUUID() } })
@@ -372,7 +378,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
                 <ChatBotContext value={bot}>
                   <Thread
                     view={drawn.view} relays={drawn.relays} sides={drawn.sides} onAnswer={onAnswer} onAskAgain={live ? onAskAgain : null} onAnswerRequest={onAnswerRequest} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
-                    canEdit={canEdit} regenerateTurnKey={regenerateTurnKey} canRegenerate={canEdit && editing === null} onEdit={onEdit} onRegenerate={onRegenerate}
+                    canEdit={canEdit} regenerateTurnKey={regenerateTurnKey} canRegenerate={canEdit && editing === null} onEdit={onEdit} onRegenerate={onRegenerate} onReply={onReply}
                     canBranch={canBranch} onBranch={onBranch} onNewChat={onNewChat} versions={versions} onVersion={onVersion} queue={queue} canReact={live === true} onReact={onReact} helpers={helpers} showWork={showWork}
                   />
                 </ChatBotContext>

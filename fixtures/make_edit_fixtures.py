@@ -1,5 +1,5 @@
 """Write fixtures/edit.jsonl, fixtures/regenerate.jsonl, fixtures/edit-refused.jsonl, fixtures/edit-compacted.jsonl,
-fixtures/branch.jsonl, fixtures/branch-old.jsonl and fixtures/branch-compacted.jsonl.
+fixtures/branch.jsonl, fixtures/branch-old.jsonl, fixtures/branch-compacted.jsonl and the four fixtures/reply*.jsonl.
 
 Run with any Python 3:  python3 fixtures/make_edit_fixtures.py
 
@@ -15,6 +15,12 @@ holds a two second tool step, so a live run can see it running. Its `message.com
   `target_message_id`) and has no step after it.
 - `edit-compacted` is the compacted chat below. It answers a rewind of the first message with Hermes's refusal for a
   row compaction archived: field `target_message_id` and a `compacted:` detail (persistence/authority/runtime.py:68-69).
+
+- `reply`, `reply-mine` and `reply-unquoted` hold a fourth stored turn whose request replies to the third reply, in
+  Hermes's reply shape (gateway/inbound_reply_context.py). Their story makes no cut: it waits for the `prompt.submit`
+  and plays the reply turn. `reply` sends a reply to the fourth reply, `reply-mine` a reply to the first request, and
+  `reply-unquoted` the same words as `reply` with no quote.
+- `reply-edit` holds the same four turns, and cuts before the fourth request to send it again with new words and its quote.
 
 - `branch` has no steps and its header says `branches`. Its chat is titled "Notes heading" so a branch has a title to
   number: "Notes heading #2".
@@ -56,6 +62,10 @@ LISTING = {
     "output": "total 4\n-rw-r--r--  1 liam liam   42 Jan  1  2026 notes.md\ndrwxr-xr-x  2 liam liam   60 Jan  1  2026 scratch",
 }
 TOOL_MS = 2000
+QUOTED_TURN = ('[Replying to your previous message: "The folder holds `notes.md` and a `scratch` folder."]\n\nWhat is in scratch?', "The scratch folder is empty.")
+REPLY_TURNS = [*TURNS, QUOTED_TURN]
+REMOVE = {"command": "rmdir scratch", "context": "rmdir scratch", "said": "I'll remove the folder.", "output": ""}
+RENAME = {"command": "sed -i 's/^# Plan/# Goals/' notes.md", "context": "rename the heading", "said": "I'll rename the heading.", "output": ""}
 
 
 def rows_of(turns, first_id=1, start=0):
@@ -99,7 +109,7 @@ class Story:
         self.add({"push": {"jsonrpc": "2.0", "method": "event", "params": params}})
 
 
-def rewind(story, row_id, kept, rewound):
+def rewind(story, row_id, kept, rewound, stored=STORED):
     params = {
         "session_id": SESSION, "request_id": f"request_rewind_{row_id:04d}", "expected_revision": 0,
         "expected_generation": 0, "operation": "rewind", "payload": {"target_message_id": row_id},
@@ -107,7 +117,7 @@ def rewind(story, row_id, kept, rewound):
     return params, {
         "session_id": SESSION, "revision": 1, "execution_generation": 1, "operation": "rewind",
         "rewound_count": rewound, "new_head_id": kept[-1]["row_id"] if kept else None, "replacement_message_id": None,
-        "target_message": {"id": row_id, "role": "user", "content": next(r["text"] for r in STORED if r["row_id"] == row_id)},
+        "target_message": {"id": row_id, "role": "user", "content": next(r["text"] for r in stored if r["row_id"] == row_id)},
     }
 
 
@@ -126,15 +136,25 @@ def info(pending_rows, running, generation, revision):
     }
 
 
-def story_for(cut_row, kept_turns, text, reply, slug, tool_call):
+def story_for(cut_row, kept_turns, text, reply, slug, tool_call, turns=TURNS):
     story = Story()
     kept = rows_of(kept_turns)
-    params, receipt = rewind(story, cut_row, kept, 2 * (len(TURNS) - len(kept_turns)))
+    params, receipt = rewind(story, cut_row, kept, 2 * (len(turns) - len(kept_turns)), rows_of(turns))
     story.add({"await": "session.mutate", "params": params, "reply": receipt})
     story.event("session.updated", receipt)
     story.after(4)
     story.add({"stored": kept})
+    answer(story, kept, text, reply, slug, tool_call, 2 * len(turns) + 1)
+    return story.steps
 
+
+def reply_story(turns, text, reply, slug, tool_call):
+    story = Story()
+    answer(story, rows_of(turns), text, reply, slug, tool_call, 2 * len(turns) + 1)
+    return story.steps
+
+
+def answer(story, kept, text, reply, slug, tool_call, first_new):
     admission = f"{slug}-admission-0001"
     input_id = f"input_{slug}_0001"
     story.after(4)
@@ -175,7 +195,6 @@ def story_for(cut_row, kept_turns, text, reply, slug, tool_call):
         story.event("message.delta", {"text": chunk, "turn_id": f"{slug}-turn", "segment": 0, "offset": offset}, 2, admission)
         offset += len(chunk)
 
-    first_new = 2 * len(TURNS) + 1
     row_ids = [first_new + n for n in range(4)]
     story.after(4)
     story.event("message.complete", {
@@ -196,7 +215,6 @@ def story_for(cut_row, kept_turns, text, reply, slug, tool_call):
         {"role": "tool", "name": "terminal", "context": tool_call["context"], "content": result, "tool_call_id": call_id, "timestamp": at + 2, "args": command},
         {"role": "assistant", "text": reply, "timestamp": at + 3, "row_id": row_ids[3]},
     ]})
-    return story.steps
 
 
 def refused_story(cut_row, detail="target user message is no longer in session history"):
@@ -224,6 +242,11 @@ write("edit", story_for(3, TURNS[:1], EDITED, EDITED_REPLY, "edit", APPEND))
 write("regenerate", story_for(5, TURNS[:2], TURNS[2][0], REGENERATED_REPLY, "regenerate", LISTING))
 write("edit-refused", refused_story(3))
 write("edit-compacted", refused_story(1, COMPACTED_DETAIL), stored=COMPACTED)
+REPLY_STORED = rows_of(REPLY_TURNS)
+write("reply", reply_story(REPLY_TURNS, '[Replying to your previous message: "The scratch folder is empty."]\n\nDelete it then.', "Deleted the empty scratch folder.", "reply", REMOVE), stored=REPLY_STORED)
+write("reply-mine", reply_story(REPLY_TURNS, '[Replying to: "Rename the heading in notes.md to Plan"]\n\nUse Goals instead.', "The heading now reads \"Goals\".", "reply-mine", RENAME), stored=REPLY_STORED)
+write("reply-unquoted", reply_story(REPLY_TURNS, "Delete it then.", "Deleted the empty scratch folder.", "reply-unquoted", REMOVE), stored=REPLY_STORED)
+write("reply-edit", story_for(7, TURNS, '[Replying to your previous message: "The folder holds `notes.md` and a `scratch` folder."]\n\nWhat is in scratch, and how big is it?', "The scratch folder is empty, so it takes no space.", "reply-edit", LISTING, turns=REPLY_TURNS), stored=REPLY_STORED)
 write("branch", [], list=TITLED, branches=True)
 write("branch-old", [], list=TITLED)
 write("branch-compacted", [], list=TITLED, branches=True, stored=COMPACTED)

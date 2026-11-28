@@ -1,4 +1,4 @@
-import { shownChat, type Attachment, type AttachmentId, type CommandOutcome, type PathMatch, type SendPlan, type SessionId, type SlashCatalog } from '@highwing/hermes/domain'
+import { quoteOf, shownChat, slashLineOf, withQuote, type Attachment, type AttachmentId, type CommandOutcome, type PathMatch, type SendPlan, type SessionId, type SlashCatalog } from '@highwing/hermes/domain'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { MAX_ATTACHMENTS, type StageResult } from '../../ipc-contract'
 import { Avatar } from '../bots/Avatar'
@@ -8,7 +8,7 @@ import { useTopic } from '../store'
 import { busyHint } from './busy'
 import { inserted } from './dictation'
 import { Microphone, useDictation } from './Dictate'
-import { attachTo, detach, draftSent, moveAttachment, moveDraft, seedDraft, stagingFor, useAttachments, useDraft, useStaging, writeDraft, type DraftSlot } from './drafts'
+import { attachTo, detach, draftSent, moveAttachment, moveDraft, quoteInto, seedDraft, stagingFor, useAttachments, useDraft, useQuote, useStaging, writeDraft, type DraftSlot } from './drafts'
 import { EDITING_WORDS, removalWords, type Editing } from './edit'
 import { RemoveDialog } from './RemoveDialog'
 import { mentionable, mentionWord, menuOf, picked, type Mention, type Menu, type MenuItem } from './menu'
@@ -149,6 +149,8 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
     [group, catalog, roster, relay, own, files]
   )
   const attachments = useAttachments(slot)
+  const draftQuote = useQuote(slot)
+  const quote = group === undefined ? draftQuote : null
   const [attachRefusals, setAttachRefusals] = useState<readonly string[]>([])
   const [dragging, setDragging] = useState(false)
   const staging = useStaging(slot)
@@ -202,9 +204,11 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
 
   useLayoutEffect(() => {
     if (editing === null) return
-    caretTo.current = editing.text.length
-    writeDraft(slot, editing.text)
-    setCaret(editing.text.length)
+    const { quote, body } = quoteOf(editing.text)
+    caretTo.current = body.length
+    writeDraft(slot, body)
+    quoteInto(slot, quote)
+    setCaret(body.length)
     setRefusal(null)
     setConfirming(false)
     box.current?.focus()
@@ -281,6 +285,11 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
     box.current?.focus()
   }
 
+  const unquote = () => {
+    quoteInto(slot, null)
+    box.current?.focus()
+  }
+
   const edit = (next: string, at: number) => {
     writeDraft(slot, next)
     setCaret(at)
@@ -304,6 +313,7 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
 
   const cancelEdit = () => {
     writeDraft(slot, '')
+    quoteInto(slot, null)
     setConfirming(false)
     onCancelEdit?.()
     box.current?.focus()
@@ -319,7 +329,9 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
     setPending(true)
     setOutput(null)
     const sent = editing === null ? attachments.map(attachment => attachment.id) : []
-    const outcome = await onSend(text, sent).finally(() => {
+    const command = slashLineOf(text, catalog) !== null
+    const sentQuote = command ? null : quote
+    const outcome = await onSend(withQuote(sentQuote, text), sent).finally(() => {
       sending.current = false
       setPending(false)
     })
@@ -331,7 +343,7 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
     }
     setOutput(outcome.value)
     setAttachRefusals([])
-    draftSent(slot, text, new Set(sent))
+    draftSent(slot, text, new Set(sent), sentQuote)
   }
 
   const onMenuKey = (event: KeyboardEvent<HTMLTextAreaElement>, open: Extract<Menu, { open: true }>): boolean => {
@@ -412,10 +424,18 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
       )}
       {dragging && canAttach && <p className="drop-line" role="status">Drop to attach</p>}
       <div className="box">
+        {quote !== null && (
+          <div className="quote-chip" role="group" aria-label="Replying to">
+            <span title={quote.text}>{quote.text}</span>
+            <button type="button" className="unchip" aria-label="Remove quote" onClick={unquote}>
+              <svg aria-hidden="true" viewBox="0 0 10 10" width="10" height="10"><path d="M2 2l6 6M8 2 2 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+            </button>
+          </div>
+        )}
         <form id={FORM_ID} onSubmit={submit}>
           <textarea
             ref={box} autoFocus={autoFocus} rows={1} value={draft}
-            placeholder={group === undefined ? 'What’s next?' : 'Message the group, or type @ to ask specific bots'}
+            placeholder={group !== undefined ? 'Message the group, or type @ to ask specific bots' : quote === null ? 'What’s next?' : 'Reply…'}
             aria-label={group === undefined ? 'Message Hermes' : `Message ${group.name}`}
             aria-autocomplete="list" aria-controls={menu.open ? MENU_ID : undefined}
             aria-activedescendant={menu.open ? optionId(menu.active) : undefined} aria-describedby={hint === null ? undefined : HINT_ID}

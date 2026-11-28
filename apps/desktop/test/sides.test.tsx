@@ -1,6 +1,8 @@
-import type { SideId, SideTask, TurnId } from '@highwing/hermes/domain'
+import type { Quote, SideId, SideTask, TurnId } from '@highwing/hermes/domain'
+import { isValidElement, type ReactElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+import { MessageActions, type MessageActs } from '../src/renderer/chat/MessageActions'
 import { Sides, SideTurn } from '../src/renderer/chat/Sides'
 import { sortSides, type SideRow } from '../src/renderer/chat/sides'
 
@@ -10,6 +12,13 @@ const done = (text: string, after: string | null = 't1'): SideTask['state'] => (
 const RUNNING: SideTask['state'] = { s: 'running' }
 const LOST: SideTask['state'] = { s: 'lost' }
 const NONE: ReadonlySet<SideId> = new Set()
+
+function actsIn(node: ReactNode): MessageActs[] {
+  if (Array.isArray(node)) return node.flatMap(actsIn)
+  if (!isValidElement(node)) return []
+  const { type, props: held } = node as ReactElement<{ children?: ReactNode; acts?: MessageActs }>
+  return type === MessageActions && held.acts !== undefined ? [held.acts] : actsIn(held.children)
+}
 
 describe('sortSides', () => {
   it('puts an answered side question in the thread after its turn, and keeps a waiting or missed one and every background prompt as a card', () => {
@@ -79,7 +88,7 @@ describe('Sides', () => {
 describe('an answered side question, in the thread', () => {
   const row = (more: Partial<SideRow> = {}): SideRow =>
     ({ id: 'btw_1' as SideId, after: 't1' as TurnId, asked: 'what does this flag do?', answer: { s: 'answered', markdown: 'It turns on **dry-run** mode.' }, ...more })
-  const render = (more: Partial<SideRow> = {}) => renderToStaticMarkup(<SideTurn row={row(more)} />)
+  const render = (more: Partial<SideRow> = {}) => renderToStaticMarkup(<SideTurn row={row(more)} onReply={() => {}} />)
 
   it('is an article named by its label, with the question, the answer in Markdown with its Copy, and the quiet note', () => {
     const html = render()
@@ -91,8 +100,18 @@ describe('an answered side question, in the thread', () => {
     expect(html).toContain('Not saved with the chat. Later replies won&#x27;t see it.')
   })
 
-  it('has no close button: its only button copies the answer', () => {
-    expect([...render().matchAll(/<button[^>]*aria-label="([^"]+)"/g)].map(([, name]) => name)).toEqual(['Copy reply'])
+  it('has no close button: its buttons copy the answer and reply to it', () => {
+    expect([...render().matchAll(/<button[^>]*aria-label="([^"]+)"/g)].map(([, name]) => name)).toEqual(['Copy reply', 'Reply'])
+  })
+
+  it('quotes the answer as Hermes\'s when you reply to it', () => {
+    const quoted: Quote[] = []
+    const draw = (SideTurn as unknown as { type: (props: Parameters<typeof SideTurn>[0]) => ReactNode }).type
+    let rendered: ReactNode = null
+    const Probe = () => { rendered = draw({ row: row(), onReply: quote => quoted.push(quote) }); return null }
+    renderToStaticMarkup(<Probe />)
+    for (const acts of actsIn(rendered)) acts.reply?.run()
+    expect(quoted).toEqual([{ from: 'hermes', text: 'It turns on **dry-run** mode.' }])
   })
 
   it('shows a failure in the error color, with the question kept', () => {
