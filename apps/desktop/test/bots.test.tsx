@@ -1,9 +1,11 @@
-import { BOT_TONES, type BotActivities, type BotId, type Bots, type GroupId, type Groups, type Link, type MemberId, type OpenChat, type SessionId } from '@highwing/hermes/domain'
+import { BOT_TONES, botsIn, type BotActivities, type BotId, type Bots, type GroupId, type Groups, type Link, type MemberId, type OpenChat, type SessionId } from '@highwing/hermes/domain'
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { BotsPanel } from '../src/renderer/bots/Bots'
+import { botMenuOf } from '../src/renderer/bots/bot-menu'
 import type { LookCalls } from '../src/renderer/bots/LookPicker'
+import { RowMenu } from '../src/renderer/bots/RowMenu'
 import { APPROVED, fact, listed } from './support/bots'
 
 const AT_LAUNCH: OpenChat = { shown: { kind: 'bot', bot: 'default' as BotId, sessionId: 's1' as SessionId }, opening: null, missing: null }
@@ -205,6 +207,21 @@ describe('the bots sidebar', () => {
   it('has a paint for every tone a bot can carry', () => {
     const css = readFileSync('apps/desktop/src/renderer/styles/app.css', 'utf8')
     for (const tone of ['ink', ...BOT_TONES]) expect(css, tone).toMatch(new RegExp(`\\.tone-${tone} \\{ background: var\\(--`))
+  })
+})
+
+describe("a bot's menu on a Hermes that can't delete bots", () => {
+  it('draws Delete… as unavailable, with how to delete the bot as its title and its description', () => {
+    const bots = listed(fact('editor', 'Editor'))
+    const editor = bots.state === 'listed' ? botsIn(bots.roster).find(bot => bot.id === 'editor') : undefined
+    if (editor === undefined) throw new Error('expected Editor in the roster')
+    const markup = renderToStaticMarkup(
+      <RowMenu name="Editor" items={botMenuOf(editor, 'section')} more={{ to: 'more', bot: editor.id }} anchor={() => ({ at: 'point', x: 0, y: 0 })} onChoose={() => {}} onClose={() => {}} />
+    )
+    const del = /<button[^>]*title="([^"]*)"[^>]*aria-disabled="true"[^>]*aria-describedby="([^"]*)"[^>]*>.*?Delete…/.exec(markup)
+    const how = 'This Hermes can&#x27;t delete bots from Highwing. To delete Editor, run hermes profile delete editor on the Hermes machine.'
+    expect(del?.[1]).toBe(how)
+    expect(markup).toContain(`id="${del?.[2]}" aria-hidden="true">${how}</span>`)
   })
 })
 

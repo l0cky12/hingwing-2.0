@@ -1,4 +1,4 @@
-import type { Bot, BotId, BotMark, GroupId, Link } from '@highwing/hermes/domain'
+import { DELETES_BOTS, type Bot, type BotId, type BotMark, type GroupId, type Link } from '@highwing/hermes/domain'
 import { anchorAt, type Anchor, type Box, type Opener } from '../chrome/popup-menu'
 import { NEW_GROUP_BLOCKS } from './plus-menu'
 import type { BotPlace } from './sidebar-view'
@@ -38,9 +38,15 @@ export interface MenuItem<A extends MenuAction = MenuAction> {
   readonly block: string | null
 }
 
-/** Memory… sits beside Edit… only for the default bot. The call edits the home the socket was launched with, which is that bot. */
-export const botMenuOf = (place: BotPlace, featured = false): readonly (readonly MenuItem[])[] =>
-  MENUS[place].map(group => group.flatMap(action => (featured && action === 'edit' ? [action, 'memory' as const] : [action])).map(action => ({ action, label: LABELS[action], block: null })))
+/**
+ * Memory… sits beside Edit… only for the default bot. The call edits the home the socket was launched with, which is that bot.
+ * Delete… is blocked on the default bot, and on every bot while Hermes can't delete one (`deletes`).
+ */
+export const botMenuOf = (bot: Bot, place: BotPlace, featured = false, deletes = DELETES_BOTS): readonly (readonly MenuItem[])[] => {
+  const deleteBlock = featured || !deletes ? deleteRefusal(bot, featured) : null
+  return MENUS[place].map(group => group.flatMap(action => (featured && action === 'edit' ? [action, 'memory' as const] : [action]))
+    .map(action => ({ action, label: LABELS[action], block: action === 'delete' ? deleteBlock : null })))
+}
 
 export const groupMenuOf = (link: Link | undefined): readonly (readonly MenuItem<GroupAction>[])[] => {
   const block = link?.state === 'online' ? null : NEW_GROUP_BLOCKS.offline

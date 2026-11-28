@@ -830,12 +830,27 @@ in the same place.
   `profiles.configure` that is an unknown method, says "This Hermes can't
   change bots from Highwing." Error 4064, or a read that no longer lists the
   bot, says "Hermes no longer has this bot."
-- Hermes has no gateway method to delete a profile. `hermes profile delete`
-  runs only on the Hermes machine, and never deletes the default profile. So
-  Delete… in a bot's menu asks for confirmation, then says "This Hermes can't
-  delete bots from Highwing. To delete Editor, run hermes profile delete
-  editor on the Hermes machine." and changes nothing. On the default bot it
-  asks nothing and says "The default bot can't be deleted."
+- Hermes has no gateway method to delete a profile
+  (`tui_gateway/methods_profiles.py:271-451` registers `profiles.list`,
+  `create`, `describe`, `configure`, `set_asset` and `get_asset`), and no reply
+  it sends says whether it could. `hermes profile delete` runs only on the
+  Hermes machine, and never deletes the default profile. So Delete… in a bot's
+  menu is shown unavailable, and its title and screen-reader description say
+  "This Hermes can't delete bots from Highwing. To delete Editor, run hermes
+  profile delete editor on the Hermes machine." On the default bot they say
+  "The default bot can't be deleted." Choosing it does nothing and sends
+  nothing. `DELETES_BOTS` in `packages/hermes/src/domain/bots.ts` holds this,
+  false for every Hermes so far.
+- The missing call is `profiles.delete {name}`, beside `profiles.create` in
+  `tui_gateway/methods_profiles.py`. It would run
+  `delete_profile(name, yes=True)` (`hermes_cli/profiles.py:1700`) and, like
+  the dashboard's `DELETE /api/profiles/{name}`
+  (`hermes_cli/web_routers/profiles.py:906-924`), answer `ok` with
+  `settlement_pending` and the retry command when the profile's directory is
+  gone but its identity is not settled. Highwing does not run
+  `hermes profile delete` through `cli.exec` instead: the dialog would delete
+  by a name that a rename could hand to another bot while it is open, and
+  `cli.exec`'s 60 second limit can stop a delete halfway.
 - Once saved, Highwing shows the flag at once and reads the roster again. If
   that read fails, the flag stays shown until the next one.
 

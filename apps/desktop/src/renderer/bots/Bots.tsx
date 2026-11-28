@@ -388,8 +388,7 @@ export function BotsPanel({
     unpin: bot => mark(bot, 'unpin'),
     hide: bot => mark(bot, 'hide'),
     show: bot => mark(bot, 'show'),
-    // Hermes never deletes its default bot, so its Delete… refuses at once, with no dialog to confirm.
-    delete: bot => (bots?.state === 'listed' && bots.roster.featured?.id === bot.id ? setRefused(deleteRefusal(bot, true)) : setDeleting(bot))
+    delete: bot => setDeleting(bot)
   }
   const choose = (bot: Bot, action: MenuAction) => {
     setMenu(null)
@@ -441,7 +440,7 @@ export function BotsPanel({
     const row = rows.find(held => held.bot.id === owner.bot)
     return row && (
       <RowMenu
-        key={key} name={row.bot.name} items={botMenuOf(row.place, bots?.state === 'listed' && bots.roster.featured?.id === row.bot.id)} more={moreOf(owner)} anchor={() => anchorOf(opener, row.place, measure(owner))}
+        key={key} name={row.bot.name} items={botMenuOf(row.bot, row.place, bots?.state === 'listed' && bots.roster.featured?.id === row.bot.id)} more={moreOf(owner)} anchor={() => anchorOf(opener, row.place, measure(owner))}
         onChoose={action => choose(row.bot, action)} onClose={closeMenu}
       />
     )
@@ -570,6 +569,7 @@ export function BotsPanel({
           onCancel={() => closeDialog(() => setDeleting(null), { to: 'row', bot: deleting.id })}
           onConfirm={() => {
             closeDialog(() => setDeleting(null), { to: 'row', bot: deleting.id })
+            // The menu blocks Delete… while DELETES_BOTS is false, so this runs only once Hermes can delete a bot. Its call goes here.
             setRefused(deleteRefusal(deleting, false))
           }}
         />

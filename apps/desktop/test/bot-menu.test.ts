@@ -1,4 +1,4 @@
-import { rosterOf, type BotFacts, type BotId, type BotMark, type Bots, type GroupId } from '@highwing/hermes/domain'
+import { DELETES_BOTS, rosterOf, type BotFacts, type BotId, type BotMark, type Bots, type GroupId } from '@highwing/hermes/domain'
 import { describe, expect, it } from 'vitest'
 import { anchorOf, botMenuOf, DELETE_WORDS, deleteRefusal, groupMenuOf, MENUS, type MenuOwner, type OpenMenu } from '../src/renderer/bots/bot-menu'
 import { EDGE, GAP, isMenuKey, keyMove, placeMenu, type Box } from '../src/renderer/chrome/popup-menu'
@@ -9,8 +9,14 @@ import { sidebarOf, type BotPlace } from '../src/renderer/bots/sidebar-view'
 import { fact, listed } from './support/bots'
 
 const id = (name: string) => name as BotId
-const words = (place: BotPlace, featured = false) => botMenuOf(place, featured).map(group => group.map(item => item.label))
-const actions = (place: BotPlace, featured = false) => botMenuOf(place, featured).flat().map(item => item.action)
+const roster = listed(fact('default', 'Hermes', { isDefault: true, hidden: true }), fact('editor', 'Editor'))
+if (roster.state !== 'listed' || roster.roster.featured === null) throw new Error('expected a listed roster with a default bot')
+const hermes = roster.roster.featured
+const editor = roster.roster.sections.flatMap(section => section.bots).find(bot => bot.id === 'editor')!
+const words = (place: BotPlace, featured = false) => botMenuOf(featured ? hermes : editor, place, featured).map(group => group.map(item => item.label))
+const actions = (place: BotPlace, featured = false) => botMenuOf(featured ? hermes : editor, place, featured).flat().map(item => item.action)
+const blocks = (place: BotPlace, featured: boolean, deletes?: boolean) =>
+  botMenuOf(featured ? hermes : editor, place, featured, deletes).flat().flatMap(item => (item.block === null ? [] : [[item.action, item.block]]))
 
 describe("a bot's menu", () => {
   it('offers a normal row Open chat and New chat, Edit…, then Pin to top and Hide from list', () => {
@@ -31,11 +37,8 @@ describe("a bot's menu", () => {
   })
 
   it('says how to delete a bot on the Hermes machine, and that Hermes keeps its default bot', () => {
-    const bots = listed(fact('default', 'Hermes', { isDefault: true, hidden: true }), fact('editor', 'Editor'))
-    if (bots.state !== 'listed' || bots.roster.featured === null) throw new Error('expected a listed roster with a default bot')
-    const editor = bots.roster.sections.flatMap(section => section.bots).find(bot => bot.id === 'editor')!
     expect(deleteRefusal(editor, false)).toBe("This Hermes can't delete bots from Highwing. To delete Editor, run hermes profile delete editor on the Hermes machine.")
-    expect(deleteRefusal(bots.roster.featured, true)).toBe("The default bot can't be deleted.")
+    expect(deleteRefusal(hermes, true)).toBe("The default bot can't be deleted.")
   })
 
   it('keeps Edit… third in every menu, and Memory… only on the default bot', () => {
@@ -54,8 +57,17 @@ describe("a bot's menu", () => {
     expect(isMenuKey({ key: 'Enter', shiftKey: true })).toBe(false)
   })
 
-  it('can use every item at once', () => {
-    for (const place of ['card', 'pinned', 'section', 'hidden'] as const) expect(botMenuOf(place).flat().every(item => item.block === null), place).toBe(true)
+  it('blocks only Delete… on a Hermes that cannot delete bots, saying how to delete one on the Hermes machine', () => {
+    expect(DELETES_BOTS).toBe(false)
+    const how = deleteRefusal(editor, false)
+    for (const place of ['pinned', 'section', 'hidden'] as const) expect(blocks(place, false), place).toEqual([['delete', how]])
+    expect(blocks('card', false)).toEqual([])
+  })
+
+  it('can use every item of a normal bot on a Hermes that deletes bots, and still blocks Delete… on the default bot', () => {
+    for (const place of ['card', 'pinned', 'section', 'hidden'] as const) expect(blocks(place, false, true), place).toEqual([])
+    expect(blocks('hidden', true, true)).toEqual([['delete', "The default bot can't be deleted."]])
+    expect(blocks('hidden', true, false)).toEqual([['delete', "The default bot can't be deleted."]])
   })
 })
 
