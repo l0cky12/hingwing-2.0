@@ -1,5 +1,6 @@
 import { shownChat, type Shown, type ShownGroup, type Target } from '@highwing/hermes/domain'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { appearanceStyle, type Appearance } from '../appearance'
 import { introInFront } from '../intro'
 import { isSettingsChord, isShortcut } from './keys'
 import { epochOf, type Accent, type Mode, type SidebarWidth, type Theme } from '../ipc-contract'
@@ -8,6 +9,7 @@ import { BotsSidebar } from './bots/Bots'
 import { useRetryPicturesOnceOnline } from './bots/pictures'
 import { ChatsSidebar, DraftSweep } from './chats/Chats'
 import { Chat } from './chat/Chat'
+import { TypesetMath } from './chat/text'
 import { GroupPane } from './groups/GroupPane'
 import { accentTone, toneOfBot } from './chrome/accent'
 import { Banner, TopBar } from './chrome/Chrome'
@@ -200,6 +202,14 @@ function ChatWindow({ hidden, settings, target, mode, theme, accent, width, onSe
   )
 }
 
+function useAppearance(appearance: Appearance | undefined) {
+  useLayoutEffect(() => {
+    if (appearance === undefined) return
+    const { style } = document.documentElement
+    for (const [property, value] of Object.entries(appearanceStyle(appearance))) style.setProperty(property, value)
+  }, [appearance])
+}
+
 export function App() {
   const setup = useTopic('setup')
   const mode = useTopic('mode')
@@ -207,14 +217,16 @@ export function App() {
   const accent = useTopic('accent')
   const width = useTopic('sidebarWidth')
   const intro = useTopic('intro')
+  const appearance = useTopic('appearance')
+  useAppearance(appearance)
   const [palette, setPalette] = useState<Opened | null>(null)
   const search = useCallback(() => setPalette(held => held ?? paletteFrom(document.activeElement)), [])
-  if (setup === undefined || mode === undefined || theme === undefined || accent === undefined || width === undefined || intro === undefined) return null
+  if (setup === undefined || mode === undefined || theme === undefined || accent === undefined || width === undefined || intro === undefined || appearance === undefined) return null
   const screen = screenOf(setup)
   const live = setup.at === 'pinned' ? null : setup.live
   const cover = introInFront(setup, intro)
   return (
-    <>
+    <TypesetMath value={appearance.math}>
       {(setup.at === 'pinned' || live !== null) && (
         <Epoch value={epochOf(setup)}>
           <ChatWindow key={epochOf(setup)} hidden={screen.show === 'saved' || cover} settings={screen.show === 'settings' ? screen.setup : null} target={live?.target ?? null} mode={mode} theme={theme} accent={accent} width={width} onSearch={search} />
@@ -225,6 +237,6 @@ export function App() {
       {screen.show === 'first-run' && <FirstRun setup={screen.setup} />}
       {cover && live !== null && <Intro target={live.target} />}
       {screen.show === 'saved' && !cover && <Saved target={screen.live.target} />}
-    </>
+    </TypesetMath>
   )
 }

@@ -1,14 +1,15 @@
+import { FONT_ROLES, ROLE_ORDER, WRAP_LABELS, type FontRole } from '../../appearance'
 import { SHORTCUTS, type Shortcut, type ShortcutId } from '../shortcuts'
 
 export type Page = 'connection' | 'models' | 'appearance' | 'composer' | 'window' | 'notifications' | 'passwords' | 'skills' | 'permissions' | 'keys' | 'usage' | 'about'
 export type RowId =
-  | 'connection' | 'models' | 'theme' | 'accent' | 'show-work' | 'sidebar' | 'send-key' | 'spell-check' | 'on-close' | 'notice-asks' | 'notice-replies' | 'notice-jobs' | 'passwords' | 'skills' | 'permissions' | 'denied'
+  | 'connection' | 'models' | 'theme' | 'accent' | 'show-work' | 'sidebar' | `font-${FontRole}` | 'chat-width' | 'contrast' | 'math' | 'motion' | 'send-key' | 'spell-check' | 'on-close' | 'notice-asks' | 'notice-replies' | 'notice-jobs' | 'passwords' | 'skills' | 'permissions' | 'denied'
   | 'shortcuts' | `key:${ShortcutId}` | 'usage' | 'about-app' | 'about-hermes'
 
 export const PAGES: readonly { readonly id: Page; readonly label: string; readonly lede: string }[] = [
   { id: 'connection', label: 'Connection', lede: 'The Hermes this app talks to, and how it reaches it.' },
   { id: 'models', label: 'Models', lede: 'The model each bot starts new chats on, and the one Hermes switches to when that one fails.' },
-  { id: 'appearance', label: 'Appearance', lede: 'How Highwing looks and what its sidebar shows.' },
+  { id: 'appearance', label: 'Appearance', lede: 'How Highwing looks, how its text reads, and what its sidebar shows.' },
   { id: 'composer', label: 'Composer', lede: 'How the message box sends and checks what you write.' },
   { id: 'window', label: 'Window', lede: 'What closing Highwing’s window does.' },
   { id: 'notifications', label: 'Notifications', lede: 'Which desktop notifications Highwing shows.' },
@@ -35,6 +36,16 @@ interface Row {
   readonly keys?: readonly string[]
 }
 
+const fontRows: readonly Row[] = ROLE_ORDER.map(role => {
+  const { label, desc, face, stack, wrap } = FONT_ROLES[role]
+  const words = [
+    `${label}. ${desc} Default, ${face}. Size. font typeface face family size text bigger smaller larger`,
+    ...(stack.endsWith('monospace') ? ['monospace mono'] : []),
+    ...(wrap === null ? [] : [`${WRAP_LABELS[wrap]}. wrap scroll overflow`])
+  ]
+  return { id: `font-${role}` as const, page: 'appearance' as const, searchText: words.join(' ') }
+})
+
 const shortcutRows: readonly Row[] = SHORTCUTS.map(shortcut => ({
   id: `key:${shortcut.id}` as const,
   page: 'keys' as const,
@@ -52,6 +63,11 @@ export const ROWS: readonly Row[] = [
   { id: 'accent', page: 'appearance', searchText: 'Accent. Bot, Ink, Slate, Plum, Olive, Mauve, Umber. Bot uses the color of the open chat’s bot. colour color tint header send button' },
   { id: 'show-work', page: 'appearance', searchText: 'Show the bot’s work. Replies only, Actions, Everything. Replies only hides thinking and tool calls, and shows the bot hopping while it works. thinking reasoning thought tool call steps activity pet animation hide collapse verbose' },
   { id: 'sidebar', page: 'appearance', searchText: 'Show in the sidebar. Bots, Chats. Bots shows your bots. Chats shows the chats of the open bot.' },
+  ...fontRows,
+  { id: 'chat-width', page: 'appearance', searchText: 'Chat width. Narrow, Comfortable, Wide, Full width. How wide messages and the composer can grow in a wide window. width column measure line length' },
+  { id: 'contrast', page: 'appearance', searchText: 'Contrast. Make secondary text and dividing lines stronger or softer. readable accessibility' },
+  { id: 'math', page: 'appearance', searchText: 'Render math. Typeset formulas such as $x^2$ in replies. When off, replies show the formula as written. math latex tex katex formula equation' },
+  { id: 'motion', page: 'appearance', searchText: 'Animations. How long menus fade and markers pulse. 0 turns animations off. animation motion speed transition reduce' },
   { id: 'send-key', page: 'composer', searchText: `Send with Ctrl+Enter. Enter adds a new line. When off, Enter sends and Shift+Enter adds a line. send key message newline line break ${CTRL}` },
   { id: 'spell-check', page: 'composer', searchText: 'Check spelling. Underline misspelled words and suggest fixes. spell check spellcheck spelling dictionary typo' },
   { id: 'on-close', page: 'window', searchText: 'When the window closes. Quit, Keep in the tray. Quit leaves Highwing. Keep in the tray leaves it running. close exit background' },

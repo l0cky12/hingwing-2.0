@@ -6,6 +6,7 @@ import {
   type SendKey, type ShowWork, type SidebarWidth, type Snoozes, type Tail, type Theme, type Topic
 } from '../ipc-contract'
 import { basename } from 'node:path'
+import type { Appearance } from '../appearance'
 import type { AttachmentStore, AttachSources, StageSource } from './attachments'
 import type { ConnectionOwner } from './connection'
 import type { IntroOwner } from './intro'
@@ -49,7 +50,7 @@ const NEVER: Source = () => () => {}
 /** The pane's side of a window: its topic, its commands, and the files a window previews. */
 export type PreviewOwner = Pick<PreviewPane, 'preview' | 'show' | 'run'>
 type Shown<T> = Pick<PreferenceStore<T>, 'get' | 'subscribe' | 'set'>
-export interface Preferences { readonly mode: Shown<Mode>; readonly theme: Shown<Theme>; readonly accent: Shown<Accent>; readonly sidebarWidth: Shown<SidebarWidth>; readonly sendKey: Shown<SendKey>; readonly showWork: Shown<ShowWork>; readonly spellCheck: Shown<boolean>; readonly snoozes: Shown<Snoozes>; readonly notices: Shown<Notices>; readonly onClose: Shown<OnClose> }
+export interface Preferences { readonly mode: Shown<Mode>; readonly theme: Shown<Theme>; readonly accent: Shown<Accent>; readonly sidebarWidth: Shown<SidebarWidth>; readonly sendKey: Shown<SendKey>; readonly showWork: Shown<ShowWork>; readonly spellCheck: Shown<boolean>; readonly snoozes: Shown<Snoozes>; readonly notices: Shown<Notices>; readonly onClose: Shown<OnClose>; readonly appearance: Shown<Appearance> }
 interface Owners { readonly owner: ConnectionOwner; readonly pane: PreviewOwner; readonly preferences: Preferences; readonly intro: Pick<IntroOwner, 'intro'> }
 
 /** A Hermes topic is bound to the connection that is live when the window asks. A window that sees a new epoch asks again. */
@@ -70,6 +71,7 @@ const SOURCES: { readonly [K in Kind]: (owners: Owners, topic: Topic) => Source 
   snoozes: ({ preferences }) => current(preferences.snoozes),
   notices: ({ preferences }) => current(preferences.notices),
   onClose: ({ preferences }) => current(preferences.onClose),
+  appearance: ({ preferences }) => current(preferences.appearance),
   intro: ({ intro }) => current(intro.intro),
   link: onHermes(hermes => current(hermes.link)),
   about: onHermes(hermes => current(hermes.about)),
@@ -249,6 +251,10 @@ export function serveWindows(
     }
     if (command.do === 'setSpellCheck') {
       preferences.spellCheck.set(command.spellCheck)
+      return DONE
+    }
+    if (command.do === 'setAppearance') {
+      preferences.appearance.set(command.appearance)
       return DONE
     }
     if (command.do === 'snooze') {

@@ -8,7 +8,7 @@ describe('settingsViewOf with no search', () => {
   it.each([
     ['connection', 'Connection', 'The Hermes this app talks to, and how it reaches it.', ['connection']],
     ['models', 'Models', 'The model each bot starts new chats on, and the one Hermes switches to when that one fails.', ['models']],
-    ['appearance', 'Appearance', 'How Highwing looks and what its sidebar shows.', ['theme', 'accent', 'show-work', 'sidebar']],
+    ['appearance', 'Appearance', 'How Highwing looks, how its text reads, and what its sidebar shows.', ['theme', 'accent', 'show-work', 'sidebar', 'font-interface', 'font-prompt', 'font-code', 'font-terminal', 'chat-width', 'contrast', 'math', 'motion']],
     ['composer', 'Composer', 'How the message box sends and checks what you write.', ['send-key', 'spell-check']],
     ['window', 'Window', 'What closing Highwing’s window does.', ['on-close']],
     ['notifications', 'Notifications', 'Which desktop notifications Highwing shows.', ['notice-asks', 'notice-replies', 'notice-jobs']],
@@ -83,7 +83,7 @@ describe('settingsViewOf with a search', () => {
     ['Ctrl+', ['send-key', ...KEYED]],
     ['ctrl +', ['send-key', ...KEYED]],
     ['cmd', ['send-key', 'shortcuts', ...KEYED]],
-    ['command', ['send-key', 'permissions', 'denied', 'shortcuts', ...KEYED]],
+    ['command', ['font-terminal', 'send-key', 'permissions', 'denied', 'shortcuts', ...KEYED]],
     ['control', ['send-key', 'shortcuts', ...KEYED]],
     ['Ctrl+,', ['key:settings']],
     ['ctrl /', ['key:sheet']],
@@ -112,7 +112,19 @@ describe('settingsViewOf with a search', () => {
     ['yolo', ['permissions', 'denied']],
     ['skill.md', ['skills']],
     ['show all', ['show-work', 'shortcuts']],
-    ['version', ['about-app', 'about-hermes']]
+    ['version', ['about-app', 'about-hermes']],
+    ['font', ['font-interface', 'font-prompt', 'font-code', 'font-terminal']],
+    ['typeface', ['font-interface', 'font-prompt', 'font-code', 'font-terminal']],
+    ['monospace code', ['font-code']],
+    ['terminal size', ['font-terminal']],
+    ['wrap long', ['font-code', 'font-terminal']],
+    ['width', ['chat-width']],
+    ['wide', ['chat-width']],
+    ['contrast', ['contrast']],
+    ['math', ['math']],
+    ['latex', ['math']],
+    ['animation', ['show-work', 'motion']],
+    ['motion', ['motion']]
   ] as const)('finds %j by each of its words, wherever they sit in a row', (query, rows) => {
     expect([...settingsViewOf('appearance', query, 'idle').rows]).toEqual(rows)
   })

@@ -16,11 +16,23 @@ const DIAGRAM_CONFIGS = [
 ] as const satisfies readonly (keyof MermaidConfig)[]
 
 const token = (style: CSSStyleDeclaration, name: string) => style.getPropertyValue(name).trim()
+/**
+ * Mermaid parses plain colors only, and a Contrast other than 100 draws the quiet colors as a mix. A canvas reads a mix back as
+ * `color(srgb …)`, so the mix is painted and its pixel read.
+ */
+function plain(color: string): string {
+  const canvas = color.startsWith('color-mix(') ? document.createElement('canvas') : null
+  const paint = canvas?.getContext('2d', { willReadFrequently: true }) ?? null
+  if (paint === null) return color
+  paint.fillStyle = color
+  paint.fillRect(0, 0, 1, 1)
+  return `#${[...paint.getImageData(0, 0, 1, 1).data.slice(0, 3)].map(channel => channel.toString(16).padStart(2, '0')).join('')}`
+}
 
 export type Palette = 'light' | 'dark'
 const darkQuery = () => matchMedia('(prefers-color-scheme: dark)')
-export const paletteNow = (): Palette => (darkQuery().matches ? 'dark' : 'light')
-export const watchPalette = (listener: () => void) => {
+const paletteNow = (): Palette => (darkQuery().matches ? 'dark' : 'light')
+const watchPalette = (listener: () => void) => {
   const query = darkQuery()
   query.addEventListener('change', listener)
   return () => query.removeEventListener('change', listener)
@@ -46,7 +58,7 @@ function configFromPage(): MermaidConfig {
       primaryTextColor: token(style, '--ink'),
       secondaryColor: token(style, '--caution-soft'),
       tertiaryColor: token(style, '--paper'),
-      lineColor: token(style, '--graphite'),
+      lineColor: plain(token(style, '--graphite')),
       edgeLabelBackground: token(style, '--sheet'),
       textColor: token(style, '--ink'),
       fontFamily: token(style, '--sans')
@@ -64,7 +76,7 @@ const FAILED: Drawing = { status: 'failed' }
 interface Drawer {
   readonly mermaid: Mermaid
   readonly sanitize: (svg: string) => SanitizedSvg
-  configured: Palette | null
+  configured: string | null
 }
 
 let drawer: Promise<Drawer> | undefined
@@ -79,11 +91,26 @@ function loadDrawer(): Promise<Drawer> {
 }
 
 const drawn = new Map<string, Drawing>()
-const keyOf = (source: string, palette: Palette) => `${palette}\n${source}`
+/** Beside the palette, the config reads the interface face and the line color, which Settings → Appearance sets on the root's style. */
+export const lookOf = (palette: Palette) => {
+  const style = getComputedStyle(document.documentElement)
+  return `${palette}\n${token(style, '--sans')}\n${token(style, '--graphite')}`
+}
+export const lookNow = () => lookOf(paletteNow())
+export const watchLook = (listener: () => void) => {
+  const stopPalette = watchPalette(listener)
+  const observer = new MutationObserver(listener)
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] })
+  return () => {
+    stopPalette()
+    observer.disconnect()
+  }
+}
+const keyOf = (source: string, look: string) => `${look}\n${source}`
 let renders = 0
 
-export function drawnBefore(source: string, palette: Palette): Drawing {
-  return drawn.get(keyOf(source, palette)) ?? DRAWING
+export function drawnBefore(source: string, look: string): Drawing {
+  return drawn.get(keyOf(source, look)) ?? DRAWING
 }
 
 let turn: Promise<unknown> = Promise.resolve()
@@ -96,24 +123,24 @@ function inTurn<T>(work: () => Promise<T>): Promise<T> {
 }
 
 export async function drawDiagram(source: string): Promise<Drawing> {
-  const known = drawn.get(keyOf(source, paletteNow()))
+  const known = drawn.get(keyOf(source, lookNow()))
   if (known !== undefined) return known
-  const { palette, drawing } = source.length > MAX_DIAGRAM_CHARS
-    ? { palette: paletteNow(), drawing: FAILED }
+  const { look, drawing } = source.length > MAX_DIAGRAM_CHARS
+    ? { look: lookNow(), drawing: FAILED }
     : await inTurn(async () => {
       try {
         const loaded = await loadDrawer()
-        const palette = paletteNow()
-        if (loaded.configured !== palette) {
+        const look = lookNow()
+        if (loaded.configured !== look) {
           loaded.mermaid.initialize(configFromPage())
-          loaded.configured = palette
+          loaded.configured = look
         }
-        return { palette, drawing: { status: 'drawn', svg: loaded.sanitize((await loaded.mermaid.render(`diagram-${++renders}`, source)).svg) } satisfies Drawing }
+        return { look, drawing: { status: 'drawn', svg: loaded.sanitize((await loaded.mermaid.render(`diagram-${++renders}`, source)).svg) } satisfies Drawing }
       } catch {
-        return { palette: paletteNow(), drawing: FAILED }
+        return { look: lookNow(), drawing: FAILED }
       }
     })
   if (drawn.size >= CACHE_LIMIT) drawn.delete(drawn.keys().next().value!)
-  drawn.set(keyOf(source, palette), drawing)
+  drawn.set(keyOf(source, look), drawing)
   return drawing
 }

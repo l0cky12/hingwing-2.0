@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { fieldId, leafText, parseMarkdown, proseLeaves, type Block } from '@highwing/thread'
 import { diagramFor } from '../src/renderer/chat/diagrams'
 import { grammarFor, loadGrammar } from '../src/renderer/chat/highlight'
-import { Markdown } from '../src/renderer/chat/text'
+import { Markdown, TypesetMath } from '../src/renderer/chat/text'
 
 function finalReply(path: string): string {
   const rows = loadFixture(path).steps.flatMap(step => ('stored' in step ? step.stored : []))
@@ -127,6 +127,14 @@ describe('Markdown', () => {
     let markup = ''
     expect(() => { markup = render('so $\\frac{a$ holds') }).not.toThrow()
     expect(markup).toContain('<code class="math" role="math" aria-label="\\frac{a" data-find-text="\\frac{a">\\frac{a</code>')
+  })
+
+  it('shows each formula as its TeX between its delimiters when math is not typeset, and gives find the same text', () => {
+    const source = 'so $\\frac{a}{b}$ holds\n\n$$\n\\sqrt{x}\n$$'
+    const markup = renderToStaticMarkup(<TypesetMath value={false}><Markdown source={source} caret={false} nodeKey="t1/0" /></TypesetMath>)
+    expect(markup).not.toContain('katex')
+    expect(textOf(markup)).toBe('so $\\frac{a}{b}$ holds$$\\sqrt{x}$$')
+    expect(markedText(markup)).toEqual(proseLeaves(parseMarkdown(source)).map((leaf, index) => [fieldId('t1/0', `block ${index}`), leafText(leaf)]))
   })
 
   it('typesets a display formula whose TeX an earlier inline formula repeats with a leading $', () => {

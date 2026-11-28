@@ -1,6 +1,7 @@
 import type { Feed } from '@highwing/hermes'
 import { open, readFile, rename } from 'node:fs/promises'
 import { join } from 'node:path'
+import { DEFAULT_APPEARANCE, isAppearance, type Appearance } from '../appearance'
 import { isAccent, isMode, isNotices, isOnClose, isSendKey, isShowWork, isSidebarWidth, isSnoozes, isTheme, type Accent, type Mode, type Notices, type OnClose, type SendKey, type ShowWork, type SidebarWidth, type SnoozeCommand, type Snoozes, type Theme } from '../ipc-contract'
 import { feed } from './connection'
 
@@ -20,6 +21,7 @@ export const SEND_KEY: Preference<SendKey> = { file: 'send-key.json', key: 'send
 export const SHOW_WORK: Preference<ShowWork> = { file: 'show-work.json', key: 'showWork', is: isShowWork, fallback: 'all' }
 export const SPELL_CHECK: Preference<boolean> = { file: 'spell-check.json', key: 'spellCheck', is: (raw): raw is boolean => typeof raw === 'boolean', fallback: true }
 export const SNOOZES: Preference<Snoozes> = { file: 'snoozes.json', key: 'snoozes', is: isSnoozes, fallback: {} }
+export const APPEARANCE: Preference<Appearance> = { file: 'appearance.json', key: 'appearance', is: isAppearance, fallback: DEFAULT_APPEARANCE }
 export const NOTICES: Preference<Notices> = { file: 'notices.json', key: 'notices', is: isNotices, fallback: { asks: true, replies: true, jobs: true } }
 
 /** The snoozes after one snooze or wake. A snooze whose time has passed is dropped, so the file never grows with chats long awake. */

@@ -70,6 +70,12 @@ const ROOTS = rulesNestedOnlyInAtRules(CSS).filter(rule => rule.selector === ':r
 const paletteOf = (scheme: Scheme): ReadonlyMap<string, string> =>
   new Map(ROOTS.filter(rule => applies(rule.media, scheme)).flatMap(rule => [...rule.declarations]))
 
+const colorIn = (palette: ReadonlyMap<string, string>, name: string): string => {
+  const value = palette.get(`--${name}`) ?? ''
+  const derived = /^var\(--([\w-]+)\)$/.exec(value)
+  return derived === null ? value : colorIn(palette, derived[1]!)
+}
+
 const isColor = (value: string) => !value.includes('var(') && /^(#[0-9a-f]{3,8}|(rgb|hsl|oklch|oklab|lab|lch)a?\(.*\)|\d+ \d+ \d+)$/i.test(value)
 
 const channels = (hex: string) => {
@@ -111,7 +117,7 @@ describe('the palettes in app.css', () => {
 
   it.each(SCHEMES)('keeps text at 4.5:1 and edges at 3:1 in %s', (_name, scheme) => {
     const palette = paletteOf(scheme)
-    const colorOf = (name: string) => palette.get(`--${name}`) ?? ''
+    const colorOf = (name: string) => colorIn(palette, name)
     const rules = scheme.more ? ['rail', 'paper', 'sheet'].map(surface => ['rule', surface, 3] as const) : []
     const short = [...PAIRS, ...EDGES, ...rules].flatMap(([fore, back, least]) => {
       const ratio = contrast(colorOf(fore), colorOf(back))
@@ -178,7 +184,7 @@ describe('the accent in app.css', () => {
 
   it.each(SCHEMES)('keeps the send label and the header text readable on every accent in %s', (_name, scheme) => {
     const palette = paletteOf(scheme)
-    const colorOf = (name: string) => palette.get(`--${name}`) ?? ''
+    const colorOf = (name: string) => colorIn(palette, name)
     const short = TONES.flatMap(tone => {
       const accent = colorOf(tokenOf(tone))
       const band = mixed(accent, colorOf('sheet'))
