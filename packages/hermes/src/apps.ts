@@ -46,11 +46,16 @@ export const connectApp = (conn: Wire, slug: string, bot: BotId | null, connecti
     }))
   }))
 
+/** Hermes forgets a sign-in once it settles (tools/connectors/live.py `get_by_op_id`), so an operation it no longer knows has ended. */
 export const appSignIn = (conn: Wire, opId: string, bot: BotId | null): Promise<Outcome<AppSignIn>> =>
-  guarded(async () => ({
-    ok: true,
-    value: parseSignIn(await conn.call('connectors.operation.status', { ...profileOf(bot), owner: OWNER, op_id: opId }))
-  }))
+  guarded(async () => {
+    try {
+      return { ok: true, value: parseSignIn(await conn.call('connectors.operation.status', { ...profileOf(bot), owner: OWNER, op_id: opId })) }
+    } catch (error) {
+      if (error instanceof RpcRefusal && error.reason === 'UNKNOWN_OPERATION') return { ok: true, value: { opId, settled: true, url: null, standing: null } }
+      throw error
+    }
+  })
 
 export const removeApp = (conn: Wire, connectionId: string, bot: BotId | null): Promise<Outcome<void>> =>
   guarded(async () => {

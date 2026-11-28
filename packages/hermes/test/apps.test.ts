@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { appSignIn } from '../src/apps'
 import { betterAccount, standingOf, standingOfTarget } from '../src/domain/apps'
+import { RpcRefusal } from '../src/wire/link'
 import { parseApps, parseSignIn } from '../src/wire/parse'
 
 describe('standing', () => {
@@ -77,5 +79,17 @@ describe('parseApps', () => {
       targets: [{ state: 'connected', connect_url: 'javascript:alert(1)' }]
     })).toEqual({ opId: 'op-1', settled: true, url: null, standing: 'connected' })
     expect(parseSignIn(null)).toEqual({ opId: '', settled: false, url: null, standing: null })
+  })
+})
+
+describe('appSignIn', () => {
+  const refusing = (reason: string) => ({ call: () => Promise.reject(new RpcRefusal(4004, reason, 'No open operation with that op_id.')) })
+
+  it('reads a sign-in Hermes no longer holds as settled', async () => {
+    expect(await appSignIn(refusing('UNKNOWN_OPERATION'), 'op-1', null)).toEqual({ ok: true, value: { opId: 'op-1', settled: true, url: null, standing: null } })
+  })
+
+  it('still refuses for any other reason', async () => {
+    expect(await appSignIn(refusing('CONNECTOR_REQUEST_FAILED'), 'op-1', null)).toMatchObject({ ok: false })
   })
 })
