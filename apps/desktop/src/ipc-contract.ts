@@ -641,6 +641,21 @@ export const validators: Validators = {
     const bot = raw.bot === null ? null : botIdOf(raw.bot)
     return raw.bot !== null && bot === null ? null : { do: 'denyRules', bot }
   },
+  botModelSettings: raw => {
+    const bot = botIdOf(raw.bot)
+    return bot && { do: 'botModelSettings', bot }
+  },
+  setBotModel: raw => {
+    const bot = botIdOf(raw.bot)
+    const model = modelOptionOf(raw.model)
+    if (!bot || !model || !(raw.confirm === undefined || raw.confirm === true)) return null
+    return { do: 'setBotModel', bot, model, ...(raw.confirm === true ? { confirm: true } : {}) }
+  },
+  setBotBackup: raw => {
+    const bot = botIdOf(raw.bot)
+    const model = raw.model === null ? null : modelOptionOf(raw.model)
+    return bot && (raw.model === null || model !== null) ? { do: 'setBotBackup', bot, model } : null
+  },
   describeBot: raw => {
     const bot = botIdOf(raw.bot)
     return bot && { do: 'describeBot', bot }

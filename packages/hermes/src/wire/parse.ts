@@ -30,7 +30,7 @@ import type { Said, TreeRow } from '../domain/versions'
 import type {
   AgentPrintPayload, CanonicalBotDeliverResult, CanonicalConfigGetResult, CanonicalCorrectionResult, CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission,
   CanonicalPendingPrompt, CanonicalProfilesResult, CanonicalReplayEvent, CanonicalSessionListRow, CanonicalSnapshot, ClarifyQuestion, ClarifyRequestParams,
-  CommandDispatchResult, CommandsCatalogResult, CronJobRow, CronManageResult, LearningDetailResult, GroupsCapabilitiesResult, GroupsChangedPayload, GroupsCreateResult, GroupsListResult, GroupsLogResult, GroupsStateResult, Room, RoomEvent, RoomMember, RoomMemberActivity, CompletionItem, CompletionItemsResult, ConnectionDisplay, ConnectionOperationTarget, ConnectionRequestPayload,
+  CliExecResult, CommandDispatchResult, CommandsCatalogResult, CronJobRow, CronManageResult, LearningDetailResult, GroupsCapabilitiesResult, GroupsChangedPayload, GroupsCreateResult, GroupsListResult, GroupsLogResult, GroupsStateResult, Room, RoomEvent, RoomMember, RoomMemberActivity, CompletionItem, CompletionItemsResult, ConnectionDisplay, ConnectionOperationTarget, ConnectionRequestPayload,
   ConnectionTargetEnvField, ConnectionUpdatePayload, ContextCategory, DisplayLease, DisplayLeasePayload, DisplayLeaseResult, DisplayObserveResult, DisplayStatus, DisplayThumbnailResult, ErrorPayload, ErrorSurface, GoalSnapshot, HeartbeatSnapshot, ImageGenerateResult, LoopSnapshot,
   McpRuntimeStatus, McpServersListResult, McpServersStatusResult, McpServersTestResult, MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload, MessageReaction, MessageStartPayload, MoaAggregatingPayload, MoaPhasePayload,
   MoaProgressPayload, MoaReferencePayload, ModelOptionProvider, ModelOptionsResult, NotificationClearPayload, NotificationShowPayload, PersistedTurn, PetGalleryResult, PetThumbResult,
@@ -1336,6 +1336,60 @@ export function parseConfigured(reply: ProfilesConfigureResult, sent: readonly s
   if (isObject(applied.ui_meta_conflicts) && Object.keys(applied.ui_meta_conflicts).length > 0) return { is: 'clash' }
   const sections = sent.filter(section => applied[section] !== true)
   return sections.length === 0 ? { is: 'saved' } : { is: 'unsaved', sections }
+}
+
+/** Hermes's words asking for a second yes before it pins a costly model, or null when it saved or refused. Nothing is written while it asks (tui_gateway/methods_profiles.py:582-604). */
+export const parseConfirmAsked = (reply: ProfilesConfigureResult): string | null =>
+  (isObject(reply) && reply.confirm_required === true ? (isString(reply.confirm_message) && reply.confirm_message.trim() !== '' ? reply.confirm_message : CONFIRM_ASKED) : null)
+
+const firstLine = (output: string): string => stripAnsi(output).split('\n').map(line => line.trim()).find(line => line !== '') ?? ''
+
+const UNREAD_RUN = "Hermes couldn't run that command."
+
+/** The words of a `hermes` command `cli.exec` ran (tui_gateway/methods_tools.py:447-466), or null when it exited 0. A blocked command says why in `hint`. */
+export function parseCliFailure(reply: CliExecResult): string | null {
+  if (!isObject(reply)) return UNREAD_RUN
+  const output = isString(reply.output) ? reply.output : ''
+  if (reply.blocked === true) return (isString(reply.hint) ? reply.hint.trim() : '') || firstLine(output) || UNREAD_RUN
+  return reply.code === 0 ? null : firstLine(output) || UNREAD_RUN
+}
+
+/** `hermes config get <key> --json`: the value it printed, `absent` for a key the config doesn't hold (hermes_cli/config.py:3297-3298), or why it failed. */
+export type ConfigValue = { readonly is: 'value'; readonly value: unknown } | { readonly is: 'absent' } | { readonly is: 'failed'; readonly words: string }
+
+export function parseConfigValue(reply: CliExecResult): ConfigValue {
+  const failure = parseCliFailure(reply)
+  if (failure !== null) return isObject(reply) && isString(reply.output) && /^Config key not set:/m.test(stripAnsi(reply.output)) ? { is: 'absent' } : { is: 'failed', words: failure }
+  // The output is stdout then stderr, and stderr may carry a notice after the JSON line (hermes_cli/config.py:3315-3323).
+  const output = stripAnsi(reply.output).trim()
+  for (const text of [output, ...output.split('\n').reverse()]) {
+    try {
+      return { is: 'value', value: JSON.parse(text) }
+    } catch {
+      continue
+    }
+  }
+  return { is: 'failed', words: firstLine(output) || UNREAD_RUN }
+}
+
+export interface BackupEntry { readonly provider: string; readonly model: string; readonly asHeld: Obj }
+
+const trimmedUrl = (raw: unknown) => (isString(raw) ? raw.trim().replace(/\/+$/, '').toLowerCase() : '')
+const sameRoute = (a: BackupEntry, b: BackupEntry) =>
+  a.provider === b.provider && a.model.toLowerCase() === b.model.toLowerCase() && trimmedUrl(a.asHeld.base_url) === trimmedUrl(b.asHeld.base_url)
+
+/**
+ * The models Hermes tries in order when the default fails: `fallback_providers`, then the legacy `fallback_model`, each a
+ * dict or a list, and an entry that repeats an earlier one's route dropped (hermes_cli/fallback_config.py:113-152).
+ */
+export function parseBackupChain(providers: unknown, legacy: unknown): readonly BackupEntry[] {
+  const entries = [providers, legacy].flatMap(raw => (isObject(raw) ? [raw] : Array.isArray(raw) ? raw : [])).flatMap((entry): BackupEntry[] => {
+    if (!isObject(entry)) return []
+    const provider = isString(entry.provider) ? entry.provider.trim() : ''
+    const model = isString(entry.model) ? entry.model.trim() : ''
+    return provider === '' || model === '' ? [] : [{ provider, model, asHeld: { ...entry, provider, model } }]
+  })
+  return entries.filter((entry, at) => entries.findIndex(other => sameRoute(other, entry)) === at)
 }
 
 /** `profiles.describe` lists every installed skill of the profile, `enabled` unless it is in the profile's disabled list. */

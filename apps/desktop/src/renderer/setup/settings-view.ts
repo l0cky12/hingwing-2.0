@@ -1,12 +1,13 @@
 import { SHORTCUTS, type Shortcut, type ShortcutId } from '../shortcuts'
 
-export type Page = 'connection' | 'appearance' | 'composer' | 'window' | 'notifications' | 'passwords' | 'skills' | 'permissions' | 'keys' | 'usage' | 'about'
+export type Page = 'connection' | 'models' | 'appearance' | 'composer' | 'window' | 'notifications' | 'passwords' | 'skills' | 'permissions' | 'keys' | 'usage' | 'about'
 export type RowId =
-  | 'connection' | 'theme' | 'accent' | 'show-work' | 'sidebar' | 'send-key' | 'spell-check' | 'on-close' | 'notice-asks' | 'notice-replies' | 'notice-jobs' | 'passwords' | 'skills' | 'permissions' | 'denied'
+  | 'connection' | 'models' | 'theme' | 'accent' | 'show-work' | 'sidebar' | 'send-key' | 'spell-check' | 'on-close' | 'notice-asks' | 'notice-replies' | 'notice-jobs' | 'passwords' | 'skills' | 'permissions' | 'denied'
   | 'shortcuts' | `key:${ShortcutId}` | 'usage' | 'about-app' | 'about-hermes'
 
 export const PAGES: readonly { readonly id: Page; readonly label: string; readonly lede: string }[] = [
   { id: 'connection', label: 'Connection', lede: 'The Hermes this app talks to, and how it reaches it.' },
+  { id: 'models', label: 'Models', lede: 'The model each bot starts new chats on, and the one Hermes switches to when that one fails.' },
   { id: 'appearance', label: 'Appearance', lede: 'How Highwing looks and what its sidebar shows.' },
   { id: 'composer', label: 'Composer', lede: 'How the message box sends and checks what you write.' },
   { id: 'window', label: 'Window', lede: 'What closing Highwing’s window does.' },
@@ -46,6 +47,7 @@ const shortcutRows: readonly Row[] = SHORTCUTS.map(shortcut => ({
 
 export const ROWS: readonly Row[] = [
   { id: 'connection', page: 'connection', searchText: 'Hermes. Where Hermes runs. Tailnet machine, SSH, Web address, This computer. Hermes machine. SSH destination. Gateway address. Change. Connect. Servers. Use. Remove. In use. Add a server. Add a way in. Ways in. Pick. Fastest, In order. Move up, Move down. server host address Tailscale LAN URL sign in online switch several multiple priority fallback failover speed' },
+  { id: 'models', page: 'models', searchText: 'Models. Bot. Each bot keeps its own models. Default model. New chats with this bot start on it. Backup model. Used when the default model fails. No backup. fallback failover provider LLM switch' },
   { id: 'theme', page: 'appearance', searchText: 'Theme. System, Light, Dark. System follows your computer’s light or dark setting. mode colour color' },
   { id: 'accent', page: 'appearance', searchText: 'Accent. Bot, Ink, Slate, Plum, Olive, Mauve, Umber. Bot uses the color of the open chat’s bot. colour color tint header send button' },
   { id: 'show-work', page: 'appearance', searchText: 'Show the bot’s work. Replies only, Actions, Everything. Replies only hides thinking and tool calls, and shows the bot hopping while it works. thinking reasoning thought tool call steps activity pet animation hide collapse verbose' },

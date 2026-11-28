@@ -7,6 +7,7 @@ const KEYED = SHORTCUTS.filter(({ mod }) => mod !== 'alt').map(({ id }) => `key:
 describe('settingsViewOf with no search', () => {
   it.each([
     ['connection', 'Connection', 'The Hermes this app talks to, and how it reaches it.', ['connection']],
+    ['models', 'Models', 'The model each bot starts new chats on, and the one Hermes switches to when that one fails.', ['models']],
     ['appearance', 'Appearance', 'How Highwing looks and what its sidebar shows.', ['theme', 'accent', 'show-work', 'sidebar']],
     ['composer', 'Composer', 'How the message box sends and checks what you write.', ['send-key', 'spell-check']],
     ['window', 'Window', 'What closing Highwing’s window does.', ['on-close']],
@@ -100,6 +101,12 @@ describe('settingsViewOf with a search', () => {
     ['spelling', ['spell-check']],
     ['scheduled', ['notice-jobs']],
     ['bitwarden', ['passwords']],
+    ['backup model', ['models']],
+    ['no backup', ['models']],
+    ['default model', ['models']],
+    ['LLM provider', ['models']],
+    ['fallback', ['connection', 'models']],
+    ['failover', ['connection', 'models']],
     ['approved', ['permissions']],
     ['approvals.deny', ['denied']],
     ['yolo', ['permissions', 'denied']],

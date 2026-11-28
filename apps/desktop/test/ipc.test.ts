@@ -160,6 +160,15 @@ describe('validators', () => {
     expect(parseCommand({ do: 'denyRules', bot: 'research' })).toEqual({ do: 'denyRules', bot: 'research' })
   })
 
+  it("keep the bot of the Models page and the model or backup picked for it", () => {
+    const model = { id: 'careful-large', provider: 'acme', providerName: 'Acme' }
+    expect(parseCommand({ do: 'botModelSettings', bot: 'research', extra: 1 })).toEqual({ do: 'botModelSettings', bot: 'research' })
+    expect(parseCommand({ do: 'setBotModel', bot: 'research', model: { ...model, price: 9 } })).toEqual({ do: 'setBotModel', bot: 'research', model })
+    expect(parseCommand({ do: 'setBotModel', bot: 'research', model, confirm: true })).toEqual({ do: 'setBotModel', bot: 'research', model, confirm: true })
+    expect(parseCommand({ do: 'setBotBackup', bot: 'research', model })).toEqual({ do: 'setBotBackup', bot: 'research', model })
+    expect(parseCommand({ do: 'setBotBackup', bot: 'research', model: null })).toEqual({ do: 'setBotBackup', bot: 'research', model: null })
+  })
+
   it("keep a new bot's picture typed by its bytes, and the calls that draw a picture and list pets", () => {
     const draft = { name: 'Rae', description: '', model: null, persona: '' }
     expect(parseCommand({ do: 'createBot', draft, picture: PICTURE })).toEqual({ do: 'createBot', draft, picture: PICTURE })
@@ -445,6 +454,12 @@ describe('validators', () => {
     ['a path completion with no word', { do: 'completePath', sessionId: 's1' }],
     ['a YOLO switch with no chat', { do: 'tune', set: 'yolo', on: true }],
     ['a pick with no provider', { do: 'pickModel', sessionId: 's1', model: { id: 'm', provider: '', providerName: '' } }],
+    ['models of no bot', { do: 'botModelSettings', bot: null }],
+    ['a default model for no bot', { do: 'setBotModel', model: { id: 'm', provider: 'p', providerName: 'P' } }],
+    ['a default model with no provider', { do: 'setBotModel', bot: 'research', model: { id: 'm', provider: '', providerName: '' } }],
+    ['a default model confirmed with a word', { do: 'setBotModel', bot: 'research', model: { id: 'm', provider: 'p', providerName: 'P' }, confirm: 'yes' }],
+    ['a backup with no model named', { do: 'setBotBackup', bot: 'research' }],
+    ['a backup with no id', { do: 'setBotBackup', bot: 'research', model: { provider: 'p', providerName: 'P' } }],
     ['a pick with a blank confirm token', { do: 'pickModel', sessionId: 's1', model: { id: 'm', provider: 'p', providerName: 'P' }, confirm: ' ' }],
     ['a kill that names no process', { do: 'killProcess', sessionId: 's1', processId: ' ' }],
     ['a stop that names no helper', { do: 'stopHelper', sessionId: 's1', helperId: ' ' }],
@@ -594,12 +609,12 @@ describe('validators', () => {
 
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
-      'accountUsage', 'addToolServer', 'answer', 'appSignIn', 'apps', 'archive', 'arrangeWays', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff',
+      'accountUsage', 'addToolServer', 'answer', 'appSignIn', 'apps', 'archive', 'arrangeWays', 'botModelSettings', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff',
       'checkpoints', 'closePreview', 'completePath', 'compress', 'connectApp', 'contextBreakdown', 'control', 'controlRoutine', 'createBot', 'createFromTemplate', 'createGroup', 'deleteGroup', 'denyRules', 'describeBot', 'discard',
       'done', 'editBot', 'editTarget', 'examples', 'export', 'generatePicture', 'handBack', 'installPlugin', 'keepTarget', 'killProcess', 'listRoutines', 'loadEarlier', 'lockPasswordManager', 'markBot', 'memory', 'models', 'move',
       'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'pluginCatalog', 'plugins', 'preview', 'queued', 'react', 'readMessages', 'reconnect',
       'reloadPreview', 'remove', 'removeApp', 'removeBotPicture', 'removeMemory', 'removeServer', 'removeToolServer', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'saveMemory', 'send',
-      'sendToGroup', 'setAccent', 'setMode', 'setNotice', 'setOnClose', 'setPlugin', 'setSendKey', 'setShowWork', 'setSidebarWidth', 'setSkill', 'setSpellCheck', 'setTheme', 'side', 'skillText', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper',
+      'sendToGroup', 'setAccent', 'setBotBackup', 'setBotModel', 'setMode', 'setNotice', 'setOnClose', 'setPlugin', 'setSendKey', 'setShowWork', 'setSidebarWidth', 'setSkill', 'setSpellCheck', 'setTheme', 'side', 'skillText', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper',
       'takeControl', 'toolServers', 'tools', 'tune', 'unlockPasswordManager', 'usePasswordManager', 'useServer', 'versions'
     ])
   })

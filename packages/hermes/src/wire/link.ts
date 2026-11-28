@@ -231,6 +231,8 @@ export class Offline extends Error {}
  * in the profile the call names (tui_gateway/methods_vault.py). A -32601 from them means this Hermes cannot set up password managers from Highwing.
  * The `display.*` calls of the bot's screen reach their legacy handlers the same way (tui_gateway/methods_display.py), and a -32601 from
  * `display.status` means this Hermes cannot show its screen to Highwing.
+ * `cli.exec` reaches its legacy handler the same way and runs a `hermes` command in the gateway's own home (tui_gateway/methods_tools.py:447),
+ * whatever profile the call names, so its argv names the profile with `-p`. A -32601 from it means this Hermes cannot change backup models from Highwing.
  */
 export type Served = CanonicalRpcMethods & Pick<RpcMethods,
   'commands.catalog' | 'command.dispatch' | 'model.options' | 'session.context_breakdown' | 'connection.respond' | 'connectors.connect' | 'complete.path' | 'file.attach' |
@@ -243,7 +245,7 @@ export type Served = CanonicalRpcMethods & Pick<RpcMethods,
   'vault.sources' | 'vault.list' | 'vault.source.set' | 'vault.unlock' | 'vault.lock' |
   'connectors.catalog' | 'connectors.accounts' | 'connectors.accounts.remove' | 'connectors.operation.status' |
   'mcp.servers.list' | 'mcp.servers.status' | 'mcp.servers.add' | 'mcp.servers.test' | 'mcp.servers.remove' | 'plugins.manage' | 'tools.list' |
-  'display.status' | 'display.thumbnail' | 'display.observe' | 'display.lease.acquire' | 'display.lease.release'>
+  'display.status' | 'display.thumbnail' | 'display.observe' | 'display.lease.acquire' | 'display.lease.release' | 'cli.exec'>
 export type Method = keyof Served
 
 export type Requested = ServerRequestMap

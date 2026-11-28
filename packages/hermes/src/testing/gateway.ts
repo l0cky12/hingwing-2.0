@@ -10,7 +10,7 @@ import type { SessionEvent } from '../domain/reduce'
 import { APPROVAL_MODES, type ApprovalMode } from '../domain/session'
 import { GATEWAY_PROTOCOL, type Clock, type Reach } from '../wire/link'
 import { parseEvent } from '../wire/parse'
-import { MASKED, type ChatSeed, type Fixture, type FixtureStep, type PluginSeed, type Reads } from './fixture'
+import { BACKUP_KEYS, MASKED, type ChatSeed, type Fixture, type FixtureStep, type PluginSeed, type Reads } from './fixture'
 import { memoryBook, type MemoryBook } from './memory-book'
 import { checkParams } from './params'
 import { ScriptedRooms } from './rooms'
@@ -827,7 +827,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   },
   /** gateway/session_config.py:11-13 */
   'model.options': (gateway, _socket, params, routed) => {
-    if (params.session_id !== undefined && params.session_id !== null) gateway.authorize(params, routed)
+    if (params.session_id === undefined || params.session_id === null) return gateway.modelMenu(gateway.pinnedModel(routed) ?? gateway.view.model)
+    gateway.authorize(params, routed)
     return gateway.modelMenu(gateway.view.model)
   },
   /** gateway/session_usage.py:265-274 */
@@ -888,6 +889,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   'vault.source.set': (gateway, socket, params, routed) => gateway.vaultCall(socket, 'vault.source.set', params, routed),
   'vault.unlock': (gateway, socket, params, routed) => gateway.vaultCall(socket, 'vault.unlock', params, routed),
   'vault.lock': (gateway, socket, params, routed) => gateway.vaultCall(socket, 'vault.lock', params, routed),
+  /** tui_gateway/methods_tools.py:447-466 */
+  'cli.exec': (gateway, socket, params) => gateway.cliExec(socket, params),
   /** tui_gateway/methods_session.py:1467-1495 */
   'pet.gallery': (gateway, socket) => gateway.petGallery(socket),
   /** tui_gateway/methods_session.py:1557-1563 */
@@ -1094,6 +1097,7 @@ export class ScriptedGateway {
   private readonly connectorOps = new Map<string, ConnectorOp>()
   private connectorOpSeq = 0
   private readonly vault: ScriptedVault | null
+  private readonly backups: Map<string, Record<string, unknown>> | null
   private readonly mcp: ScriptedToolServers | null
   private readonly pluginRows: PluginState[] | null
   private readonly installedByProfile = new Map<string, PluginState[]>()
@@ -1164,6 +1168,8 @@ export class ScriptedGateway {
     })
     // tui_gateway/methods_vault.py answers every failure with 5095 and its own words.
     this.vault = fixture.header.vault === undefined ? null : new ScriptedVault(fixture.header.vault, message => { throw new Refused(message, { code: 5095, message }) })
+    const backups = fixture.header.backups
+    this.backups = backups === undefined ? null : new Map(Object.entries(backups).map(([profile, config]) => [profile, { fallback_providers: [], ...config }]))
     const { mcp } = fixture.header
     this.mcp = mcp === undefined ? null : new ScriptedToolServers(mcp, (code, message) => { throw new Refused(message, { code, message }) })
     this.pluginRows = fixture.header.plugins?.map(seed => ({ ...seed, key: seed.key ?? seed.name })) ?? null
@@ -2157,6 +2163,15 @@ export class ScriptedGateway {
       this.patchRow(at, { description: params.description.trim() })
       applied.description = true
     }
+    // `_configure_model` (tui_gateway/methods_profiles.py:582-604): a guarded model writes nothing until the call comes back with `confirm_expensive_model`.
+    const model = typeof params.model === 'string' ? params.model.trim() : ''
+    const provider = typeof params.provider === 'string' ? params.provider.trim() : ''
+    const pinning = model !== '' && provider !== ''
+    const confirm = pinning && this.guards({ model, provider }) && !truthy(params.confirm_expensive_model) ? `${model} costs more per message.` : null
+    if (pinning && confirm === null) {
+      this.patchRow(at, { model, provider })
+      applied.model = true
+    }
     if (Array.isArray(params.enabled_toolsets)) applied.toolsets = params.enabled_toolsets.every(isText)
     if (Array.isArray(params.disabled_skills)) {
       const disabled = new Set(params.disabled_skills.filter(isText).map(name => name.toLowerCase()).filter(name => !ESSENTIAL_SKILLS.has(name)))
@@ -2166,7 +2181,13 @@ export class ScriptedGateway {
       applied.skills = true
       if (moved.length > 0) this.skillsChanged()
     }
-    return { ok: Object.values(applied).every(Boolean), applied }
+    return { ok: Object.values(applied).every(Boolean), applied, ...(confirm === null ? {} : { confirm_required: true, confirm_message: confirm }) }
+  }
+
+  /** The model a profile's config pins, which `model.options` with no session names (tui_gateway/methods_complete.py:297-334). */
+  pinnedModel(profile: string): Model | null {
+    const row = this.profiles.find(held => held.name === profile)
+    return row !== undefined && isText(row.model) && isText(row.provider) ? { model: row.model, provider: row.provider } : null
   }
 
   /** `_configure_ui_meta` (tui_gateway/methods_profiles.py:496-548): a key-wise merge behind a per-key revision check that rejects the whole write. */
@@ -2325,6 +2346,43 @@ export class ScriptedGateway {
   vaultCall(socket: Socket, method: string, params: Obj, routed: string): unknown {
     if (this.vault === null || socket.reach === 'profile') throw unknownMethod(method)
     return this.vault.call(method, params, routed)
+  }
+
+  /** `cli.exec` runs `hermes <argv>` in a child process and answers its exit code and output, so a failed command is no refusal. */
+  cliExec(socket: Socket, params: Obj): unknown {
+    if (this.backups === null || socket.reach === 'profile') throw unknownMethod('cli.exec')
+    const { argv } = params
+    if (!Array.isArray(argv) || !argv.every(word => typeof word === 'string')) throw new Refused('argv must be list[str]', { code: 4003, message: 'argv must be list[str]' })
+    const ran = (code: number, output: string) => ({ blocked: false, code, output })
+    const [flag, profile, verb, action, ...words] = argv as string[]
+    const force = action === 'set' && words.includes('--force')
+    const [word, ...rest] = words.filter(each => !(force && each === '--force'))
+    const key = BACKUP_KEYS.find(known => known === word)
+    if (flag !== '-p' || profile === undefined || verb !== 'config' || key === undefined) {
+      return ran(1, `This test Hermes runs only "hermes -p <profile> config get|set|unset" of ${BACKUP_KEYS.join(' and ')}, not "hermes ${argv.join(' ')}".`)
+    }
+    if (!this.profiles.some(row => row.name === profile)) return ran(1, `Profile '${profile}' does not exist.`)
+    const config = this.backups.get(profile) ?? { fallback_providers: [] }
+    this.backups.set(profile, config)
+    if (action === 'get' && rest.join(' ') === '--json') return key in config ? ran(0, JSON.stringify(config[key])) : ran(1, `Config key not set: ${key}`)
+    if (action === 'unset' && rest.length === 0) {
+      if (!(key in config)) return ran(1, `Config key not set: ${key}`)
+      delete config[key]
+      return ran(0, `✓ Unset ${key}`)
+    }
+    if (action === 'set' && rest.length === 1) {
+      const held = config[key]
+      if (!force && typeof held === 'object' && held !== null && !Array.isArray(held)) {
+        return ran(1, `✗ Cannot set '${key}' to a scalar — '${key}' is a configuration section with ${Object.keys(held).length} sub-key(s).`)
+      }
+      try {
+        config[key] = JSON.parse(rest[0] as string)
+      } catch {
+        return ran(1, `✗ Value for '${key}' looks like a list/mapping but is not valid YAML/JSON — nothing was written.`)
+      }
+      return ran(0, `✓ Set ${key} = ${rest[0]}`)
+    }
+    return ran(1, `This test Hermes can't run "hermes ${argv.join(' ')}".`)
   }
 
   /** `mcp.servers.*` reach only the legacy handlers, as `profiles.create` does, each in the profile the call names. */

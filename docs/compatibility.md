@@ -909,6 +909,51 @@ lists the bots of one Hermes, so it calls neither. The handed message and its
 reply live in Highwing while it is connected. They are not in the history of
 the chat they were sent from.
 
+### A bot's models
+
+Settings' Models page sets two models for each bot: the default, which new
+chats start on, and the backup, which Hermes tries when the default fails.
+Highwing reads both only while the page is shown, and again each time the
+window regains focus.
+
+- The page reads the default and the model list with
+  `model.options {explicit_only: true}` and no session, on the bot's profile.
+  Hermes then reads the profile's own config. The answer's `model` and
+  `provider` are the default.
+- A pick of a default sends `profiles.configure {name, model, provider}`. For a
+  costly model Hermes writes nothing and answers `confirm_required` with its
+  `confirm_message` (`tui_gateway/methods_profiles.py:582-604`). Highwing shows
+  the words under the row. Use anyway sends the same call with
+  `confirm_expensive_model: true`. The default counts as saved only when the
+  answer has `applied.model: true`.
+- Hermes keeps the backups in the profile's `config.yaml` as
+  `fallback_providers`, a list, and the older `fallback_model`. Hermes tries
+  `fallback_providers` first, then `fallback_model`, and skips a repeat
+  (`hermes_cli/fallback_config.py:139-156`). The page shows the first one.
+- No gateway method reads or writes them, so Highwing runs `hermes` through
+  `cli.exec`, on the bot's profile and with `-p <profile>` first. Without `-p`
+  the command can follow the sticky `active_profile` and change another bot
+  (`hermes_cli/main.py:431-460`). It runs
+  `config get fallback_providers --json` and `config get fallback_model --json`
+  to read. "Config key not set" means the key is absent.
+- A pick of a backup reads both keys again. Highwing then writes the pick
+  first, followed by the backups that came after the old first one, with
+  `config set --force fallback_providers <JSON list>`. `--force` lets the list
+  replace a `fallback_providers` written as one mapping, which Hermes otherwise
+  refuses (`hermes_cli/config_section_guard.py:45-61`). It then runs
+  `config unset fallback_model` if that key was set, as `hermes fallback` does
+  (`hermes_cli/fallback_cmd.py:27-30`). No backup writes `[]` and removes every
+  backup.
+- `config get` masks a key that an entry holds, so writing that entry back
+  would save the mask. If any backup the write would keep holds its own key,
+  Highwing writes nothing and says to change the backups with
+  `hermes fallback` on the Hermes machine.
+- Hermes picks up a changed chain at the start of the next turn, in open chats
+  too (`tui_gateway/agent_callbacks.py:380-395`).
+- If `cli.exec` is an unknown method, the page still sets the default and says
+  "This Hermes can't change backup models from Highwing." in place of the
+  backup's list.
+
 ### Group chats
 
 A group chat is one of Hermes's hosted rooms: 2 to 6 bots of one Hermes on one
