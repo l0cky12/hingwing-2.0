@@ -36,8 +36,8 @@ describe("a template's setup dialog", () => {
     const html = dialog('bot-builder')
     expect(html).toContain('You help people make new Hermes bots.')
     expect(html).toContain('Terminal, Files, Ask you questions, Skills, To-do list')
-    expect(html).toContain('Manual: asks before every command')
-    expect(dialog('deep-researcher')).toContain('Smart: asks only when a command looks risky')
+    expect(html).toContain('Manual: Asks you before every risky command.')
+    expect(dialog('deep-researcher')).toContain('Smart: Runs safe commands, refuses dangerous ones, asks about the rest.')
   })
 
   it('can make a bot that needs only a name, from the first moment', () => {

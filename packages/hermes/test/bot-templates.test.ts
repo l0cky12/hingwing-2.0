@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { APPROVAL_MODES } from '../src/domain/session'
-import { APPROVAL_WORDS, asksOf, auditPrompt, BOT_TEMPLATES, cronOf, isRunTime, personaStart, scheduleWords, TEMPLATE_TOOLSETS, templatePlan, timeWords, toolWords } from '../src/domain/bot-templates'
+import { asksOf, auditPrompt, BOT_TEMPLATES, cronOf, isRunTime, personaStart, scheduleWords, TEMPLATE_TOOLSETS, templatePlan, timeWords, toolWords } from '../src/domain/bot-templates'
 
 const template = (id: string) => BOT_TEMPLATES.find(item => item.id === id)!
 
@@ -33,11 +33,9 @@ describe('the bot templates', () => {
     expect(BOT_TEMPLATES.filter(item => item.schedule !== null)).toHaveLength(1)
   })
 
-  it('says each mode and toolset in plain words', () => {
+  it('says each toolset in plain words', () => {
     expect(toolWords(template('bot-builder').toolsets)).toBe('Terminal, Files, Ask you questions, Skills, To-do list')
     expect(toolWords(template('deep-researcher').toolsets)).toBe('Web, Browser, Helpers, Files, To-do list, Memory, Ask you questions')
-    expect(APPROVAL_WORDS.manual).toEqual({ label: 'Manual', says: 'asks before every command' })
-    expect(APPROVAL_WORDS.smart).toEqual({ label: 'Smart', says: 'asks only when a command looks risky' })
   })
 
   it('starts each personality with one sentence that says what the bot is', () => {

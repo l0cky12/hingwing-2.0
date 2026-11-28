@@ -8,12 +8,6 @@ export const TOOLSET_WORDS: { readonly [T in TemplateToolset]: string } = {
   terminal: 'Terminal', file: 'Files', clarify: 'Ask you questions', skills: 'Skills', todo: 'To-do list', web: 'Web', browser: 'Browser', delegation: 'Helpers', memory: 'Memory'
 }
 
-export const APPROVAL_WORDS: { readonly [A in ApprovalMode]: { readonly label: string; readonly says: string } } = {
-  manual: { label: 'Manual', says: 'asks before every command' },
-  smart: { label: 'Smart', says: 'asks only when a command looks risky' },
-  off: { label: 'Off', says: 'runs every command without asking' }
-}
-
 export type BotTemplateId = 'bot-builder' | 'deep-researcher' | 'nightly-repo-auditor'
 
 export interface BotTemplate {
