@@ -21,16 +21,17 @@ Preconditions:
 
 - `$H doctor` prints only `ok` lines and `$H build` has run since the last CSS change.
 
-- **Whole story.** Run `$H run --fixture fixtures/errand.jsonl --forced-colors --chat-only --run fc-forced wait live type "Message Hermes" @request click button Send wait tool-running shot tool-running wait approval shot approval click button "Run once" wait settled shot settled click button "Created and edited notes.md 2 steps" click button "Created notes.md +5" click button "Edited notes.md +1 −1" click button "Ran ls -la && ls scratch" shot settled-expanded`.
+- **Whole story.** Run `$H run --fixture fixtures/errand.jsonl --stretch 6 --forced-colors --chat-only --run fc-forced wait live type "Message Hermes" @request click button Send wait tool-running shot tool-running wait approval shot approval click button "Run once" wait settled shot settled click button "Created and edited notes.md 2 steps" click button "Created notes.md +5" click button "Edited notes.md +1 −1" click button "Ran ls -la && ls scratch" shot settled-expanded`.
 - **Check the pixels.** Run `node .claude/skills/verify/scripts/forced-colors-check.mjs /tmp/highwing-verify/fc-forced`. For each shot it checks that the thread line has no gap, that it carries the expected number of nodes, and that the end mark is the last node: a live end at least 16px tall, or the Done ring with its tick. In `settled-expanded` it also checks that added and removed lines have different left edges. It ends in `PASS` or `FAIL`, and exits non-zero on `FAIL`.
 - **Focus ring.** Run `$H run --fixture fixtures/errand.jsonl --forced-colors --run fc-focus wait live type "Message Hermes" @request click button Send wait approval press Shift+Tab press Shift+Tab press Shift+Tab press Shift+Tab press Shift+Tab focused button "Run once" shot approval-focus`. After `click button Send` focus is back in the message box, and five Shift+Tab presses reach "Run once" (two reach "Don't run").
 - **A waiting card while offline.** Run `$H run --fixture fixtures/errand.jsonl --forced-colors --drop-after approval.request --run fc-askoff wait live type "Message Hermes" @request click button Send wait offline shot offline-asking`. The thread line runs unbroken past the card's top and bottom edges. The checker does not read this shot, because the banner sits where it looks for the request's rule.
 - **More contrast.** Add `--more-contrast` in place of `--forced-colors`.
-- **Normal mode unchanged.** Run the whole story without the flag and compare each shot with `magick compare -metric AE a.png b.png null:`. The forced-colors block must leave normal shots at 0.
+- **Normal mode unchanged.** Run the whole story without `--forced-colors` and compare each shot with `magick compare -metric AE a.png b.png null:`. The forced-colors block must leave normal shots at 0.
 
 ## Gotchas
 
 - Chromium replaces author backgrounds, box-shadows and non-system border colors in this mode, so every state is a border in a system color. A `transparent` border is forced to a visible color, so diff lines align with padding instead.
+- The whole story passes `--stretch 6` because `tool-running` lives about 144 ms at recorded timing, and with other verify runs going the shot often took longer than that and failed. Stretched, the step lasts about 864 ms. The shots are the same, except that the message box's caret can show in `approval` (#307).
 - Chromium snaps border widths to whole pixels. A 1.5px border draws 1px wide.
 - The universal `box-sizing: border-box` rule does not reach pseudo-elements. The thread nodes set it themselves.
 - `settled-expanded` shows the top of the turn, as the design C reference does, so the Done ring is below the fold. The checker reports `n/a` for its end mark. The `settled` shot shows the same end mark.
