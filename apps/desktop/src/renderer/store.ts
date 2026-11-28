@@ -75,5 +75,5 @@ export function useTopic<T extends Topic>(topic: T | null): TopicValue<T> | unde
 
 export const runAt = <C extends WindowCommand>(at: number, command: C) => window.highwing.run(command, at)
 export const run = <C extends WindowCommand>(command: C) => runAt(epoch, command)
-export const pickBotPicture = (bot: BotId, at = epoch) => window.highwing.pickBotPicture(bot, at)
+export const pickBotPicture = (bot: BotId, at: number) => window.highwing.pickBotPicture(bot, at)
 export const transcribe = (recording: Recording) => window.highwing.transcribe(recording, epoch)

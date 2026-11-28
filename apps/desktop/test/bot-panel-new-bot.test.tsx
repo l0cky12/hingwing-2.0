@@ -145,7 +145,7 @@ describe("the open bot's profile panel", () => {
     expect(button('Generate pet picture')!.props['disabled']).toBe(false)
   })
 
-  it("sends Upload picture on the connection the panel was opened on, so main refuses it after a switch to another Hermes", async () => {
+  it("sends Upload picture with the epoch of the connection the panel was opened on", async () => {
     button('Details for Rae')!.props.onClick!()
     await settle()
     button('Upload picture')!.props.onClick!()
