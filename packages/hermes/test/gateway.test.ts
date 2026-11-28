@@ -1555,7 +1555,7 @@ describe('the Connect apps board', () => {
     }
   })
 
-  it('lists the catalog, settles a connect on the second status read, and removes an account', async () => {
+  it('lists the catalog, connects on the second status read and forgets the sign-in, and removes an account', async () => {
     const { call } = await rawSocket({}, withApps)
     expect(await call('connectors.catalog', {})).toMatchObject({ result: { connectors: [{ slug: 'github' }, { slug: 'slack' }, { slug: 'notion' }] } })
     expect(await call('connectors.accounts', {})).toMatchObject({ result: { accounts: [{ connection_id: 'slack-1', status: 'active' }, { connection_id: 'notion-1', status: 'expired' }] } })
@@ -1565,7 +1565,8 @@ describe('the Connect apps board', () => {
     const opId = started.result?.op_id
     expect(started.result).toMatchObject({ settled: false, targets: [{ state: 'initiated', connect_url: 'https://example.com/connect/github' }] })
     expect(await call('connectors.operation.status', { owner: { type: 'account' }, op_id: opId })).toMatchObject({ result: { settled: false, targets: [{ state: 'initiated' }] } })
-    expect(await call('connectors.operation.status', { owner: { type: 'account' }, op_id: opId })).toMatchObject({ result: { settled: true, targets: [{ state: 'connected' }] } })
+    expect(await call('connectors.operation.status', { owner: { type: 'account' }, op_id: opId })).toMatchObject({ result: { settled: false } })
+    expect(await call('connectors.operation.status', { owner: { type: 'account' }, op_id: opId })).toMatchObject({ error: { code: 4004, data: { reason: 'UNKNOWN_OPERATION' } } })
     expect(await call('connectors.accounts', {})).toMatchObject({
       result: { accounts: [{ connection_id: 'slack-1' }, { connection_id: 'notion-1' }, { connection_id: 'conn-github', connector: 'github', status: 'active' }] }
     })

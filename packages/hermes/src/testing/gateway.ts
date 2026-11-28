@@ -1264,11 +1264,14 @@ export class ScriptedGateway {
     this.ownsAccount(params)
     if (!isText(params.op_id)) throw new Refused('invalid_params')
     const op = this.connectorOps.get(params.op_id)
-    if (op === undefined) throw new Refused('not_found')
+    if (op === undefined) throw new Refused('UNKNOWN_OPERATION', { code: 4004, message: 'No open operation with that op_id.', data: { reason: 'UNKNOWN_OPERATION' } })
     op.polls += 1
-    const settled = op.polls >= 2
-    if (settled) this.upsertAccount(accounts, catalog, op)
-    return this.signInReply(params.op_id, this.connectorOpSeq, settled, op.slug, op.url, op.connectionId)
+    // Hermes finds an account sign-in only while it is open (tools/connectors/live.py `get_by_op_id`), so the read after it connects is refused.
+    if (op.polls >= 2) {
+      this.upsertAccount(accounts, catalog, op)
+      this.connectorOps.delete(params.op_id)
+    }
+    return this.signInReply(params.op_id, this.connectorOpSeq, false, op.slug, op.url, op.connectionId)
   }
 
   private signInReply(opId: string, seq: number, settled: boolean, slug: string, url: string, connectionId: string | null): unknown {
