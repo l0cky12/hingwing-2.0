@@ -1,6 +1,6 @@
 # Set up a connection
 
-With no saved connection Highwing opens on a setup screen, "Connect to Hermes", that holds the connection card: "Where Hermes runs" as Tailnet machine, named in the "Hermes machine" field, Web address, or This computer. [Connect by URL](./connect-by-url.md) covers the web address. Connect checks the choice one step at a time and shows the step it is at. A check that fails says what is wrong and one thing to try, and saves nothing. A check that passes on a first run saves the connection and shows the intro. Skip opens the chat. [First-run intro](./first-run-intro.md) covers the steps. From then on Highwing opens on the chat. The Hermes button at the foot of the sidebar opens Settings, where Change opens the same card, and Close goes back to the chat with its draft unchanged. [Settings](./settings.md) covers the card there.
+With no saved connection Highwing opens on a setup screen, "Connect to Hermes", that holds the connection card: "Where Hermes runs" as Tailnet machine, named in the "Hermes machine" field, SSH, named in the "SSH destination" field, Web address, or This computer. [Connect by URL](./connect-by-url.md) covers the web address. SSH takes any ssh destination, such as a LAN address, and its check never asks Tailscale. Connect checks the choice one step at a time and shows the step it is at. A check that fails says what is wrong and one thing to try, and saves nothing. A check that passes on a first run saves the connection and shows the intro. Skip opens the chat. [First-run intro](./first-run-intro.md) covers the steps. From then on Highwing opens on the chat. The Hermes button at the foot of the sidebar opens Settings, where Change opens the same card, and Close goes back to the chat with its draft unchanged. [Settings](./settings.md) covers the card there.
 
 ## Sub-features
 
@@ -11,6 +11,7 @@ With no saved connection Highwing opens on a setup screen, "Connect to Hermes", 
 - `setup-saved-launch` starts on the chat when a connection is saved.
 - `setup-edit-cancel` opens Settings over a live chat and closes it with the composer draft kept.
 - `setup-switch` changes a saved connection from this computer to the fake machine in Settings.
+- `setup-ssh` connects a first run to an SSH destination on a computer with no Tailscale.
 - `setup-notice` says why a saved connection was not used when the file is unreadable or from a newer Highwing.
 
 ## How to get to it (user POV)
@@ -26,7 +27,7 @@ Preconditions:
 
 Set `M=hermes-host.example-tailnet.ts.net` first.
 
-- **Empty.** Run `$H run --fake-host ok --saved none --run setup-empty wait setup shot setup-empty`. The shot shows "Connect to Hermes", "Where Hermes runs" with Tailnet machine picked among its three segments, the "Hermes machine" field and Connect, and no Cancel.
+- **Empty.** Run `$H run --fake-host ok --saved none --run setup-empty wait setup shot setup-empty`. The shot shows "Connect to Hermes", "Where Hermes runs" with Tailnet machine picked among its four segments, the "Hermes machine" field and Connect, and no Cancel.
 - **Checking.** Run `$H run --fake-host ok --hold-at ssh --saved none --run setup-checking wait setup type "Hermes machine" $M click button Connect wait setup-checking shot setup-checking disabled button Connect`. The shot shows "Connecting to hermes-host".
 - **A failure.** Run `$H run --fake-host <failure> --saved none --run setup-<failure> wait setup type "Hermes machine" $M click button Connect wait setup-failed shot setup-<failure>`, once per failure scenario. The `.aria.txt` holds the alert's two lines. `ssh-check` needs `--timeout 30000`.
 - **Saved, then the remote chat.** Run `$H run --fake-host ok --saved none --run setup-connect wait setup type "Hermes machine" $M click button Connect wait intro click button Skip wait live shot remote-chat-live`. The shot shows "on hermes-host" in the top bar and an enabled Send button.
@@ -34,6 +35,7 @@ Set `M=hermes-host.example-tailnet.ts.net` first.
 - **Edit, then Cancel.** Run `$H run --fake-host ok --saved remote --run setup-edit-cancel wait live type "Message Hermes" "half a thought" click button "/^Hermes on/" wait settings shot setup-editing click button Close wait live value "Message Hermes" "half a thought" shot cancel-kept-draft`.
 - **Switch.** Run `$H run --fake-host ok --saved local --run setup-switch wait live click button "/^Hermes on/" wait settings click button Change click radio "Tailnet machine" type "Hermes machine" $M click button Connect gone button Connect focused button Change click button Close wait live shot switched-to-remote`. The top bar changes from "on this computer" to "on hermes-host". A check from Settings stays in Settings, so there is no "Open chat".
 - **This computer.** Run `$H run --fake-host ok --saved none --run setup-local wait setup click radio "This computer" click button Connect wait intro click button Skip wait live shot local-chat-live`.
+- **An SSH destination, with no Tailscale.** Run `$H run --fake-host tailscale-missing --saved none --run setup-ssh wait setup click radio SSH focused radio SSH type "SSH destination" 192.168.1.20 shot ssh-editor click button Connect wait intro see "Highwing now uses the Hermes on 192.168.1.20." click button Skip wait live see "on 192.168.1.20" shot ssh-live`. The scenario has no `tailscale` command, so a Tailnet machine check fails at its first step, and the SSH check passes.
 - **A file Highwing can't use.** Run `$H run --fake-host ok --saved unreadable --run setup-unreadable wait setup shot setup-unreadable`, and the same with `--saved newer`.
 
 ## Gotchas
