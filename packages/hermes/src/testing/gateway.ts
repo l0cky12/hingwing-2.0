@@ -1087,6 +1087,7 @@ export class ScriptedGateway {
   /** The scheduled jobs `cron.manage` lists, rewritten by each run. null: no `cron` in the header. */
   private readonly jobs: Obj[] | null
   private jobsListed = false
+  private jobsAdded = 0
   private readonly connectorCatalog: readonly { readonly slug: string; readonly name: string; readonly description: string; readonly category: string; readonly logo_url: string | null }[] | null
   private readonly connectorAccounts: HeldAccount[] | null
   private readonly signInUrl: string | null
@@ -1733,11 +1734,14 @@ export class ScriptedGateway {
     return { config: { approvals: { deny } } }
   }
 
-  /** `config.set` for key `approval_mode`, as `/approvals <mode>` writes it (gateway/session_tui_config.py:202-203,337-350). It sends no session.info. */
+  /**
+   * `config.set` for key `approval_mode`, as `/approvals <mode>` writes it (gateway/session_tui_config.py:202-203,337-350). It sends no session.info.
+   * With no session it writes the profile the frame names, as the per-profile route's `@_profile_scoped` config.set does (tui_gateway/methods_config_set.py:342, :589).
+   */
   setApprovals(params: Obj, routed: string, chat: EchoChat | null): unknown {
     if (this.approvals === null) throw this.noApprovals('config.set', chat)
     if (Object.keys(params).some(key => !['session_id', 'profile', 'key', 'value'].includes(key))) throw new Refused('invalid_params')
-    if (chat === null) this.authorize(params, routed)
+    if (chat === null && !(params.session_id === undefined && this.profiles.some(row => row.name === routed))) this.authorize(params, routed)
     const mode = APPROVAL_MODES.find(known => known === params.value)
     if (mode === undefined) throw new Refused('invalid_params')
     this.approvals = mode
@@ -2153,6 +2157,7 @@ export class ScriptedGateway {
       this.patchRow(at, { description: params.description.trim() })
       applied.description = true
     }
+    if (Array.isArray(params.enabled_toolsets)) applied.toolsets = params.enabled_toolsets.every(isText)
     if (Array.isArray(params.disabled_skills)) {
       const disabled = new Set(params.disabled_skills.filter(isText).map(name => name.toLowerCase()).filter(name => !ESSENTIAL_SKILLS.has(name)))
       const skills = this.skills.get(this.profiles[at]?.name as string) ?? []
@@ -2387,13 +2392,16 @@ export class ScriptedGateway {
   cron(socket: Socket, params: Obj, routed: string): unknown {
     const { cron } = this.fixture.header
     if (cron === undefined || this.jobs === null || socket.reach === 'profile') throw unknownMethod('cron.manage')
-    const store = this.cronStores.get(cron.unscoped === true ? this.home : routed) ?? []
+    const owner = cron.unscoped === true ? this.home : routed
+    const store = this.cronStores.get(owner) ?? []
+    this.cronStores.set(owner, store)
     const action = params.action ?? 'list'
     if (action === 'list') {
       this.startRuns(this.jobs)
       const rows = store.filter(row => params.include_disabled === true || !(row.state === 'paused' || row.enabled === false)).map(row => ({ ...row }))
       return { success: true, count: rows.length, jobs: rows, ...(cron.unscoped === true || !isText(params.profile) ? {} : { scoped: params.profile }) }
     }
+    if (action === 'add') return this.addJob(store, params)
     if (action !== 'pause' && action !== 'resume' && action !== 'remove') throw new Refused('unknown cron action', { code: 4016, message: `unknown cron action: ${String(action)}` })
     const at = store.findIndex(row => row.job_id === params.name)
     const job = store[at]
@@ -2406,6 +2414,20 @@ export class ScriptedGateway {
     const paused = action === 'pause'
     Object.assign(job, { enabled: !paused, state: paused ? 'paused' : 'scheduled' })
     return { success: true, job: { ...job } }
+  }
+
+  /** A `create` of the cron tool (tools/cronjob_tools.py): a job needs a schedule and a prompt, and Hermes names no failure but in `error`. */
+  private addJob(store: Obj[], params: Obj): unknown {
+    const asked = (key: string) => (typeof params[key] === 'string' ? params[key].trim() : '')
+    if (asked('schedule') === '') return { success: false, error: 'schedule is required for create' }
+    if (asked('prompt') === '') return { success: false, error: 'create requires either prompt or at least one skill' }
+    const job = {
+      job_id: `job-${++this.jobsAdded}`, name: asked('name'), schedule: asked('schedule'), prompt_preview: asked('prompt').slice(0, 100),
+      deliver: asked('deliver') === '' ? 'local' : asked('deliver'), enabled: true, state: 'scheduled', next_run_at: null
+    }
+    store.push(job)
+    this.cronChanged()
+    return { success: true, job_id: job.job_id, name: job.name, schedule: job.schedule, job: { ...job } }
   }
 
   /** `cron.changed` (tui_gateway/change_watcher.py:460) to every socket, after the reply that caused it, as the watcher's tick is. */

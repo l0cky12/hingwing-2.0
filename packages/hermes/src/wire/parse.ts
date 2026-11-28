@@ -2072,6 +2072,13 @@ export function parseRoutines(reply: CronManageResult, bot: BotId): CommandOutco
   return { ok: true, value: listed.flatMap(({ routine, owner }) => (scoped || sameProfile(owner, bot) ? [routine] : [])) }
 }
 
+/** An add answers the job it made, or `success: false` and `error` for one the cron tool refused (tools/cronjob_tools.py). */
+export function parseAdded(reply: CronManageResult): CommandOutcome {
+  return reply.success === true && words(reply.error) === null
+    ? { ok: true, value: undefined }
+    : { ok: false, refusal: { kind: 'rejected', message: `Hermes couldn't add the job: ${words(reply.error) ?? 'it gave no reason.'}` } }
+}
+
 /** A pause or a resume answers the job as it is now, and a removal names the job it removed (tools/cronjob_tools.py:765-779). */
 export function parseControlled(reply: CronManageResult, action: RoutineAction): CommandOutcome<Routine | null> {
   if (reply.success !== true) return { ok: false, refusal: { kind: 'rejected', message: `Hermes couldn't ${action} that routine: ${words(reply.error) ?? 'it gave no reason.'}` } }

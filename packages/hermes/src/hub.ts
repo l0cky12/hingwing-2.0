@@ -8,6 +8,7 @@ import {
 } from './bot-admin'
 import type { BotActivities, UnreadChat } from './domain/activity'
 import { listMemory, removeMemory, saveMemory } from './memory'
+import { BOT_TEMPLATES, templatePlan } from './domain/bot-templates'
 import { botsIn, MARK_SETS, type Bot, type Bots } from './domain/bots'
 import type { Command, Outcome, ResultOf } from './domain/command'
 import type { GroupChat, Groups } from './domain/groups'
@@ -28,6 +29,7 @@ import { readMessages, type Place } from './messages'
 import { chatDesk } from './open'
 import { relayBook } from './relay'
 import { botList } from './roster'
+import { createFromTemplate } from './template-bot'
 import { screenDesk } from './screens'
 import { controlRoutine, listRoutines } from './routines'
 import { deriveSidebar, sessionList } from './sidebar'
@@ -636,6 +638,16 @@ export function openHermes(options: HermesOptions): Hermes {
       // A 5062 may have made the profile, so the roster is read after any attempt.
       roster.ask()
       if (made.ok) await desk.ask({ kind: 'bot', bot: made.value.bot })
+      return made
+    }
+    if (command.do === 'createFromTemplate') {
+      const template = BOT_TEMPLATES.find(({ id }) => id === command.template)
+      const plan = template === undefined ? null : templatePlan(template, command.answers)
+      if (plan === null) return refused('rejected', 'Fill in every field to make this bot.')
+      const made = await createFromTemplate(conn, plan)
+      roster.ask()
+      // With warnings the setup dialog stays open to show them, and its Open button opens the bot.
+      if (made.ok && made.value.warnings.length === 0) await desk.ask({ kind: 'bot', bot: made.value.bot })
       return made
     }
     if (command.do === 'createGroup') {

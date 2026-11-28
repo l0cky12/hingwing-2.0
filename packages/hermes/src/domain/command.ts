@@ -1,4 +1,5 @@
 import type { AppSignIn, AppsBoard } from './apps'
+import type { BotTemplateId, TemplateAnswers } from './bot-templates'
 import type { BotCreated, BotDetails, BotDraft, BotEdit, BotId, BotMark, Marked, PetChoice } from './bots'
 import type { GroupDraft, GroupId } from './groups'
 import type { MessagesRead } from './messages'
@@ -115,6 +116,11 @@ export type Command =
    * JPEG or WebP data URL, or null for none. A picture Hermes refuses leaves the bot made, with one more warning that says so.
    */
   | { readonly do: 'createBot'; readonly draft: BotDraft; readonly picture: string | null }
+  /**
+   * Makes a bot from a template: the profile, then its tools, approval mode and, for a scheduled template, its nightly job. Asks for the roster
+   * again and opens the new bot, as `createBot` does. A step after the profile that Hermes refuses leaves the bot made, with a warning for it.
+   */
+  | { readonly do: 'createFromTemplate'; readonly template: BotTemplateId; readonly answers: TemplateAnswers }
   /** Whether Hermes has an image model to draw a picture with. false for a Hermes without the call. */
   | { readonly do: 'canGeneratePicture' }
   /** A picture Hermes's image model draws from `prompt`: a PNG, JPEG or WebP data URL of at most `GENERATED_MAX_BYTES`. */
@@ -278,7 +284,7 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'readMessages' } ? MessagesRead
   : C extends { do: 'answer' } ? Told | undefined
   : C extends { do: 'models' | 'botModels' } ? ModelMenu
-  : C extends { do: 'createBot' } ? BotCreated
+  : C extends { do: 'createBot' | 'createFromTemplate' } ? BotCreated
   : C extends { do: 'describeBot' } ? BotDetails
   : C extends { do: 'skillText' } ? string
   : C extends { do: 'listRoutines' } ? readonly Routine[]

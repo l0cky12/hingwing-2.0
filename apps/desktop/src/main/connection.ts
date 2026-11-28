@@ -78,7 +78,7 @@ export const opensNow = (setup: Setup, intro: Intro): boolean =>
   !introInFront(setup, intro) && (setup.at === 'chat' || setup.at === 'pinned' || (showsSettings(setup) && nextSetup(setup, KEEP) !== null))
 
 /** The hub opens a bot or group chat it made, so making one is an open too. */
-const makesChat = (command: Command): boolean => command.do === 'createBot' || command.do === 'createGroup'
+const makesChat = (command: Command): boolean => command.do === 'createBot' || command.do === 'createFromTemplate' || command.do === 'createGroup'
 const opensChat = (command: Command): boolean => command.do === 'open' || makesChat(command)
 
 const firstSetup = (loaded: Settings, live: Live | null): Setup =>

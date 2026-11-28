@@ -18,7 +18,7 @@ export type BotTemplateId = 'bot-builder' | 'deep-researcher' | 'nightly-repo-au
 
 export interface BotTemplate {
   readonly id: BotTemplateId
-  /** The bot's name until the person types another. */
+  /** The card's title. The bot's own name starts as `id`, because Hermes takes only lowercase letters, numbers, `-` and `_` for a profile's name. */
   readonly name: string
   readonly summary: string
   /** Becomes the bot's SOUL.md. Its first sentence says what the bot is. */
@@ -81,9 +81,13 @@ export const BOT_TEMPLATES: readonly BotTemplate[] = [
   }
 ]
 
+const RUN_TIME = /^([01]\d|2[0-3]):([0-5]\d)$/
+
+export const isRunTime = (time: string): boolean => RUN_TIME.test(time)
+
 /** "02:00" as "2:00 AM". Text that is not HH:MM comes back as it was. */
 export function timeWords(time: string): string {
-  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(time)
+  const match = RUN_TIME.exec(time)
   if (match === null) return time
   const hour = Number(match[1])
   return `${hour % 12 === 0 ? 12 : hour % 12}:${match[2]} ${hour < 12 ? 'AM' : 'PM'}`
@@ -95,3 +99,63 @@ export const toolWords = (toolsets: readonly TemplateToolset[]): string => tools
 
 /** The first sentence of the persona, which the setup dialog shows as the start of the personality. */
 export const personaStart = (persona: string): string => /^.*?[.!?](?=\s|$)/s.exec(persona)?.[0] ?? persona
+
+/** "02:00" as the cron line `0 2 * * *`, which runs every day at that time. null for text that is not HH:MM. */
+export function cronOf(time: string): string | null {
+  const match = RUN_TIME.exec(time)
+  return match === null ? null : `${Number(match[2])} ${Number(match[1])} * * *`
+}
+
+/** What the person typed in the setup dialog. A template that does not run on a schedule ignores `folder` and `time`. */
+export interface TemplateAnswers {
+  readonly name: string
+  readonly folder: string
+  readonly time: string
+}
+
+export interface CreateStep {
+  readonly step: 'create'
+  readonly name: string
+  readonly description: string
+  readonly soul: string
+}
+
+export type SetupStep =
+  | { readonly step: 'toolsets'; readonly toolsets: readonly TemplateToolset[] }
+  | { readonly step: 'approval'; readonly mode: ApprovalMode }
+  | { readonly step: 'job'; readonly name: string; readonly schedule: string; readonly prompt: string; readonly deliver: string }
+
+/** The profile first, then what turns the new bot into the template. */
+export type TemplatePlan = readonly [CreateStep, ...SetupStep[]]
+
+export const AUDIT_JOB_NAME = 'Nightly audit'
+
+/** The prompt a nightly audit job sends the bot, for a repository folder on the machine Hermes runs on. */
+export const auditPrompt = (repoFolder: string): string =>
+  [
+    `Audit the repository at ${repoFolder}. Work read-only.`,
+    '1. Run `git fetch`. Never pull or merge.',
+    '2. Review the commits from the last 24 hours.',
+    "3. Run the project's tests and lint if it has them.",
+    '4. Check its dependencies for known security problems with the tools it already uses.',
+    '5. Look for passwords or keys committed by mistake.',
+    'Write a short report in this chat, ranked by severity, and compare it with your last report.',
+    'Never edit files, commit or push.'
+  ].join('\n')
+
+/** The steps that make a bot from `template`, or null while `answers` leave one out: a blank name, and for a scheduled template a blank folder or a time that is not HH:MM. */
+export function templatePlan(template: BotTemplate, answers: TemplateAnswers): TemplatePlan | null {
+  const name = answers.name.trim()
+  const folder = answers.folder.trim()
+  const schedule = cronOf(answers.time)
+  if (name === '') return null
+  const steps: SetupStep[] = [
+    { step: 'toolsets', toolsets: template.toolsets },
+    { step: 'approval', mode: template.approval }
+  ]
+  if (template.schedule !== null) {
+    if (folder === '' || schedule === null) return null
+    steps.push({ step: 'job', name: AUDIT_JOB_NAME, schedule, prompt: auditPrompt(folder), deliver: 'bot-chat' })
+  }
+  return [{ step: 'create', name, description: template.summary, soul: template.persona }, ...steps]
+}

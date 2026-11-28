@@ -1650,7 +1650,6 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .template-sets dl { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 6px 12px; margin: 0; font-size: var(--text-sm); }
 .template-sets dt { color: var(--graphite); }
 .template-sets dd { margin: 0; overflow-wrap: anywhere; }
-.template-dialog .form-soon { margin: 8px 0 0; font-size: var(--text-sm); color: var(--graphite); text-align: right; }
 @media (forced-colors: active) {
   .template-sets { border: 1px solid ButtonText; }
   .hub-tabs [role="tab"][aria-selected="true"], .hub-chips button[aria-pressed="true"], .tool-kinds button[aria-pressed="true"] { outline: 2px solid Highlight; }
