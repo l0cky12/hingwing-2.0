@@ -384,7 +384,7 @@ function turnView(turn: Pick<Turn, 'id' | 'request' | 'items'> & Partial<Pick<Se
 }
 
 const PAGE_FILE = /\.html?$/i
-const TITLE = /<title[^>]*>([^<]*)<\/title>/i
+const TITLE = /<title[^<>]*>([^<]*)<\/title>/i
 const NO_PAGES: readonly PageView[] = []
 const NO_NEWEST: ReadonlyMap<string, string> = new Map()
 
