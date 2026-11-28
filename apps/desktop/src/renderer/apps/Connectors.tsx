@@ -1,5 +1,5 @@
 import {
-  APPROVAL_WORDS, BOT_TEMPLATES, CONNECTOR_FILTERS, connectorsView, pluginsView, scheduleWords, shownBot, shownChat, STANDING_WORDS, TOOLSET_WORDS, type BotTemplate, type BotTemplateId, type TemplateAnswers, type CatalogPlugin, type CommandOutcome, type AppEntry, type AppsBoard, type BotId, type ConnectorFilter, type ConnectorShelf, type ConnectorsQuery, type ConnectorsView, type ServerSetup, type Toolset, type ToolServer
+  APPROVAL_WORDS, BOT_TEMPLATES, botsIn, CONNECTOR_FILTERS, connectorsView, pluginsView, scheduleWords, shownBot, shownChat, STANDING_WORDS, TOOLSET_WORDS, type BotTemplate, type BotTemplateId, type TemplateAnswers, type CatalogPlugin, type CommandOutcome, type AppEntry, type AppsBoard, type BotId, type Bots, type ConnectorFilter, type ConnectorShelf, type ConnectorsQuery, type ConnectorsView, type ServerSetup, type Toolset, type ToolServer
 } from '@highwing/hermes/domain'
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { nameProblem } from '../bots/bot-form'
@@ -7,7 +7,6 @@ import { useImage } from '../chat/Image'
 import { ICON } from '../chrome/PopupMenu'
 import { connectorsKeys } from '../keys'
 import { line } from '../setup/ConnectionCard'
-import { nameOf, useSkillSwitches } from '../setup/Skills'
 import { run, useTopic } from '../store'
 import { useSwitches } from '../switches'
 import { TABS, tabAfterKey, type Tab } from './connectors-tabs'
@@ -333,6 +332,16 @@ function ConnectorsPanel({ apps, servers, view, reading, query: { text, filter }
       {!reading && view.total === 0 && apps.problem === null && servers.read.at === 'read' && <p className="hub-note">No connectors yet.</p>}
     </>
   )
+}
+
+const nameOf = (bot: BotId | null, bots: Bots | undefined): string =>
+  (bot !== null && bots?.state === 'listed' ? botsIn(bots.roster).find(listed => listed.id === bot)?.name : undefined) ?? 'This bot'
+
+function useSkillSwitches() {
+  const library = useTopic('skills')
+  const bot = library?.bot ?? null
+  const switches = useSwitches(bot, library?.state === 'listed' ? library.skills : null, skill => skill.name, (skill, enabled) => run({ do: 'setSkill', bot, name: skill.name, enabled }))
+  return { library, ...switches }
 }
 
 function SkillsPanel({ name, switches }: { readonly name: string; readonly switches: ReturnType<typeof useSkillSwitches> }) {

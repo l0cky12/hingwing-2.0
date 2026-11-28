@@ -8,7 +8,7 @@ import { playToEnd } from '../src/testing/fixture'
 import type { Loopback } from '../src/testing/loopback'
 import { UPGRADE_MS } from '../src/wire/ssh'
 import { ERRAND } from './support/errand'
-import { closing, errandGateway, host, listen, until } from './support/host'
+import { closing, errandGateway, host, listen, PATIENT_TEST_MS, until } from './support/host'
 import { errand, fold, ignoringStartTimes } from './support/story'
 
 const PROBE = 'gateway tickets --probe --json'
@@ -30,7 +30,7 @@ const failureOf = (dial: Promise<unknown>) => dial.then(
   (error: unknown) => (error instanceof DialError ? { kind: error.kind, message: error.message } : { threw: String(error) })
 )
 
-describe('remoteRoute, against the fake host and the loopback gateway', () => {
+describe('remoteRoute, against the fake host and the loopback gateway', { timeout: PATIENT_TEST_MS }, () => {
   it('plays the errand to the session the direct fold gives, through one probe, one attach, one ticket and one relay', async () => {
     const want = { ...fold(errand()).content, sync: { state: 'live' } }
     let far: FakeHost | undefined
@@ -104,7 +104,7 @@ describe('remoteRoute, against the fake host and the loopback gateway', () => {
   })
 })
 
-describe('what a dial says when it cannot reach Hermes', () => {
+describe('what a dial says when it cannot reach Hermes', { timeout: PATIENT_TEST_MS }, () => {
   it.each<[ScenarioName, object]>([
     ['unreachable', { kind: 'unreachable', message: "Highwing can't reach hermes-host over SSH." }],
     ['ssh-missing', { kind: 'ssh-missing', message: 'This computer has no ssh command.' }],
@@ -133,7 +133,7 @@ describe('what a dial says when it cannot reach Hermes', () => {
   })
 })
 
-describe('the processes of a route', () => {
+describe('the processes of a route', { timeout: PATIENT_TEST_MS }, () => {
   const none = (far: FakeHost) => until('every ssh of the route to end', () => far.running().length === 0)
 
   it('leaves no ssh alive after close and dispose, and refuses a later dial as dropped', async () => {

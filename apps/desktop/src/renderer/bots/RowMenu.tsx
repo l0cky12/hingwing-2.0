@@ -26,15 +26,16 @@ export interface RowMenuProps<A extends MenuAction> {
   readonly more: FocusTarget
   readonly anchor: () => Anchor
   readonly onChoose: (action: A) => void
+  readonly onBlocked: (why: string) => void
   readonly onClose: (how: 'escape' | 'tab' | 'away') => void
 }
 
-export function RowMenu<A extends MenuAction>({ name, items, more, anchor, onChoose, onClose }: RowMenuProps<A>) {
+export function RowMenu<A extends MenuAction>({ name, items, more, anchor, onChoose, onBlocked, onClose }: RowMenuProps<A>) {
   return (
     <PopupMenu
       label={`More for ${name}`} className="bot-menu"
       groups={items.map(group => group.map(({ action, label, block }) => ({ id: action, label, icon: ICONS[action], ...(block === null ? {} : { block }) })))}
-      anchor={anchor} owns={target => isIn(target, more)} onChoose={onChoose} onClose={onClose}
+      anchor={anchor} owns={target => isIn(target, more)} onChoose={onChoose} onBlocked={onBlocked} onClose={onClose}
     />
   )
 }

@@ -15,7 +15,7 @@ export type Block =
   | { readonly kind: 'heading'; readonly level: 1 | 2 | 3 | 4 | 5 | 6; readonly inline: readonly Inline[] }
   | { readonly kind: 'list'; readonly ordered: boolean; readonly start: number; readonly items: readonly (readonly Block[])[] }
   | { readonly kind: 'quote'; readonly blocks: readonly Block[] }
-  | { readonly kind: 'code'; readonly lang: string | null; readonly text: string; readonly open: boolean }
+  | { readonly kind: 'code'; readonly lang: string | null; readonly text: string; readonly open: boolean; readonly preview: 'html' | null }
   | { readonly kind: 'table'; readonly align: readonly Align[]; readonly head: readonly Cell[]; readonly rows: readonly (readonly Cell[])[] }
   | { readonly kind: 'rule' }
 
@@ -57,8 +57,10 @@ const fence: Starter = (lines, at) => {
   }
   return { block: code(info, body, true), next: lines.length }
 }
-const code = (info: string, body: readonly string[], open: boolean): Block =>
-  ({ kind: 'code', lang: info.trim().split(/\s+/)[0] || null, text: body.join('\n'), open })
+function code(info: string, body: readonly string[], open: boolean): Block {
+  const lang = info.trim().split(/\s+/)[0] || null
+  return { kind: 'code', lang, text: body.join('\n'), open, preview: lang?.toLowerCase() === 'html' ? 'html' : null }
+}
 
 const MATH_BLOCK = /^ {0,3}(\$\$|\\\[)/
 const mathBlock: Starter = (lines, at) => {

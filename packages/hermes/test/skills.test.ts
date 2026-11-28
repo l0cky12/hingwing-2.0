@@ -17,9 +17,9 @@ const SKILLS = [
 const RESEARCH = [{ name: 'sources', description: 'Cite sources.', body: md('sources', 'Cite sources.'), enabled: false }]
 const WITH_SKILLS: Fixture = { ...WITH_BOTS, header: { ...WITH_BOTS.header, skills: { default: SKILLS, research: RESEARCH } } }
 
-async function launched(fixture: Fixture) {
+async function launched(fixture: Fixture, latencyMs = 0) {
   const clock = manualClock()
-  const script = scriptedDialer(fixture, { clock })
+  const script = scriptedDialer(fixture, { clock, latencyMs })
   const hermes = openHermes({ dial: script, clock, client: { name: 'highwing-test', version: '0.0.0' } })
   await clock.advance(0)
   const calls = (method: string) => callsIn(script.received).filter(call => call.method === method)
@@ -33,6 +33,23 @@ describe('the skills library', () => {
     const { clock, seen, watch } = await launched(WITH_SKILLS)
     watch()
     await clock.advance(0)
+    expect(seen.at(-1)).toEqual({
+      state: 'listed', bot: 'default', skills: [
+        { name: 'hermes-agent', description: 'Use Hermes itself.', enabled: true },
+        { name: 'release-notes', description: 'Write release notes.', enabled: true },
+        { name: 'triage-inbox', description: 'Sort new issues by area.', enabled: true },
+        { name: 'weekly-report', description: 'Summarize the week.', enabled: false }
+      ]
+    })
+  })
+
+  it("lists the open bot's skills two round trips after it is asked, since its profile, its skills and the catalog are asked for at once", async () => {
+    const { clock, seen, watch } = await launched(WITH_SKILLS, 100)
+    await clock.advance(1000)
+    watch()
+    await clock.advance(199)
+    expect(seen.at(-1)).toEqual({ state: 'reading', bot: 'default' })
+    await clock.advance(1)
     expect(seen.at(-1)).toEqual({
       state: 'listed', bot: 'default', skills: [
         { name: 'hermes-agent', description: 'Use Hermes itself.', enabled: true },

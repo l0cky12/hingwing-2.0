@@ -5,6 +5,7 @@ import { shownChat } from '../src/domain/open'
 import type { AttachmentId, BranchId, Item, PromptId, RequestId, Session, SessionId } from '../src/domain/session'
 import { DialError, openHermes, RETAIN_MS, type Dialer, type HermesOptions, type WireSocket } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
+import { RELAY_POLL_MS } from '../src/relay'
 import { MASKED, play, scriptedDialer, type Fixture, type FixtureStep, type GroupsScript, type Moment, type ScriptOptions } from '../src/testing/fixture'
 import {
   BOUND, BRANCH, BRANCH_COMPACTED, BRANCH_OLD, callsIn, DOWNLOADS, EDIT_COMPACTED, ERRAND, INVOICES, LAUNCH, LAUNCH_GROUP, LAUNCH_NO_GROUPS, NO_HOME_CHAT, NO_TREE, paramsOf, PICK, PICK_ASK, PICK_DECLINED, PROFILES, RAE_SAID,
@@ -1364,12 +1365,13 @@ describe('mentioning another bot', () => {
     expect(submits(opened), "the chat's own bot is not asked").toEqual([])
     expect(opened.script.step, 'the story has not moved').toBe(0)
 
-    await opened.clock.advance(1_499)
+    // Hermes answers `claimed` at once, and Rae's turn ends at 1500 ms, between two asks of the same id.
+    await opened.clock.advance(RELAY_POLL_MS - 1)
     expect(states(opened)).toEqual([{ s: 'waiting' }])
     await opened.clock.advance(1)
     expect(states(opened)).toEqual([{ s: 'answered', reply: RAE_SAID }])
     expect(seen).toEqual(['', 'waiting', 'answered'])
-    expect(delivers(opened)).toHaveLength(1)
+    expect(delivers(opened).map(call => call.params), 'the same delivery, asked again').toEqual([{ profile: 'rae', id: relay?.id, message: ASK }, { profile: 'rae', id: relay?.id, message: ASK }])
   })
 
   it('refuses a message that carries attachments, and hands nothing to the bot', async () => {

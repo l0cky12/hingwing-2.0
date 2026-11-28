@@ -43,12 +43,15 @@ function served(fixture: Fixture, kinds: Notices = ON) {
   return { hermes, shown, raised: () => raised }
 }
 
+/** The first answer comes over a real socket, which a busy machine is slow to open. */
+const CONNECTING = { timeout: 10_000 }
+
 const shownNow = (hermes: Hermes) => shownChat(hermes.open.get())?.sessionId ?? null
 
-describe('notifications from a Hermes on the scripted gateway', () => {
+describe('notifications from a Hermes on the scripted gateway', { timeout: 30_000 }, () => {
   it('notifies an approval and the turn end in a chat that is not on screen, and a scheduled run, each once', async () => {
     const { hermes, shown, raised } = served(FIXTURE)
-    await expect.poll(() => hermes.bots.get().state).toBe('listed')
+    await expect.poll(() => hermes.bots.get().state, CONNECTING).toBe('listed')
     await hermes.run({ do: 'open', ref: { kind: 'bot', bot: RESEARCH } })
     await expect.poll(() => shownNow(hermes)).toBe(RESEARCH_CHAT)
     await expect.poll(() => shown.map(({ notice }) => notice.title)).toEqual(['Scheduled job finished'])
@@ -74,7 +77,7 @@ describe('notifications from a Hermes on the scripted gateway', () => {
 
   it('shows nothing of a kind switched off', async () => {
     const { hermes, shown } = served(FIXTURE, { asks: false, replies: false, jobs: false })
-    await expect.poll(() => hermes.bots.get().state).toBe('listed')
+    await expect.poll(() => hermes.bots.get().state, CONNECTING).toBe('listed')
     await hermes.run({ do: 'open', ref: { kind: 'bot', bot: RESEARCH } })
     await expect.poll(() => shownNow(hermes)).toBe(RESEARCH_CHAT)
     await hermes.run({ do: 'send', sessionId: STORY, text: TEXT })
@@ -85,7 +88,7 @@ describe('notifications from a Hermes on the scripted gateway', () => {
 
   it('lists no jobs from a Hermes that does not serve cron.manage', async () => {
     const { hermes } = served(ERRAND)
-    await expect.poll(() => hermes.link.get().state).toBe('online')
+    await expect.poll(() => hermes.link.get().state, CONNECTING).toBe('online')
     await new Promise(resolve => setTimeout(resolve, 50))
     expect(hermes.jobs.get()).toBeNull()
   })

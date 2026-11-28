@@ -171,7 +171,8 @@ describe('the accent in app.css', () => {
   const accentRules = rules.filter(rule => rule.media.length === 0 && /^\[data-accent="\w+"\]$/.test(rule.selector))
   const TONES = ['ink', 'slate', 'plum', 'olive', 'mauve', 'umber']
   const tokenOf = (tone: string) => /^var\(--([\w-]+)\)$/.exec(accentRules.find(rule => rule.selector === `[data-accent="${tone}"]`)?.declarations.get('--accent') ?? '')?.[1] ?? ''
-  const bandShare = Number(/color-mix\(in srgb, var\(--accent\) ([\d.]+)%, var\(--sheet\)\)/.exec(rules.find(rule => rule.selector === '.top .bar')?.declarations.get('background') ?? '')?.[1]) / 100
+  const fillOf = (tone: string) => /^var\(--([\w-]+)\)$/.exec(rules.find(rule => rule.media.length === 0 && rule.selector === `.tone-${tone}`)?.declarations.get('background') ?? '')?.[1] ?? ''
+  const bandShare = Number(/color-mix\(in srgb, var\(--accent, var\(--sheet\)\) ([\d.]+)%, var\(--sheet\)\)/.exec(rules.find(rule => rule.selector === '.top .bar :is(h1, .members, .pencil)')?.declarations.get('background') ?? '')?.[1]) / 100
   const mixed = (accent: string, sheet: string) => {
     const [a, b] = [channels(accent), channels(sheet)]
     return '#' + a.map((c, at) => Math.round((c * bandShare + b[at]! * (1 - bandShare)) * 255).toString(16).padStart(2, '0')).join('')
@@ -182,15 +183,42 @@ describe('the accent in app.css', () => {
     expect(bandShare).toBeGreaterThan(0)
   })
 
-  it.each(SCHEMES)('keeps the send label and the header text readable on every accent in %s', (_name, scheme) => {
+  it.each(SCHEMES)('keeps the send icon readable on every bot tone and the header text on every accent in %s', (_name, scheme) => {
     const palette = paletteOf(scheme)
     const colorOf = (name: string) => colorIn(palette, name)
     const short = TONES.flatMap(tone => {
       const accent = colorOf(tokenOf(tone))
       const band = mixed(accent, colorOf('sheet'))
-      return ([['sheet', accent, 'send label'], ['graphite', band, 'header text'], ['ink', band, 'header title']] as const).flatMap(([text, surface, what]) => {
+      return ([['sheet', colorOf(fillOf(tone)), 'send icon'], ['graphite', band, 'header text'], ['ink', band, 'header title']] as const).flatMap(([text, surface, what]) => {
         const ratio = contrast(colorOf(text), surface)
         return ratio >= 4.5 ? [] : [`${tone} ${what}: ${ratio.toFixed(2)}, under 4.5`]
+      })
+    })
+    expect(short).toEqual([])
+  })
+
+  const shared = rules.find(rule => rule.media.length === 0 && rule.selector === '[data-accent]')?.declarations ?? new Map<string, string>()
+  const withAccent = (palette: ReadonlyMap<string, string>, tone: string) => {
+    const accented = new Map([...palette, ['--accent', `var(--${tokenOf(tone)})`]])
+    const resolve = (value: string): string => {
+      const mix = /^color-mix\(in srgb, var\(--([\w-]+)\) ([\d.]+)%, var\(--([\w-]+)\)\)$/.exec(value)
+      if (mix === null) return value.replace(/^var\(--([\w-]+)\)$/, (_all, name: string) => colorIn(accented, name))
+      const [a, b, share] = [channels(colorIn(accented, mix[1]!)), channels(colorIn(accented, mix[3]!)), Number(mix[2]) / 100]
+      return '#' + a.map((c, at) => Math.round((c * share + b[at]! * (1 - share)) * 255).toString(16).padStart(2, '0')).join('')
+    }
+    return new Map([...accented, ...[...shared].map(([name, value]) => [name, resolve(value)] as const)])
+  }
+
+  it('recolors the highlight of the whole window, not only the header and the send button', () => {
+    expect([...shared.keys()].sort()).toEqual(['--signal', '--signal-soft', '--surface-user'])
+  })
+
+  it.each(SCHEMES)('keeps every text readable on every surface under every accent in %s', (_name, scheme) => {
+    const short = TONES.flatMap(tone => {
+      const palette = withAccent(paletteOf(scheme), tone)
+      return PAIRS.flatMap(([text, surface, min]) => {
+        const ratio = contrast(colorIn(palette, text), colorIn(palette, surface))
+        return ratio >= min ? [] : [`${tone}: ${text} on ${surface} ${ratio.toFixed(2)}, under ${min}`]
       })
     })
     expect(short).toEqual([])

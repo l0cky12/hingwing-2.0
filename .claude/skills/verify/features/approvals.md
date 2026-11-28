@@ -1,6 +1,6 @@
 # Approval mode
 
-In the composer's toolbar, after the paperclip and the microphone, a quiet menu button with a shield names how Hermes treats this chat's risky commands: "Manual", "Smart" or "Off". Its text content, which `see` matches, and its accessible name read "Manual approvals", "Smart approvals" or "Approvals Off". It opens a menu named "Approvals" above it, of three `menuitemradio` items, "Manual", "Smart" and "Off", the current one checked, each described by one line on what it does. Manual or Smart is sent at once. Off first asks "Turn off approvals for this bot?", and nothing reaches Hermes until "Turn off". The button reads the new mode only once Hermes answers with it, and a reply that names no mode leaves it as it was. Hermes starts a bot on Smart: it runs the commands its judge finds safe and asks about risky ones.
+At the left of the row of controls under the composer's pill, a quiet menu button with a shield names how Hermes treats this chat's risky commands: "Manual", "Smart" or "Off". Its text content, which `see` matches, and its accessible name read "Manual approvals", "Smart approvals" or "Approvals Off". It opens a menu named "Approvals" above it, of three `menuitemradio` items, "Manual", "Smart" and "Off", the current one checked, each described by one line on what it does. Manual or Smart is sent at once. Off first asks "Turn off approvals for this bot?", and nothing reaches Hermes until "Turn off". The button reads the new mode only once Hermes answers with it, and a reply that names no mode leaves it as it was. Hermes starts a bot on Smart: it runs the commands its judge finds safe and asks about risky ones.
 
 The mode is the bot's, so it changes every chat with that bot. A chat can also have YOLO of its own, turned on by `/yolo` or another client, which runs that chat without asking whatever the bot's mode. The toolbar has no YOLO button: such a chat reads "Approvals Off" with Off checked. Picking Manual or Smart there turns the chat's own YOLO off too, and sends the mode first only when the bot is not on it already. The menu is not shown while the link is down, or when Hermes never says the mode.
 
@@ -19,7 +19,7 @@ The mode is the bot's, so it changes every chat with that bot. A chat can also h
 
 ## How to get to it (user POV)
 
-- Open a chat. The shield button sits in the composer's toolbar, after the paperclip and the microphone. Press it.
+- Open a chat. The shield button sits at the left of the row under the composer's pill. Press it.
 
 ## Driving it with highwing-verify
 
