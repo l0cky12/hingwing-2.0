@@ -15,7 +15,7 @@ A fenced `mermaid` block in a reply shows as a drawn diagram, not as its source,
 
 ## How to get to it (user POV)
 
-- Run `HIGHWING_FIXTURE=fixtures/diagram.jsonl pnpm --filter @highwing/desktop start` from the repo root, type in the "Message Hermes" box and press Send.
+- Run `HIGHWING_FIXTURE=$PWD/fixtures/diagram.jsonl pnpm --filter @highwing/desktop start` from the repo root, type in the "Message Hermes" box and press Send.
 
 ## Driving it with highwing-verify
 

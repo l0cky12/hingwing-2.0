@@ -497,6 +497,13 @@ const STEPS = {
       if (shown > 0) throw new Error(`"${text}" is shown ${shown} time(s)`)
     }
   },
+  unsaid: {
+    arity: 1,
+    run: async (ctx, text) => {
+      const shown = await ctx.page.locator('#scroll').getByText(text, { exact: false }).filter({ visible: true }).count()
+      if (shown > 0) throw new Error(`"${text}" is in the thread ${shown} time(s)`)
+    }
+  },
   called: {
     arity: 3,
     run: async (ctx, method, json, n) => {
@@ -849,7 +856,8 @@ function parseOptions(argv, known) {
 }
 
 const electronBinary = () => {
-  const pathFile = join(dirname(requireDesktop.resolve('electron/package.json')), 'path.txt')
+  let pathFile
+  try { pathFile = join(dirname(requireDesktop.resolve('electron/package.json')), 'path.txt') } catch { return null }
   return existsSync(pathFile) ? join(dirname(pathFile), 'dist', readFileSync(pathFile, 'utf8').trim()) : null
 }
 
@@ -893,7 +901,7 @@ function doctor() {
     ['xvfb-run on PATH', spawnSync('which', ['xvfb-run']).status === 0, 'needed so no window opens on the desktop'],
     ['magick on PATH', spawnSync('which', ['magick']).status === 0, 'needed by compare'],
     ['playwright-core installed', (() => { try { return Boolean(requireDesktop.resolve('playwright-core')) } catch { return false } })(), 'pnpm install'],
-    ['electron binary downloaded', Boolean(electronBinary()) && existsSync(electronBinary()), electronBinary() ?? 'run: node -e "require(\'electron\')" in apps/desktop'],
+    ['electron binary downloaded', Boolean(electronBinary()) && existsSync(electronBinary()), electronBinary() ?? 'run: pnpm install, then node -e "require(\'electron\')" in apps/desktop'],
     ['build present and newer than sources', !buildIsStale(), 'run: highwing-verify.mjs build'],
     ['tsx installed', Boolean(tsxLoader()), 'needed to run the fake host; pnpm install']
   ]
@@ -1342,7 +1350,7 @@ const requestMethods = steps => new Map(steps.flatMap(step => {
 
 const answerTo = step => step.answer ?? step.params?.request_id ?? step.params?.op_id
 
-function withEdits(fixturePath, { dropAfter, models, catalog, connectors, guarded, usage, profiles, paths, createWarnings, configureClash, assetFails, images, display, titles, transcribe, pets, cron: cronFile, memory, vault, mcp, plugins, pluginCatalog, pluginRefusals, tools, listOnly, kanban, bound, noBotChat, tree, yolo, yoloDenied, yoloElsewhereAfter, approvals, answeredElsewhere, answerHere, cancel, actedElsewhere, windowMakes, origin, attachLimit, account, stretch }, out) {
+function withEdits(fixturePath, { dropAfter, models, catalog, connectors, guarded, usage, profiles, paths, createWarnings, configureClash, assetFails, images, display, titles, transcribe, pets, cron: cronFile, memory, vault, mcp, plugins, pluginCatalog, pluginRefusals, tools, listOnly, kanban, bound, noBotChat, tree, yolo, yoloDenied, yoloElsewhereAfter, approvals, answeredElsewhere, answerHere, cancel, actedElsewhere, windowMakes, origin, attachLimit, account, stretch, deny }, out) {
   const lines = readFileSync(fixturePath, 'utf8').split('\n').filter(line => line.trim() !== '')
   const header = JSON.parse(lines[0])
   const recorded = lines.slice(1).map(line => JSON.parse(line)).map(step => stretch ? { ...step, at: step.at * Number(stretch) } : step)
@@ -1390,6 +1398,12 @@ function withEdits(fixturePath, { dropAfter, models, catalog, connectors, guarde
   if (display) header.display = JSON.parse(readFileSync(resolve(process.cwd(), display), 'utf8'))
   if (pets) header.pets = JSON.parse(readFileSync(resolve(process.cwd(), pets), 'utf8'))
   if (memory) header.memory = JSON.parse(readFileSync(resolve(process.cwd(), memory), 'utf8'))
+  if (deny) {
+    let rules = null
+    try { rules = JSON.parse(deny) } catch {}
+    if (!Array.isArray(rules) || rules.some(rule => typeof rule !== 'string')) fail('--deny takes a JSON array of strings, such as \'["rm -rf /"]\'')
+    header.deny = rules
+  }
   if (kanban) header.kanban = JSON.parse(readFileSync(resolve(process.cwd(), kanban), 'utf8'))
   if (cronFile) header.cron = JSON.parse(readFileSync(resolve(process.cwd(), cronFile), 'utf8'))
   if (titles) header.oneshot = JSON.parse(readFileSync(resolve(process.cwd(), titles), 'utf8'))
@@ -1653,7 +1667,7 @@ async function quitApp(ctx) {
 
 async function run(argv) {
   ownDisplay()
-  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', catalog: 'value', connectors: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'asset-fails': 'value', images: 'value', display: 'value', titles: 'value', transcribe: 'value', microphone: 'value', pets: 'value', cron: 'value', memory: 'value', vault: 'value', mcp: 'value', plugins: 'value', 'plugin-catalog': 'value', 'plugin-refusals': 'value', tools: 'value', 'list-only': 'flag', kanban: 'value', video: 'flag', 'pick-file': 'value', pick: 'value', 'menu-pick': 'value', 'attach-limit': 'value', account: 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', approvals: 'value', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'fake-webapp': 'value', 'webapp-url': 'value', 'login-form': 'flag', keyring: 'value', 'sign-in-ms': 'value', mode: 'value', theme: 'value', 'system-theme': 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', 'reduced-motion': 'flag', size: 'value', 'chat-only': 'flag', 'answered-elsewhere': 'flag', 'acted-elsewhere': 'flag', 'window-makes': 'value', 'answer-here': 'value', cancel: 'value', arg: 'value', latency: 'value', 'timed-shot': 'value', 'cpu-profile': 'flag', stretch: 'value' })
+  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', catalog: 'value', connectors: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'asset-fails': 'value', images: 'value', display: 'value', titles: 'value', transcribe: 'value', microphone: 'value', pets: 'value', cron: 'value', memory: 'value', deny: 'value', vault: 'value', mcp: 'value', plugins: 'value', 'plugin-catalog': 'value', 'plugin-refusals': 'value', tools: 'value', 'list-only': 'flag', kanban: 'value', video: 'flag', 'pick-file': 'value', pick: 'value', 'menu-pick': 'value', 'attach-limit': 'value', account: 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', approvals: 'value', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'fake-webapp': 'value', 'webapp-url': 'value', 'login-form': 'flag', keyring: 'value', 'sign-in-ms': 'value', mode: 'value', theme: 'value', 'system-theme': 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', 'reduced-motion': 'flag', size: 'value', 'chat-only': 'flag', 'answered-elsewhere': 'flag', 'acted-elsewhere': 'flag', 'window-makes': 'value', 'answer-here': 'value', cancel: 'value', arg: 'value', latency: 'value', 'timed-shot': 'value', 'cpu-profile': 'flag', stretch: 'value' })
   const steps = parseSteps(rest)
   const scenario = options['fake-host']
   const webScenario = options['fake-webapp']
@@ -1672,7 +1686,7 @@ async function run(argv) {
   const signsInOnPage = Boolean(options['login-form'] || realUrl)
   if (signsInOnPage) for (const name of USER_FILES) if (!process.env[name]) fail(`set ${name} to a file that holds it, for the sign-in page`)
   const site = options.serve ? await serve(options.serve) : null
-  const edits = { dropAfter: options['drop-after'], models: options.models, catalog: options.catalog, connectors: options.connectors, guarded: options.guarded, usage: options.usage, profiles: options.profiles, paths: options.paths, createWarnings: options['create-warnings'], configureClash: options['configure-clash'], assetFails: options['asset-fails'], images: options.images, display: options.display, titles: options.titles, transcribe: options.transcribe, pets: options.pets, cron: options.cron, memory: options.memory, vault: options.vault, mcp: options.mcp, plugins: options.plugins, pluginCatalog: options['plugin-catalog'], pluginRefusals: options['plugin-refusals'], tools: options.tools, listOnly: options['list-only'], kanban: options.kanban, bound: options.bound, noBotChat: options['no-bot-chat'], tree: options.tree, yolo: options.yolo, yoloDenied: options['yolo-denied'], yoloElsewhereAfter: options['yolo-elsewhere-after'], approvals: options.approvals, answeredElsewhere: options['answered-elsewhere'], answerHere: options['answer-here'], cancel: options.cancel, actedElsewhere: options['acted-elsewhere'], windowMakes: options['window-makes'], origin: site?.origin, attachLimit: options['attach-limit'], account: options.account, stretch: options.stretch }
+  const edits = { dropAfter: options['drop-after'], models: options.models, catalog: options.catalog, connectors: options.connectors, guarded: options.guarded, usage: options.usage, profiles: options.profiles, paths: options.paths, createWarnings: options['create-warnings'], configureClash: options['configure-clash'], assetFails: options['asset-fails'], images: options.images, display: options.display, titles: options.titles, transcribe: options.transcribe, pets: options.pets, cron: options.cron, memory: options.memory, vault: options.vault, mcp: options.mcp, plugins: options.plugins, pluginCatalog: options['plugin-catalog'], pluginRefusals: options['plugin-refusals'], tools: options.tools, listOnly: options['list-only'], kanban: options.kanban, bound: options.bound, noBotChat: options['no-bot-chat'], tree: options.tree, yolo: options.yolo, yoloDenied: options['yolo-denied'], yoloElsewhereAfter: options['yolo-elsewhere-after'], approvals: options.approvals, answeredElsewhere: options['answered-elsewhere'], answerHere: options['answer-here'], cancel: options.cancel, actedElsewhere: options['acted-elsewhere'], windowMakes: options['window-makes'], origin: site?.origin, attachLimit: options['attach-limit'], account: options.account, stretch: options.stretch, deny: options.deny }
   const edited = Object.values(edits).some(Boolean)
   if (options.yolo && options.yolo !== 'on' && options.yolo !== 'off') fail(`--yolo takes on or off, not "${options.yolo}"`)
   if (options.approvals && !['manual', 'smart', 'off'].includes(options.approvals)) fail(`--approvals takes manual, smart or off, not "${options.approvals}"`)
@@ -1682,7 +1696,7 @@ async function run(argv) {
   if (options.cancel && !/^[^=]+=[^=]+$/.test(options.cancel)) fail(`--cancel takes <method>=<reason>, not "${options.cancel}"`)
   if (!options.yolo && (options['yolo-denied'] || options['yolo-elsewhere-after'])) fail('--yolo-denied and --yolo-elsewhere-after need --yolo, because a Hermes with no YOLO answers neither')
   if (options.tree && !options.profiles) fail('--tree needs --profiles, because the tree lists the chats that file seeds')
-  if ((scenario || byAddress) && edited) fail('--drop-after, --models, --catalog, --connectors, --guarded, --usage, --profiles, --paths, --create-warnings, --configure-clash, --asset-fails, --images, --display, --titles, --transcribe, --pets, --cron, --memory, --vault, --mcp, --plugins, --plugin-catalog, --plugin-refusals, --tools, --list-only, --kanban, --bound, --no-bot-chat, --tree, --yolo, --yolo-denied, --yolo-elsewhere-after, --approvals, --answered-elsewhere, --answer-here, --cancel, --acted-elsewhere, --serve, --attach-limit, --account and --stretch edit the fixture a --fixture run replays. They do nothing with --fake-host, --fake-webapp or --webapp-url')
+  if ((scenario || byAddress) && edited) fail('--drop-after, --models, --catalog, --connectors, --guarded, --usage, --profiles, --paths, --create-warnings, --configure-clash, --asset-fails, --images, --display, --titles, --transcribe, --pets, --cron, --memory, --deny, --vault, --mcp, --plugins, --plugin-catalog, --plugin-refusals, --tools, --list-only, --kanban, --bound, --no-bot-chat, --tree, --yolo, --yolo-denied, --yolo-elsewhere-after, --approvals, --answered-elsewhere, --answer-here, --cancel, --acted-elsewhere, --serve, --attach-limit, --account and --stretch edit the fixture a --fixture run replays. They do nothing with --fake-host, --fake-webapp or --webapp-url')
   if (options['configure-clash'] && !options.profiles) fail('--configure-clash needs --profiles: without it Hermes has no bots to rename')
   if (options['asset-fails'] && !options.profiles) fail('--asset-fails needs --profiles: without it Hermes stores no pictures')
   if (options['attach-limit'] && !/^[1-9]\d*$/.test(options['attach-limit'])) fail(`--attach-limit takes a number of bytes, not "${options['attach-limit']}"`)

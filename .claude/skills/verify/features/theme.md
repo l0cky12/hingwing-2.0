@@ -1,6 +1,6 @@
 # Theme
 
-Settings has an Appearance page whose first row, Theme, has the segments System, Light and Dark, each with a small icon: a monitor, a sun and a moon. System is picked on a first launch, and follows the computer's light or dark setting, at launch and live while Highwing runs. Light and Dark hold that palette whatever the computer says. Main keeps the pick in `theme.json` in the user-data directory and hands it to Chromium as `nativeTheme.themeSource`, so the page's `prefers-color-scheme`, the native scrollbars, fields and menus, and the window's own background all follow it, and a dark launch never shows a light window first. The palettes are dark first: a near-black sidebar, a slightly lighter chat ground and raised surfaces one step lighter, with the same roles in light. Every text color holds 4.5:1 on every surface in both palettes and with more contrast, which `apps/desktop/test/theme.test.ts` checks against `app.css`. A drawn diagram is drawn again in the new palette after a switch.
+Settings has an Appearance page whose first row, Theme, has the segments System, Light and Dark, each drawn as a small window preview in its palette and the picked accent, System split light and dark. System is picked on a first launch, and follows the computer's light or dark setting, at launch and live while Highwing runs. Light and Dark hold that palette whatever the computer says. Main keeps the pick in `theme.json` in the user-data directory and hands it to Chromium as `nativeTheme.themeSource`, so the page's `prefers-color-scheme`, the native scrollbars, fields and menus, and the window's own background all follow it, and a dark launch never shows a light window first. The palettes are dark first: a near-black sidebar, a slightly lighter chat ground and raised surfaces one step lighter, with the same roles in light. Every text color holds 4.5:1 on every surface in both palettes and with more contrast, which `apps/desktop/test/theme.test.ts` checks against `app.css`. A drawn diagram is drawn again in the new palette after a switch.
 
 ## Sub-features
 
@@ -14,7 +14,7 @@ Settings has an Appearance page whose first row, Theme, has the segments System,
 
 ## How to get to it (user POV)
 
-- Press Settings in the top bar, open Appearance, and pick System, Light or Dark.
+- Press the Hermes button at the foot of the sidebar (or Ctrl+,), open Appearance, and pick System, Light or Dark.
 - With System picked, switch the computer between light and dark.
 
 ## Driving it with highwing-verify

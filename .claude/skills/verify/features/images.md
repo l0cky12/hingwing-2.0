@@ -10,7 +10,7 @@ A reply's Markdown image (`![a chart](https://…)`) and a tool step's image (`i
 
 ## How to get to it (user POV)
 
-- Run `HIGHWING_FIXTURE=fixtures/images.jsonl pnpm --filter @highwing/desktop start` from the repo root, type in the "Message Hermes" box and press Send.
+- Run `HIGHWING_FIXTURE=$PWD/fixtures/images.jsonl pnpm --filter @highwing/desktop start` from the repo root, type in the "Message Hermes" box and press Send.
 
 ## Driving it with highwing-verify
 

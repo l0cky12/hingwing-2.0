@@ -11,7 +11,7 @@ With `HIGHWING_FIXTURE` set, the app plays a recorded Hermes gateway through the
 
 ## How to get to it (user POV)
 
-- Run `HIGHWING_FIXTURE=fixtures/errand.jsonl pnpm --filter @highwing/desktop start` from the repo root.
+- Run `HIGHWING_FIXTURE=$PWD/fixtures/errand.jsonl pnpm --filter @highwing/desktop start` from the repo root. The path must be absolute: `pnpm --filter` starts the app in `apps/desktop`, and main reads the path from there.
 
 ## Driving it with highwing-verify
 

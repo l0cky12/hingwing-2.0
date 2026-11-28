@@ -35,6 +35,6 @@ Preconditions:
 
 - `called <method> <json> n` is checked again when the steps end, so it cannot wait for a call the app keeps making, such as `profiles.list` after each turn. `reached` waits for at least n.
 - `wait unstarted` passes only while the chat column holds no thread. A chat that has a session, even an empty one, draws one.
-- Ctrl+N does nothing while Settings or the first-run screen covers the chat, because the top bar it reads is hidden then.
+- Ctrl+N does nothing while Settings, the Tasks view or the first-run screen covers the chat, because it acts only while the top bar is shown.
 - The pencil has the accessible name "New chat". At 680 px and wider the top bar's copy is `display: none`, so `count button "New chat" 1` holds at every width.
 - The composer's Enter picks the highlighted command while the slash menu is open. The first Enter completes `/new `, the second sends it.

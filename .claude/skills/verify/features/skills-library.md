@@ -11,7 +11,7 @@ Settings has a Skills page with one card. It lists the skills of the bot the win
 
 ## How to get to it (user POV)
 
-- Open Settings from the top bar or the Ctrl+K palette, and pick Skills in its nav.
+- Open Settings from the Hermes button at the foot of the sidebar, Ctrl+, or the Ctrl+K palette, and pick Skills in its nav.
 
 ## Driving it with highwing-verify
 
@@ -25,6 +25,6 @@ Preconditions:
 
 ## Gotchas
 
-- Settings needs a saved connection, so these runs use `--fake-host`. A `--fake-host` run writes no `gateway-calls.jsonl`, so `called` cannot check the `profiles.configure` payload. `packages/hermes/test/skills.test.ts` checks it.
+- Settings needs a saved connection, so these runs use `--fake-host`. The fake host writes `gateway-calls.jsonl` too, so `called` can check the `profiles.configure` payload, as [Password managers](./password-managers.md) does. `packages/hermes/test/skills.test.ts` checks it as well.
 - `checked` and `enabled` read once. Use `switched` to wait for Hermes's answer.
 - Hermes's `learning.detail` takes only an id and reads the profile the gateway runs as, the `profiles.list` row whose `path` is `runtime.describe`'s `profile_id`. On any other bot, Open says "This Hermes can show only the SKILL.md files of the bot it runs as." and a skill turned off there has no description, so the card never shows one profile's file for another's skill.

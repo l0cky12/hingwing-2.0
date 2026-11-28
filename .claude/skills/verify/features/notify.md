@@ -6,7 +6,7 @@ Main shows a desktop notification, as Hermes Desktop does, for three kinds of ne
 - **Finished replies.** A turn ends. A completed or stopped turn says "Hermes finished" with the first 140 characters of the reply, or "Message complete." when no reply follows the turn's last step. A failed turn says "Turn failed" with the words the thread shows.
 - **Scheduled jobs.** A job of the home profile runs. Main lists the jobs with `cron.manage` on every new socket and on `cron.changed`. The first list is where runs are counted from. A later run says "Scheduled job finished" with the job's name, or "Scheduled job failed" with its name and error.
 
-A chat is on screen when it is the shown chat, no Settings or setup screen covers it, and a Highwing window has focus. Approvals and finished replies notify only for a chat that is not on screen, so a turn ending in another chat notifies even while the window has focus. A click raises the window and opens the chat. A job's click only raises the window, since Hermes names no chat for a job's run. Main owns the notification, so two windows never show it twice.
+A chat is on screen when it is the shown chat, no Settings, setup screen or first-run intro covers it, and a Highwing window has focus. Approvals and finished replies notify only for a chat that is not on screen, so a turn ending in another chat notifies even while the window has focus. A click raises the window and opens the chat. A job's click only raises the window, since Hermes names no chat for a job's run. Main owns the notification, so two windows never show it twice.
 
 ## Sub-features
 
