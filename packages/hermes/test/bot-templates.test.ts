@@ -12,6 +12,11 @@ describe('the bot templates', () => {
     expect(new Set(BOT_TEMPLATES.map(item => item.id)).size).toBe(BOT_TEMPLATES.length)
   })
 
+  it('gives each template its own face, in a shape and a colour no other template has', () => {
+    expect(new Set(BOT_TEMPLATES.map(item => item.face.shape)).size).toBe(BOT_TEMPLATES.length)
+    expect(new Set(BOT_TEMPLATES.map(item => item.face.color)).size).toBe(BOT_TEMPLATES.length)
+  })
+
   it('turns on only toolsets Hermes has, each once, and approves in a mode Hermes has', () => {
     for (const item of BOT_TEMPLATES) {
       expect(new Set(item.toolsets).size, item.id).toBe(item.toolsets.length)

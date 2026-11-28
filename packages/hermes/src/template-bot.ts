@@ -43,11 +43,11 @@ function setUp(conn: Wire, bot: BotId, step: SetupStep): Promise<Outcome> {
 }
 
 /**
- * Makes the profile, then each setup step in order. A profile Hermes refuses ends the run with createBot's refusal, and nothing else is sent.
+ * Makes the profile with `picture`, then each setup step in order. A profile Hermes refuses ends the run with createBot's refusal, and nothing else is sent.
  * Once the bot exists, a step that fails does not stop the ones after it. Each failure is a warning, as createBot's picture is.
  */
-export async function createFromTemplate(conn: Wire, [create, ...setup]: TemplatePlan): Promise<Outcome<BotCreated>> {
-  const made = await createBot(conn, { name: create.name, description: create.description, model: null, persona: create.soul }, null)
+export async function createFromTemplate(conn: Wire, [create, ...setup]: TemplatePlan, picture: string): Promise<Outcome<BotCreated>> {
+  const made = await createBot(conn, { name: create.name, description: create.description, model: null, persona: create.soul }, picture)
   if (!made.ok) return made
   const warnings = [...made.value.warnings]
   for (const step of setup) {

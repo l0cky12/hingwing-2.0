@@ -1,7 +1,7 @@
-import type { CommandOutcome, PetChoice } from '@highwing/hermes/domain'
+import { FACE_COLOR_NAMES, FACE_SHAPES, type CommandOutcome, type FaceColor, type FaceShape, type PetChoice } from '@highwing/hermes/domain'
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { PictureFile } from '../../ipc-contract'
-import { DEFAULT_LOOK, FACE_COLOR_NAMES, FACE_COLORS, FACE_SHAPES, faceSvg, lookWords, rimOf, shapeFor, surpriseFor, titleOf, type Face, type FaceColor, type FaceShape, type Look } from './look'
+import { DEFAULT_LOOK, FACE_COLORS, faceSvg, lookWords, rimOf, shapeFor, surpriseFor, titleOf, type Face, type Look } from './look'
 import { blobUrlOf, decodes } from './pictures'
 
 export interface LookCalls {
@@ -85,7 +85,7 @@ function useBlobUrl(data: string | null): string | null {
   return url
 }
 
-function FaceArt({ shape, color, size }: { readonly shape: FaceShape; readonly color: FaceColor; readonly size: number }) {
+export function FaceArt({ shape, color, size }: { readonly shape: FaceShape; readonly color: FaceColor; readonly size: number }) {
   return <span className="look-face" dangerouslySetInnerHTML={{ __html: faceSvg(shape, color, size) }} />
 }
 

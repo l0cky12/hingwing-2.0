@@ -144,10 +144,10 @@ describe('validators', () => {
     expect(parseCommand({ do: 'pickModel', sessionId: 's1', model, confirm: 'tok' })).toEqual({ do: 'pickModel', sessionId: 's1', model, confirm: 'tok' })
   })
 
-  it('keep the template and the three answers of a bot made from one', () => {
+  it('keep the template, the three answers and the picture of a bot made from one', () => {
     const answers = { name: 'Ledger', folder: '/srv/billing', time: '02:00' }
-    expect(parseCommand({ do: 'createFromTemplate', template: 'nightly-repo-auditor', answers: { ...answers, extra: 1 }, extra: 1 })).toEqual({ do: 'createFromTemplate', template: 'nightly-repo-auditor', answers })
-    expect(parseCommand({ do: 'createFromTemplate', template: 'bot-builder', answers: { name: 'Builder', folder: '', time: '' } })).toEqual({ do: 'createFromTemplate', template: 'bot-builder', answers: { name: 'Builder', folder: '', time: '' } })
+    expect(parseCommand({ do: 'createFromTemplate', template: 'nightly-repo-auditor', answers: { ...answers, extra: 1 }, picture: PICTURE, extra: 1 })).toEqual({ do: 'createFromTemplate', template: 'nightly-repo-auditor', answers, picture: PICTURE })
+    expect(parseCommand({ do: 'createFromTemplate', template: 'bot-builder', answers: { name: 'Builder', folder: '', time: '' }, picture: PICTURE })).toEqual({ do: 'createFromTemplate', template: 'bot-builder', answers: { name: 'Builder', folder: '', time: '' }, picture: PICTURE })
   })
 
   it('keep the four fields of a new bot, and the bot whose models are listed or null for the socket\'s own', () => {
@@ -367,9 +367,11 @@ describe('validators', () => {
     ['a new bot whose model is not a model', { do: 'createBot', draft: { name: 'Rae', description: '', model: { id: 'm' }, persona: '' } }],
     ['a new bot whose model is left out', { do: 'createBot', draft: { name: 'Rae', description: '', persona: '' } }],
     ['a new bot with no draft', { do: 'createBot', picture: null }],
-    ['a bot made from a template that is not one', { do: 'createFromTemplate', template: 'cook', answers: { name: 'Ledger', folder: '', time: '' } }],
-    ['a bot made from a template with an answer left out', { do: 'createFromTemplate', template: 'bot-builder', answers: { name: 'Ledger', folder: '' } }],
-    ['a bot made from a template with an answer that is not text', { do: 'createFromTemplate', template: 'bot-builder', answers: { name: 'Ledger', folder: 7, time: '' } }],
+    ['a bot made from a template that is not one', { do: 'createFromTemplate', template: 'cook', answers: { name: 'Ledger', folder: '', time: '' }, picture: PICTURE }],
+    ['a bot made from a template with an answer left out', { do: 'createFromTemplate', template: 'bot-builder', answers: { name: 'Ledger', folder: '' }, picture: PICTURE }],
+    ['a bot made from a template with an answer that is not text', { do: 'createFromTemplate', template: 'bot-builder', answers: { name: 'Ledger', folder: 7, time: '' }, picture: PICTURE }],
+    ['a bot made from a template with no picture', { do: 'createFromTemplate', template: 'bot-builder', answers: { name: 'Ledger', folder: '', time: '' }, picture: null }],
+    ['a bot made from a template whose picture is not an image', { do: 'createFromTemplate', template: 'bot-builder', answers: { name: 'Ledger', folder: '', time: '' }, picture: 'data:text/plain;base64,aGVsbG8=' }],
     ['a new bot with no picture named', { do: 'createBot', draft: { name: 'Rae', description: '', model: null, persona: '' } }],
     ['a new bot whose picture is text', { do: 'createBot', draft: { name: 'Rae', description: '', model: null, persona: '' }, picture: `data:image/png;base64,${Buffer.from('not a picture').toString('base64')}` }],
     ['a new bot whose picture is a GIF', { do: 'createBot', draft: { name: 'Rae', description: '', model: null, persona: '' }, picture: `data:image/gif;base64,${Buffer.from('GIF89a').toString('base64')}` }],

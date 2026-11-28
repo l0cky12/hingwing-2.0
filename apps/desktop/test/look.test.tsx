@@ -1,9 +1,9 @@
-import type { ModelMenu } from '@highwing/hermes/domain'
+import { FACE_COLOR_NAMES, FACE_SHAPES, type ModelMenu } from '@highwing/hermes/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { BotForm } from '../src/renderer/bots/BotForm'
 import { EMPTY_DRAFT } from '../src/renderer/bots/bot-form'
-import { DEFAULT_LOOK, FACE_COLOR_NAMES, FACE_SHAPES, faceOf, faceSvg, lookWords, shapeFor, surpriseFor } from '../src/renderer/bots/look'
+import { DEFAULT_LOOK, faceOf, faceSvg, lookWords, shapeFor, surpriseFor } from '../src/renderer/bots/look'
 import { LookPicker, pendingLook, PetTile, thumbOf, type LookCalls } from '../src/renderer/bots/LookPicker'
 import { NewBotForm } from '../src/renderer/bots/NewBotForm'
 

@@ -818,7 +818,7 @@ describe('ownConnection, opening a chat while Settings is up', () => {
 
   const MAKES = [
     ['a bot', { do: 'createBot', draft: { name: 'Rae', description: '', model: null, persona: '' }, picture: null }],
-    ['a bot made from a template', { do: 'createFromTemplate', template: 'bot-builder', answers: { name: 'Builder', folder: '', time: '' } }],
+    ['a bot made from a template', { do: 'createFromTemplate', template: 'bot-builder', answers: { name: 'Builder', folder: '', time: '' }, picture: 'data:image/png;base64,iVBORw0KGgo=' }],
     ['a group chat', { do: 'createGroup', draft: { group: 'launch-plan' as GroupId, name: 'Launch plan', bots: [RAE] } }]
   ] as const
 

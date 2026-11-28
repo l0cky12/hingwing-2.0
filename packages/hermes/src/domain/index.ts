@@ -16,7 +16,7 @@ export { offeredBy, sendPlan, type SendPlan } from './queue'
 export { slashLineOf, type SlashCatalog, type SlashEntry } from './slash'
 export { quoteOf, withQuote, type Quote, type QuoteFrom } from './quote'
 export {
-  BOT_MARKS, BOT_TONES, botsIn, canonicalBotId, DELETES_BOTS, GENERATED_MAX_BYTES, isPetSlug, MARK_SETS, PICTURE_MAX_BYTES, PICTURE_RULE, pictureDataUrlOf, pictureTypeOf, rosterOf, shownUnasked, type AvatarTone, type Bot, type BotCreated, type BotDetails, type BotDraft, type BotEdit, type BotFacts, type BotFlag, type BotId, type BotMark, type Bots, type BotSection, type BotTone, type Marked, type PetChoice, type PictureType, type Roster
+  BOT_MARKS, BOT_TONES, botsIn, canonicalBotId, DELETES_BOTS, FACE_COLOR_NAMES, FACE_SHAPES, GENERATED_MAX_BYTES, isPetSlug, MARK_SETS, PICTURE_MAX_BYTES, PICTURE_RULE, pictureDataUrlOf, pictureTypeOf, rosterOf, shownUnasked, type AvatarTone, type Bot, type BotCreated, type BotDetails, type BotDraft, type BotEdit, type BotFacts, type BotFlag, type BotId, type BotMark, type Bots, type BotSection, type BotTone, type FaceColor, type FaceShape, type Marked, type PetChoice, type PictureType, type Roster
 } from './bots'
 export type { Added, Header, ServerSetup, ServerState, Tested, ToolServer } from './tool-servers'
 export type { PathMatch } from './path'

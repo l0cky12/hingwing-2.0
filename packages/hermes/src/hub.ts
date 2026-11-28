@@ -649,7 +649,7 @@ export function openHermes(options: HermesOptions): Hermes {
       const template = BOT_TEMPLATES.find(({ id }) => id === command.template)
       const plan = template === undefined ? null : templatePlan(template, command.answers)
       if (plan === null) return refused('rejected', 'Fill in every field to make this bot.')
-      const made = await createFromTemplate(conn, plan)
+      const made = await createFromTemplate(conn, plan, command.picture)
       roster.ask()
       // With warnings the setup dialog stays open to show them, and its Open button opens the bot.
       if (made.ok && made.value.warnings.length === 0) await desk.ask({ kind: 'bot', bot: made.value.bot })
