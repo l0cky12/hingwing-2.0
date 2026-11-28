@@ -875,8 +875,9 @@ profile.
 
 ### A bot's skills
 
-Settings' Skills card lists the skills of the bot the window has open. Hermes
-keeps skills per profile, and Highwing reads them only while the card is shown.
+The Connectors screen's Skills tab lists the skills of the bot the window has
+open. Hermes keeps skills per profile, and Highwing reads them only while the
+screen is open.
 
 - `profiles.describe {name}` lists every installed skill with `enabled`. Its
   description is the one `commands.catalog` gives for that profile, which lists
@@ -888,15 +889,15 @@ keeps skills per profile, and Highwing reads them only while the card is shown.
   `hermes-agent` on and still answers `applied.skills: true`
   (`hermes_cli/skills_config.py:43-47`). It then says "Hermes kept
   hermes-agent on."
-- Open reads the SKILL.md with `learning.detail {id}`, which reaches its legacy
-  handler with the interactive grant and names no profile, so it reads the
-  gateway's own. Hermes refuses a `profile` key on it with 4000. Highwing finds
-  the bot the gateway runs as by matching `runtime.describe`'s `profile_id`
-  (`gateway/session_controls.py:582`) to a `profiles.list` row's `path`, which
-  need not be the default bot. On any other bot, Open says "This Hermes can
-  show only the SKILL.md files of the bot it runs as."
+- Highwing reads a SKILL.md with `learning.detail {id}`, which reaches its
+  legacy handler with the interactive grant and names no profile, so it reads
+  the gateway's own. Hermes refuses a `profile` key on it with 4000. Highwing
+  finds the bot the gateway runs as by matching `runtime.describe`'s
+  `profile_id` (`gateway/session_controls.py:582`) to a `profiles.list` row's
+  `path`, which need not be the default bot. On any other bot, a turned-off
+  skill has no description.
 - `skills.changed` makes Highwing read the list and the slash catalog again.
-- On a socket with no interactive grant, the card says "This Hermes can't list
+- On a socket with no interactive grant, the tab says "This Hermes can't list
   skills from Highwing."
 
 A message that names another bot (`@Rae`) is handed to that bot with
