@@ -5,7 +5,7 @@ import type { AttachmentId, BotActivities, Bots, CatalogPlugin, CommandOutcome, 
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { DUE, EXAMPLES, nextIntro, OFF, type Intro, type IntroEvent } from '../src/intro'
-import { applyPush, CHANNEL, NO_SERVERS, isWebLink, MAX_ATTACHMENTS, parseCommand, parseDraft, parseFileRequest, RECORDING_MAX_BYTES, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Accent, type Mode, type Notices, type OnClose, type PaneLayout, type Preview, type PreviewCommand, type Push, type SendKey, type Setup, type SidebarWidth, type Snoozes, type Theme, type Topic } from '../src/ipc-contract'
+import { applyPush, CHANNEL, NO_SERVERS, isWebLink, MAX_ATTACHMENTS, parseCommand, parseDraft, parseFileRequest, RECORDING_MAX_BYTES, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Accent, type Mode, type Notices, type OnClose, type PaneLayout, type Preview, type PreviewCommand, type Push, type SendKey, type Setup, type ShowWork, type SidebarWidth, type Snoozes, type Theme, type Topic } from '../src/ipc-contract'
 import { feed, ownConnection, pinnedConnection, type ConnectionOwner } from '../src/main/connection'
 import { live as liveAt, savedAt } from './support/live'
 import type { Opener } from '../src/main/files'
@@ -469,6 +469,8 @@ describe('validators', () => {
     ['a sidebar width pick that names no width', { do: 'setSidebarWidth' }],
     ['a send key Highwing does not have', { do: 'setSendKey', sendKey: 'altEnter' }],
     ['a send key pick that names no key', { do: 'setSendKey' }],
+    ['a show-work pick Highwing does not have', { do: 'setShowWork', showWork: 'nothing' }],
+    ['a show-work pick that names no level', { do: 'setShowWork' }],
     ['a spell-check pick that is no boolean', { do: 'setSpellCheck', spellCheck: 'false' }],
     ['a spell-check pick that names no choice', { do: 'setSpellCheck' }],
     ['a rename with AI of no chat', { do: 'retitle' }],
@@ -561,6 +563,10 @@ describe('validators', () => {
     expect(parseCommand({ do: 'setSendKey', sendKey, extra: 1 })).toEqual({ do: 'setSendKey', sendKey })
   })
 
+  it.each(['replies', 'actions', 'all'] satisfies ShowWork[])('keep a pick to show %s of the bot\'s work', showWork => {
+    expect(parseCommand({ do: 'setShowWork', showWork, extra: 1 })).toEqual({ do: 'setShowWork', showWork })
+  })
+
   it.each([true, false])('keep spell check set to %s', spellCheck => {
     expect(parseCommand({ do: 'setSpellCheck', spellCheck, extra: 1 })).toEqual({ do: 'setSpellCheck', spellCheck })
   })
@@ -593,7 +599,7 @@ describe('validators', () => {
       'done', 'editBot', 'editTarget', 'examples', 'export', 'generatePicture', 'handBack', 'installPlugin', 'keepTarget', 'killProcess', 'listRoutines', 'loadEarlier', 'lockPasswordManager', 'markBot', 'memory', 'models', 'move',
       'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'pluginCatalog', 'plugins', 'preview', 'queued', 'react', 'readMessages', 'reconnect',
       'reloadPreview', 'remove', 'removeApp', 'removeBotPicture', 'removeMemory', 'removeServer', 'removeToolServer', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'saveMemory', 'send',
-      'sendToGroup', 'setAccent', 'setMode', 'setNotice', 'setOnClose', 'setPlugin', 'setSendKey', 'setSidebarWidth', 'setSkill', 'setSpellCheck', 'setTheme', 'side', 'skillText', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper',
+      'sendToGroup', 'setAccent', 'setMode', 'setNotice', 'setOnClose', 'setPlugin', 'setSendKey', 'setShowWork', 'setSidebarWidth', 'setSkill', 'setSpellCheck', 'setTheme', 'side', 'skillText', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper',
       'takeControl', 'toolServers', 'tools', 'tune', 'unlockPasswordManager', 'usePasswordManager', 'useServer', 'versions'
     ])
   })
@@ -732,6 +738,7 @@ function harness(ownerOf?: (hermes: Hermes) => ConnectionOwner) {
   const accent = feed<Accent>('bot')
   const sidebarWidth = feed<SidebarWidth>('full')
   const sendKey = feed<SendKey>('enter')
+  const showWork = feed<ShowWork>('all')
   const spellCheck = feed(true)
   const snoozes = feed<Snoozes>({})
   const notices = feed<Notices>({ asks: true, replies: true, jobs: true })
@@ -742,7 +749,7 @@ function harness(ownerOf?: (hermes: Hermes) => ConnectionOwner) {
     (ownerOf ?? (held => pinnedConnection(held, read, HEARD)))(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) },
     { keep: draft => void kept.push(draft), load: async () => stored }, pane,
     { pick: async (bot, live) => (picked.push(bot), lives.push(live), { ok: true, value: 'cancelled' }), choose: async () => (picked.push('chosen'), { ok: true, value: PICTURE }) },
-    { store, sources }, saver, { mode, theme, accent, sidebarWidth, sendKey, spellCheck, snoozes, notices, onClose },
+    { store, sources }, saver, { mode, theme, accent, sidebarWidth, sendKey, showWork, spellCheck, snoozes, notices, onClose },
     { intro, apply: async (event: IntroEvent) => intro.set(nextIntro(intro.get(), event)) },
     { read: async () => ({ ok: true, value: CATALOG }) }
   )
@@ -764,7 +771,7 @@ function harness(ownerOf?: (hermes: Hermes) => ConnectionOwner) {
   }
   return {
     listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, loaded, kept, picked, lives, stored, previewed, toPane, staged, served,
-    reads, answers: (next: HttpAnswer) => void (answer = next), saves, exportsAs, setCatalog, setBots, setOpen, mode, theme, accent, sidebarWidth, sendKey, spellCheck, snoozes, notices, onClose, intro
+    reads, answers: (next: HttpAnswer) => void (answer = next), saves, exportsAs, setCatalog, setBots, setOpen, mode, theme, accent, sidebarWidth, sendKey, showWork, spellCheck, snoozes, notices, onClose, intro
   }
 }
 
@@ -808,7 +815,7 @@ describe('serveWindows', () => {
 
   it('serves every app topic a full value from its own feed, and nothing for a name that is no topic', () => {
     const { listeners, pushes, event } = harness()
-    const served: AppTopics = { setup: { at: 'pinned' }, servers: NO_SERVERS, link: LINK, about: ABOUT, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS, groups: NO_GROUPS, groupChat: null, routines: 0, activity: RESEARCH_WAITING, screen: null, skills: { state: 'reading', bot: null }, preview: { state: 'closed' }, mode: 'chats', theme: 'system', accent: 'bot', sidebarWidth: 'full', sendKey: 'enter', spellCheck: true, snoozes: {}, notices: { asks: true, replies: true, jobs: true }, onClose: 'quit', intro: { at: 'off' } }
+    const served: AppTopics = { setup: { at: 'pinned' }, servers: NO_SERVERS, link: LINK, about: ABOUT, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS, groups: NO_GROUPS, groupChat: null, routines: 0, activity: RESEARCH_WAITING, screen: null, skills: { state: 'reading', bot: null }, preview: { state: 'closed' }, mode: 'chats', theme: 'system', accent: 'bot', sidebarWidth: 'full', sendKey: 'enter', showWork: 'all', spellCheck: true, snoozes: {}, notices: { asks: true, replies: true, jobs: true }, onClose: 'quit', intro: { at: 'off' } }
     const watch = listeners.get(CHANNEL.watch)!
     Object.keys(served).forEach((name, id) => watch(event(), id, name))
     expect(pushes).toEqual(Object.entries(served).map(([name, full]) => ({ topic: name, rev: 1, full })))
@@ -916,6 +923,7 @@ describe('serveWindows', () => {
     { topic: 'sidebarWidth', verb: 'setSidebarWidth', key: 'width', was: 'full', picked: 'compact', unknown: 'narrow' },
     { topic: 'onClose', verb: 'setOnClose', key: 'onClose', was: 'quit', picked: 'stay', unknown: 'minimize' },
     { topic: 'sendKey', verb: 'setSendKey', key: 'sendKey', was: 'enter', picked: 'modEnter', unknown: 'altEnter' },
+    { topic: 'showWork', verb: 'setShowWork', key: 'showWork', was: 'all', picked: 'replies', unknown: 'nothing' },
     { topic: 'spellCheck', verb: 'setSpellCheck', key: 'spellCheck', was: true, picked: false, unknown: 'no' }
   ] as const)('sets the $topic a trusted window picks and pushes it, and never passes it to Hermes', async ({ topic, verb, key, was, picked, unknown }) => {
     vi.useFakeTimers()
@@ -991,9 +999,9 @@ describe('serveWindows', () => {
     expect(commands).toEqual([{ do: 'stop', sessionId: 's1' }])
   })
 
-  it('refuses a chat command a window sent for a connection that is no longer live, and passes setup, pane, mode, theme, accent, send key and spell-check commands whatever it sent', async () => {
+  it('refuses a chat command a window sent for a connection that is no longer live, and passes setup, pane, mode, theme, accent, send key, show-work and spell-check commands whatever it sent', async () => {
     let owner: ConnectionOwner | undefined
-    const { handlers, event, commands, toPane, mode, theme, accent, notices, sendKey, spellCheck } = harness(hermes => (owner = switchable(hermes)))
+    const { handlers, event, commands, toPane, mode, theme, accent, notices, sendKey, showWork, spellCheck } = harness(hermes => (owner = switchable(hermes)))
     const run = handlers.get(CHANNEL.run)!
     const pick = { do: 'open', ref: { kind: 'chat', sessionId: 'box-0001' } }
     await expect(run(event(), { do: 'editTarget' }, 1)).resolves.toEqual({ ok: true, value: undefined })
@@ -1013,6 +1021,7 @@ describe('serveWindows', () => {
     await expect(run(event(), { do: 'setTheme', theme: 'light' }, 1)).resolves.toEqual({ ok: true, value: undefined })
     await expect(run(event(), { do: 'setNotice', kind: 'replies', on: false }, 1)).resolves.toEqual({ ok: true, value: undefined })
     await expect(run(event(), { do: 'setSendKey', sendKey: 'modEnter' }, 1)).resolves.toEqual({ ok: true, value: undefined })
+    await expect(run(event(), { do: 'setShowWork', showWork: 'actions' }, 1)).resolves.toEqual({ ok: true, value: undefined })
     await expect(run(event(), { do: 'setSpellCheck', spellCheck: false }, 1)).resolves.toEqual({ ok: true, value: undefined })
     expect(toPane).toEqual([{ do: 'closePreview' }])
     await expect(run(event(), { do: 'setAccent', accent: 'olive' }, 1)).resolves.toEqual({ ok: true, value: undefined })
@@ -1021,6 +1030,7 @@ describe('serveWindows', () => {
     expect(accent.get()).toBe('olive')
     expect(notices.get(), 'one switch turns off one kind').toEqual({ asks: true, replies: false, jobs: true })
     expect(sendKey.get()).toBe('modEnter')
+    expect(showWork.get()).toBe('actions')
     expect(spellCheck.get()).toBe(false)
 
     await expect(run(event(), pick, 2)).resolves.toEqual({ ok: true, value: undefined })

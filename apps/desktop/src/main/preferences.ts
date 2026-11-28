@@ -1,7 +1,7 @@
 import type { Feed } from '@highwing/hermes'
 import { open, readFile, rename } from 'node:fs/promises'
 import { join } from 'node:path'
-import { isAccent, isMode, isNotices, isOnClose, isSendKey, isSidebarWidth, isSnoozes, isTheme, type Accent, type Mode, type Notices, type OnClose, type SendKey, type SidebarWidth, type SnoozeCommand, type Snoozes, type Theme } from '../ipc-contract'
+import { isAccent, isMode, isNotices, isOnClose, isSendKey, isShowWork, isSidebarWidth, isSnoozes, isTheme, type Accent, type Mode, type Notices, type OnClose, type SendKey, type ShowWork, type SidebarWidth, type SnoozeCommand, type Snoozes, type Theme } from '../ipc-contract'
 import { feed } from './connection'
 
 export interface Preference<T, Missing = T> {
@@ -17,6 +17,7 @@ export const ACCENT: Preference<Accent> = { file: 'accent.json', key: 'accent', 
 export const SIDEBAR_WIDTH: Preference<SidebarWidth> = { file: 'sidebar-width.json', key: 'width', is: isSidebarWidth, fallback: 'full' }
 export const ON_CLOSE: Preference<OnClose> = { file: 'on-close.json', key: 'onClose', is: isOnClose, fallback: 'quit' }
 export const SEND_KEY: Preference<SendKey> = { file: 'send-key.json', key: 'sendKey', is: isSendKey, fallback: 'enter' }
+export const SHOW_WORK: Preference<ShowWork> = { file: 'show-work.json', key: 'showWork', is: isShowWork, fallback: 'all' }
 export const SPELL_CHECK: Preference<boolean> = { file: 'spell-check.json', key: 'spellCheck', is: (raw): raw is boolean => typeof raw === 'boolean', fallback: true }
 export const SNOOZES: Preference<Snoozes> = { file: 'snoozes.json', key: 'snoozes', is: isSnoozes, fallback: {} }
 export const NOTICES: Preference<Notices> = { file: 'notices.json', key: 'notices', is: isNotices, fallback: { asks: true, replies: true, jobs: true } }

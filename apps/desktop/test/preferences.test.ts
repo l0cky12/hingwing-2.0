@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { SessionId } from '@highwing/hermes/domain'
-import { ACCENT, MODE, ON_CLOSE, preferenceStore, readPreference, SEND_KEY, SIDEBAR_WIDTH, SNOOZES, snoozed, SPELL_CHECK, THEME, type Preference } from '../src/main/preferences'
+import { ACCENT, MODE, ON_CLOSE, preferenceStore, readPreference, SEND_KEY, SHOW_WORK, SIDEBAR_WIDTH, SNOOZES, snoozed, SPELL_CHECK, THEME, type Preference } from '../src/main/preferences'
 
 const text = (value: unknown) => JSON.stringify(value)
 const emptyDir = () => mkdtempSync(join(tmpdir(), 'highwing-preference-'))
@@ -19,7 +19,8 @@ const CASES: readonly Case<string>[] = [
   { preference: ACCENT, values: ['bot', 'ink', 'slate', 'plum', 'olive', 'mauve', 'umber'], unknown: 'teal' },
   { preference: SIDEBAR_WIDTH, values: ['full', 'compact'], unknown: 'narrow' },
   { preference: ON_CLOSE, values: ['quit', 'stay'], unknown: 'minimize' },
-  { preference: SEND_KEY, values: ['enter', 'modEnter'], unknown: 'altEnter' }
+  { preference: SEND_KEY, values: ['enter', 'modEnter'], unknown: 'altEnter' },
+  { preference: SHOW_WORK, values: ['all', 'replies', 'actions'], unknown: 'nothing' }
 ]
 
 describe.each(CASES)('the $preference.file preference', ({ preference, values, unknown }) => {
