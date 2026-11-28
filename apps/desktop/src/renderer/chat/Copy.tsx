@@ -1,5 +1,6 @@
 import { fieldId } from '@highwing/thread'
 import { useEffect, useRef, useState } from 'react'
+import { ICON } from '../chrome/PopupMenu'
 
 const SHOWN_MS = 2000
 
@@ -26,6 +27,20 @@ export function CopyButton({ text, name }: { readonly text: string; readonly nam
     <>
       <button type="button" className={said === null ? 'copy' : 'copy shown'} aria-label={name} onClick={() => copy(text)}>
         {said ?? 'Copy'}
+      </button>
+      <span className="sr" aria-live="polite">{said ?? ''}</span>
+    </>
+  )
+}
+
+export function CopyIcon({ text, name }: { readonly text: string; readonly name: string }) {
+  const { said, copy } = useCopy()
+  return (
+    <>
+      <button type="button" className={said === null ? 'copy icon' : 'copy icon shown'} aria-label={name} title={name} onClick={() => copy(text)}>
+        {said === null
+          ? <svg {...ICON}><rect width="14" height="14" x="8" y="8" rx="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" /></svg>
+          : <><svg {...ICON}><path d="M20 6 9 17l-5-5" /></svg>{said}</>}
       </button>
       <span className="sr" aria-live="polite">{said ?? ''}</span>
     </>

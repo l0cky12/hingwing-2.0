@@ -39,6 +39,6 @@ The reply holds four `mermaid` blocks in this order: a `flowchart LR` that draws
 - Mermaid cleans each label with DOMPurify, which parses the label in a document no script runs in. Chromium still checks the page's CSP when that parse meets an `onerror` attribute, and logs "Executing inline event handler violates the following Content Security Policy directive" once for the `<img src=x onerror=alert(2)>` label. Nothing ran: the run fails on any dialog, and the drawn SVG holds no `onerror`. That is why the recipes use `quiet-except` rather than `quiet`. Any other console error still fails them.
 - `wait settled` is not enough before a diagram check, because Mermaid draws after the fence closes, and the first diagram also waits for Mermaid to load. Use `wait drawn`.
 - `click button Source` fails in strict mode, because the reply has two. Use `click-at`.
-- The toggle and Copy are at opacity 0 until hover or keyboard focus, like a code block's Copy. They are in the ARIA tree at rest.
+- The toggle and Copy sit in the block's header row with the language, as in a code block, and always show.
 - The drawn SVG is itself an `img` in the ARIA tree, inside the named one, so `tally img` counts it, and the bots sidebar's icons too. Count diagrams with `count img /^Diagram/`.
 - A diagram is drawn in the palette the page shows, and drawn again when the palette changes. [Theme](./theme.md) has the recipe. A shot right after a switch can still show the old drawing: follow `system-theme` with `palette`, which waits for every diagram.

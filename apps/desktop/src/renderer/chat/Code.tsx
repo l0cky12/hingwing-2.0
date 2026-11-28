@@ -1,6 +1,6 @@
 import type { Block } from '@highwing/thread'
 import { useEffect, useMemo, useReducer, type ReactNode } from 'react'
-import { CopyButton } from './Copy'
+import { CopyIcon } from './Copy'
 import { grammarFor, highlight, loadGrammar } from './highlight'
 
 const MAX_HIGHLIGHT_CHARS = 100_000
@@ -24,8 +24,8 @@ export function Code({ node, caret, findId }: CodeProps) {
   }, [grammar, waiting])
   return (
     <div className="code" data-open={node.open || undefined}>
+      <div className="code-head">{node.lang !== null && <span className="lang">{node.lang}</span>}<CopyIcon text={node.text} name="Copy code" /></div>
       <pre data-find={findId}>{html === null ? <code>{node.text}</code> : <code dangerouslySetInnerHTML={{ __html: html }} />}{caret}</pre>
-      <div className="chip">{node.lang !== null && <span className="lang">{node.lang}</span>}<CopyButton text={node.text} name="Copy code" /></div>
     </div>
   )
 }
