@@ -12,7 +12,7 @@ const slot = <T,>(start: () => T): [T, (next: T | ((held: T) => T)) => void] => 
   if (!hooks.slots.has(key)) hooks.slots.set(key, start())
   return [hooks.slots.get(key) as T, next => hooks.slots.set(key, typeof next === 'function' ? (next as (held: T) => T)(hooks.slots.get(key) as T) : next)]
 }
-const seen = vi.hoisted(() => ({ topics: {} as Record<string, unknown>, commands: [] as WindowCommand[], edited: null as Promise<unknown> | null, created: null as unknown }))
+const seen = vi.hoisted(() => ({ topics: {} as Record<string, unknown>, commands: [] as WindowCommand[], epochs: [] as unknown[][], edited: null as Promise<unknown> | null, created: null as unknown }))
 
 vi.mock('react', async original => ({
   ...(await original<typeof import('react')>()),
@@ -41,9 +41,15 @@ vi.mock('../src/renderer/store', () => {
   }
   return {
     Epoch: {},
-    pickBotPicture: async () => ({ ok: true, value: 'cancelled' }),
+    pickBotPicture: async (bot: string, at: number) => {
+      seen.epochs.push(['pick', bot, at])
+      return { ok: true, value: 'cancelled' }
+    },
     run,
-    runAt: (_epoch: number, command: WindowCommand) => run(command),
+    runAt: (at: number, command: WindowCommand) => {
+      seen.epochs.push([command.do, at])
+      return run(command)
+    },
     useTopic: (topic: string | null) => (topic === null ? undefined : seen.topics[topic])
   }
 })
@@ -96,6 +102,7 @@ const OPEN: OpenChat = { shown: { kind: 'bot', bot: RAE, sessionId: 's1' as neve
 beforeEach(() => {
   hooks.slots.clear()
   seen.commands = []
+  seen.epochs = []
   seen.edited = null
   seen.created = null
   seen.topics = { open: OPEN, bots: listed(fact('rae', 'Rae')), 'session:s1': { title: 'Bot Chat' } }
@@ -136,6 +143,14 @@ describe("the open bot's profile panel", () => {
     await settle()
     expect(seen.commands.at(-1)).toMatchObject({ do: 'generatePicture', prompt: expect.stringContaining('named Rae,') })
     expect(button('Generate pet picture')!.props['disabled']).toBe(false)
+  })
+
+  it("sends Upload picture on the connection the panel was opened on, so main refuses it after a switch to another Hermes", async () => {
+    button('Details for Rae')!.props.onClick!()
+    await settle()
+    button('Upload picture')!.props.onClick!()
+    await settle()
+    expect(seen.epochs.at(-1)).toEqual(['pick', 'rae', 0])
   })
 
   it('keeps New bot… off while Save is out, since the save landing closes the panel', async () => {
