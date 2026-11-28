@@ -80,9 +80,9 @@ describe('the Memory tab', () => {
 })
 
 describe('the panel tabs', () => {
-  it('are Details, Routines and Memory, in that order', () => {
+  it('are Details, Routines, Memory and Library, in that order', () => {
     const html = renderToStaticMarkup(<TabRow tabs={TABS} selected="memory" onSelect={() => {}} />)
-    expect([...html.matchAll(/role="tab"[^>]*>([^<]+)</g)].map(match => match[1])).toEqual(['Details', 'Routines', 'Memory'])
+    expect([...html.matchAll(/role="tab"[^>]*>([^<]+)</g)].map(match => match[1])).toEqual(['Details', 'Routines', 'Memory', 'Library'])
     expect(html).toMatch(/aria-selected="true" tabindex="0">Memory</)
   })
 })

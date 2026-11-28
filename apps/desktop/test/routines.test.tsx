@@ -231,8 +231,8 @@ describe('the Routines tab in the details panel', () => {
   })
 
   it('ends each row\'s buttons at the panel\'s inner edge, where the tab line and Close end', () => {
-    const tab = rightOf(topLevelStyleOf('.routines-tab').get('margin'))
+    const tab = rightOf(topLevelStyleOf('.bot-tab').get('margin'))
     expect(tab + rightOf(topLevelStyleOf('.routine').get('padding')), 'the rows').toBe(0)
-    expect(tab + rightOf(topLevelStyleOf('.routines-tab > .form-choices').get('padding')), 'Close').toBe(0)
+    expect(tab + rightOf(topLevelStyleOf('.bot-tab > .form-choices').get('padding')), 'Close').toBe(0)
   })
 })

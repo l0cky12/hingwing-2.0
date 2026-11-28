@@ -37,6 +37,7 @@ vi.mock('../src/renderer/store', () => {
     if (command.do === 'botModels') return { ok: true, value: { options: [{ id: 'careful-large', provider: 'acme', providerName: 'Acme' }], fallback: null } }
     if (command.do === 'editBot' && seen.edited !== null) return seen.edited
     if (command.do === 'createBot' && seen.created !== null) return seen.created
+    if (command.do === 'saveLibraryItem') return { ok: true, value: '/home/u/Downloads/notes.md' }
     return { ok: true, value: undefined }
   }
   return {
@@ -192,5 +193,40 @@ describe("the open bot's profile panel", () => {
     buttons('Cancel').at(-1)!.props.onClick!()
     expect(screen().some(({ type }) => type === 'NewBotForm'), 'the form closed').toBe(false)
     expect(nameField().props['value']).toBe('Rae Two')
+  })
+})
+
+describe("the open bot's Library tab", () => {
+  const ROW = { id: 'hermes:/home/rae/notes.md', type: 'File', name: 'notes.md', when: 'Today 14:05', saves: true }
+  const opened = async () => {
+    button('Details for Rae')!.props.onClick!()
+    await settle()
+    screen().find(({ type, props }) => type === 'button' && props['role'] === 'tab' && textOf(props.children) === 'Library')!.props.onClick!()
+  }
+  const list = () => screen().find(({ type }) => type === 'LibraryList')!.props as unknown as { onOpen: (row: typeof ROW) => void; onSave: (row: typeof ROW) => void }
+
+  it('shows the Library under its own tab, with the Details form hidden and a Close of its own', async () => {
+    await opened()
+    const drawn = screen()
+    expect(drawn.filter(({ props }) => props['role'] === 'tab').map(({ props }) => textOf(props.children))).toEqual(['Details', 'Routines', 'Memory', 'Library'])
+    expect(drawn.find(({ props }) => props['role'] === 'tabpanel')?.props['aria-label']).toBe('Library')
+    expect(drawn.some(({ props }) => props['className'] === 'bot-panel off-details'), 'the Details fields are hidden').toBe(true)
+    expect(textOf(drawn.find(({ type, props }) => type === 'p' && props['aria-busy'] === 'true')?.props.children)).toBe('Loading the library…')
+    expect(button('Close')).toBeDefined()
+  })
+
+  it('asks main for an item by its id alone, says where a save went, and closes the panel once the item shows', async () => {
+    await opened()
+    list().onSave(ROW)
+    await settle()
+    expect(seen.commands.at(-1)).toEqual({ do: 'saveLibraryItem', bot: 'rae', id: 'hermes:/home/rae/notes.md' })
+    const status = screen().find(({ type, props }) => type === 'p' && props['role'] === 'status')
+    expect(textOf(status?.props.children)).toBe('Saved notes.md to /home/u/Downloads/notes.md.')
+    expect(button('Upload picture'), 'a save keeps the panel open').toBeDefined()
+
+    list().onOpen(ROW)
+    await settle()
+    expect(seen.commands.at(-1)).toEqual({ do: 'previewLibraryItem', bot: 'rae', id: 'hermes:/home/rae/notes.md' })
+    expect(button('Upload picture'), 'the panel closed, so the pane is in view').toBeUndefined()
   })
 })
