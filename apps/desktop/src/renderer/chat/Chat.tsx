@@ -23,6 +23,7 @@ import type { HelperControls } from './Helpers'
 import { ImageSessionContext } from './Image'
 import { forget, landAt, landed, markLanded, onPress, pressFor, unmarkLanded } from './landing'
 import { marked, pressedOf, unmarked } from './marks'
+import { usePaneReload } from './page-reload'
 import { refusalOnPane, type PaneRefusal } from './refusal'
 import { distanceFrom, FOLLOW_WITHIN, FOLLOWING, jumpWords, placeAfter, progressOf, type Place } from './place'
 import type { RequestAnswer } from './Asks'
@@ -73,6 +74,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   following.current = place.kind === 'following'
 
   useWakeAt(view?.changesAt ?? null, tick, wake)
+  usePaneReload(id, view?.newestPages ?? null)
 
   const [read, setRead] = useState<{ readonly id: SessionId; readonly versions: ChatVersions } | null>(null)
   useEffect(() => {
