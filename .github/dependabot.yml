@@ -1,0 +1,12 @@
+# npm security fixes come from Dependabot security updates (repo settings) and need no entry here.
+# Version bumps for npm are left off: desktop dependencies are pinned on purpose.
+version: 2
+updates:
+  # The workflows pin actions to commit SHAs, so this is what moves them forward.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ['*']
