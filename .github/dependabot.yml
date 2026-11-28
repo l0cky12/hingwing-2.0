@@ -1,5 +1,5 @@
-# npm is left out: pnpm 12 writes pnpm-lock.yaml as two YAML documents, which GitHub's
-# dependency graph cannot read, so Dependabot cannot update it. Run `pnpm audit` instead.
+# npm version bumps are left out: desktop dependencies are pinned on purpose.
+# npm security fixes come from Dependabot security updates in the repo settings.
 version: 2
 updates:
   # The workflows pin actions to commit SHAs, so this is what moves them forward.
