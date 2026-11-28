@@ -1218,17 +1218,19 @@ async function checkRing(ctx, role, name) {
   const ring = await target.evaluate(el => {
     const style = getComputedStyle(el)
     const box = el.getBoundingClientRect()
-    return { focused: el === document.activeElement, style: style.outlineStyle, color: style.outlineColor, width: parseFloat(style.outlineWidth), offset: parseFloat(style.outlineOffset), box: { left: box.left, top: box.top, right: box.right, bottom: box.bottom } }
+    return { focused: el === document.activeElement, style: style.outlineStyle, color: style.outlineColor, width: parseFloat(style.outlineWidth), offset: parseFloat(style.outlineOffset), box: { left: box.left, top: box.top, right: box.right, bottom: box.bottom }, view: { width: innerWidth, height: innerHeight } }
   })
   if (!ring.focused) throw new Error(`${role} "${name}" does not have focus`)
   if (ring.style === 'none' || ring.width === 0) throw new Error(`${role} "${name}" draws no outline`)
   const reach = ring.offset + ring.width
-  const clip = { x: Math.floor(ring.box.left - reach), y: Math.floor(ring.box.top - reach) }
-  clip.width = Math.ceil(ring.box.right + reach) - clip.x
-  clip.height = Math.ceil(ring.box.bottom + reach) - clip.y
+  const clip = { x: Math.max(0, Math.floor(ring.box.left - reach)), y: Math.max(0, Math.floor(ring.box.top - reach)) }
+  clip.width = Math.min(ring.view.width, Math.ceil(ring.box.right + reach)) - clip.x
+  clip.height = Math.min(ring.view.height, Math.ceil(ring.box.bottom + reach)) - clip.y
+  if (clip.width <= 0 || clip.height <= 0) throw new Error(`${role} "${name}" lies outside the window`)
   const png = await ctx.page.screenshot({ clip, animations: 'disabled', caret: 'hide' })
   const raw = spawnSync('magick', ['png:-', '-depth', '8', 'rgb:-'], { input: png, maxBuffer: 64 << 20 })
   if (raw.status !== 0) throw new Error('magick could not read the ring shot')
+  const [shotWidth, shotHeight] = [png.readUInt32BE(16), png.readUInt32BE(20)]
   const want = ring.color.match(/[\d.]+/g).slice(0, 3).map(Number)
   const middle = ring.offset + ring.width / 2
   const sides = {
@@ -1238,14 +1240,22 @@ async function checkRing(ctx, role, name) {
     right: [ring.box.right + middle, (ring.box.top + ring.box.bottom) / 2]
   }
   const missing = []
+  const offscreen = []
   for (const [side, [x, y]] of Object.entries(sides)) {
-    const at = 3 * (Math.floor(y - clip.y) * clip.width + Math.floor(x - clip.x))
+    const [col, row] = [Math.floor(x - clip.x), Math.floor(y - clip.y)]
+    if (col < 0 || row < 0 || col >= shotWidth || row >= shotHeight) {
+      log(ctx, `  ${side} of the ring at x ${Math.floor(x)}, y ${Math.floor(y)} is offscreen, outside the ${ring.view.width}x${ring.view.height} window`)
+      offscreen.push(side)
+      continue
+    }
+    const at = 3 * (row * shotWidth + col)
     const got = [...raw.stdout.subarray(at, at + 3)]
     const off = Math.max(...got.map((value, i) => Math.abs(value - want[i])))
     log(ctx, `  ${side} of the ring at x ${Math.floor(x)}, y ${Math.floor(y)} is rgb(${got.join(', ')}), the outline is rgb(${want.join(', ')})`)
     if (off > 24) missing.push(side)
   }
   if (missing.length > 0) throw new Error(`${role} "${name}" has its focus ring cut off at the ${missing.join(', ')}`)
+  if (offscreen.length === 4) throw new Error(`${role} "${name}" has no side of its focus ring inside the window`)
 }
 
 async function sizeWindow(ctx, options) {
