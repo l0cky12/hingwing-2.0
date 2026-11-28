@@ -527,16 +527,23 @@ describe('the scripted gateway hands a message to another bot', () => {
     expect(await call('bot_relay.deliver', { ...deliver, from: 'ada' })).toMatchObject(refusal('invalid_params', { fields: ['from'] }))
   })
 
-  it('answers with the settled receipt and the reply once the delay has passed, and not before', async () => {
-    const { post, frames, clock } = await rawSocket({}, TEAM)
-    const id = post('bot_relay.deliver', deliver)
+  it('answers claimed at once, and the same id settled with the reply once the delay has passed, and not before', async () => {
+    const { call, clock } = await rawSocket({}, TEAM)
+    const receipt = { delivery_id: ID, profile_home: '/fixture/profiles/rae', session_id: 'bot-chat-rae', message: deliver.message, admission_id: 'bot-chat-rae-admission-a1a1a1a1' }
+    expect((await call('bot_relay.deliver', deliver)).result).toEqual({ status: 'claimed', ...receipt })
     await clock.advance(1_499)
-    expect(frames.filter(frame => frame.id === id)).toEqual([])
+    expect((await call('bot_relay.deliver', deliver)).result).toEqual({ status: 'claimed', ...receipt })
     await clock.advance(1)
-    expect(frames.find(frame => frame.id === id)?.result).toEqual({
-      status: 'settled', delivery_id: ID, profile_home: '/fixture/profiles/rae', session_id: 'bot-chat-rae', message: deliver.message,
-      admission_id: 'bot-chat-rae-admission-a1a1a1a1', reply: RAE_SAID
-    })
+    expect((await call('bot_relay.deliver', deliver)).result).toEqual({ status: 'settled', ...receipt, reply: RAE_SAID })
+  })
+
+  it('refuses the same id with another message, and admits it once', async () => {
+    const { call, frames } = await rawSocket({}, TEAM)
+    await call('bot_relay.deliver', deliver)
+    expect(await call('bot_relay.deliver', { ...deliver, message: 'Something else' })).toMatchObject(refusal('admission_conflict'))
+    await call('bot_relay.deliver', deliver)
+    const changed = frames.filter(frame => frame.method === 'event' && (frame.params as { type?: string } | undefined)?.type === 'sessions.changed')
+    expect(changed, 'one turn started for the delivery').toHaveLength(1)
   })
 
   it('refuses for a bot the header refuses for, and for a bot with no entry as one that is not running', async () => {
