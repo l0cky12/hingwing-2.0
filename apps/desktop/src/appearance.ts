@@ -37,7 +37,7 @@ const MONO = '"JetBrains Mono", "DejaVu Sans Mono", monospace'
 
 export const FONT_ROLES: { readonly [R in FontRole]: FontRoleSpec } = {
   interface: {
-    label: 'Interface font', desc: 'Menus, settings and the bots’ replies.', face: 'Schibsted Grotesk', stack: SANS, size: 14, min: 11, max: 20, wrap: null,
+    label: 'Interface font', desc: 'Menus, settings and replies.', face: 'Schibsted Grotesk', stack: SANS, size: 14, min: 11, max: 20, wrap: null,
     sample: 'Highwing keeps your bots, their chats and your settings in one window.', vars: { family: '--sans', scale: '--ui-scale' }
   },
   prompt: {
@@ -50,7 +50,7 @@ export const FONT_ROLES: { readonly [R in FontRole]: FontRoleSpec } = {
     vars: { family: '--mono', scale: '--code-scale' }
   },
   terminal: {
-    label: 'Terminal font', desc: 'Commands the bots run, and what they print.', face: 'JetBrains Mono', stack: MONO, size: 12, min: 10, max: 20, wrap: 'terminal',
+    label: 'Terminal font', desc: 'Commands run in a chat, and what they print.', face: 'JetBrains Mono', stack: MONO, size: 12, min: 10, max: 20, wrap: 'terminal',
     sample: '$ pnpm test\n✓ apps/desktop/test/appearance.test.ts (24 tests) 41ms\n✓ apps/desktop/test/preferences.test.ts (96 tests) 212ms\nDone in 3.2s',
     vars: { family: '--terminal-font', scale: '--terminal-scale' }
   }
@@ -110,6 +110,13 @@ export const isDefaultRole = (appearance: Appearance, role: FontRole): boolean =
   const { family, size } = appearance.fonts[role]
   const wrap = FONT_ROLES[role].wrap
   return family === null && size === FONT_ROLES[role].size && (wrap === null || appearance.wrap[wrap] === DEFAULT_APPEARANCE.wrap[wrap])
+}
+
+/** The faces a font menu offers, by name: each installed family once, plus the saved face when this computer no longer has it. */
+export function fontChoices(installed: readonly string[], saved: string | null): readonly string[] {
+  const names = new Set(installed.filter(isFontFamily))
+  if (saved !== null) names.add(saved)
+  return [...names].sort((a, b) => a.localeCompare(b))
 }
 
 const WRAPS: { readonly [W in WrapRole]: (on: boolean) => { readonly [property: string]: string } } = {

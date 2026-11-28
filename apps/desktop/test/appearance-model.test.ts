@@ -5,6 +5,7 @@ import { appearanceStyle, DEFAULT_APPEARANCE, isAppearance, type Appearance, typ
 import { APPEARANCE, readPreference } from '../src/main/preferences'
 
 const withFont = (role: FontRole, pick: FontPick): Appearance => ({ ...DEFAULT_APPEARANCE, fonts: { ...DEFAULT_APPEARANCE.fonts, [role]: pick } })
+const without = <T extends object>(value: T, key: keyof T) => Object.fromEntries(Object.entries(value).filter(([held]) => held !== key))
 const stylesheet = readFileSync(join(import.meta.dirname, '../src/renderer/styles/app.css'), 'utf8')
 /** The value the stylesheet's first `:root` rule gives a custom property. */
 const sheetDefault = (property: string) => new RegExp(`^:root \\{[^}]*?\\n  ${property}: ([^;]+);`, 'ms').exec(stylesheet)?.[1]
@@ -50,10 +51,10 @@ describe('an appearance from outside the renderer', () => {
   })
 
   it.each([
-    ['no math switch', (({ math: _, ...rest }) => rest)(DEFAULT_APPEARANCE)],
+    ['no math switch', without(DEFAULT_APPEARANCE, 'math')],
     ['an extra field', { ...DEFAULT_APPEARANCE, glass: 80 }],
     ['a role Highwing does not have', { ...DEFAULT_APPEARANCE, fonts: { ...DEFAULT_APPEARANCE.fonts, chat: { family: null, size: 14 } } }],
-    ['a role missing', { ...DEFAULT_APPEARANCE, fonts: (({ terminal: _, ...rest }) => rest)(DEFAULT_APPEARANCE.fonts) }],
+    ['a role missing', { ...DEFAULT_APPEARANCE, fonts: without(DEFAULT_APPEARANCE.fonts, 'terminal') }],
     ['a wrap switch that is no boolean', { ...DEFAULT_APPEARANCE, wrap: { code: 'yes', terminal: true } }],
     ['a chat width Highwing does not have', { ...DEFAULT_APPEARANCE, chatWidth: 'toString' }],
     ['a contrast under 50', { ...DEFAULT_APPEARANCE, contrast: 49 }],
