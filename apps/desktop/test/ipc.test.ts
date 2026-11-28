@@ -1,12 +1,13 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { isDeepStrictEqual } from 'node:util'
-import type { Hermes, HttpAnswer, Route } from '@highwing/hermes'
-import type { AttachmentId, BotActivities, Bots, CatalogPlugin, CommandOutcome, Exported, Groups, Link, OpenChat, Recording, RelayDesk, Session, SessionId, Sidebar, SkillLibrary, SlashCatalog, SshHost } from '@highwing/hermes/domain'
+import type { Hermes, HttpAnswer, PickedRoute } from '@highwing/hermes'
+import type { AttachmentId, BotActivities, Bots, CatalogPlugin, CommandOutcome, Exported, Groups, Link, OpenChat, Recording, RelayDesk, ServerId, Session, SessionId, Sidebar, SkillLibrary, SlashCatalog, SshHost } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { DUE, EXAMPLES, nextIntro, OFF, type Intro, type IntroEvent } from '../src/intro'
-import { applyPush, CHANNEL, isWebLink, MAX_ATTACHMENTS, parseCommand, parseDraft, parseFileRequest, RECORDING_MAX_BYTES, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Accent, type Mode, type Notices, type OnClose, type PaneLayout, type Preview, type PreviewCommand, type Push, type SendKey, type Setup, type SidebarWidth, type Snoozes, type Theme, type Topic } from '../src/ipc-contract'
+import { applyPush, CHANNEL, NO_SERVERS, isWebLink, MAX_ATTACHMENTS, parseCommand, parseDraft, parseFileRequest, RECORDING_MAX_BYTES, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Accent, type Mode, type Notices, type OnClose, type PaneLayout, type Preview, type PreviewCommand, type Push, type SendKey, type Setup, type SidebarWidth, type Snoozes, type Theme, type Topic } from '../src/ipc-contract'
 import { feed, ownConnection, pinnedConnection, type ConnectionOwner } from '../src/main/connection'
+import { live as liveAt, savedAt } from './support/live'
 import type { Opener } from '../src/main/files'
 import type { ImageContext } from '../src/main/images'
 import type { AttachSources, StageSource } from '../src/main/attachments'
@@ -292,19 +293,34 @@ describe('validators', () => {
   })
 
   it('read a target with the parser the settings file uses', () => {
-    expect(parseCommand({ do: 'checkTarget', target: { kind: 'remote', host: ' hermes-host.example-tailnet.ts.net ', port: 22 } }))
-      .toEqual({ do: 'checkTarget', target: { kind: 'remote', host: 'hermes-host.example-tailnet.ts.net' } })
-    expect(parseCommand({ do: 'checkTarget', target: { kind: 'local' } })).toEqual({ do: 'checkTarget', target: { kind: 'local' } })
-    expect(parseCommand({ do: 'checkTarget', target: { kind: 'url', url: 'https://hermes.example.com', token: 'dropped' } }))
-      .toEqual({ do: 'checkTarget', target: { kind: 'url', url: 'https://hermes.example.com' } })
+    expect(parseCommand({ do: 'checkTarget', target: { kind: 'remote', host: ' hermes-host.example-tailnet.ts.net ', port: 22 }, into: 'replace' }))
+      .toEqual({ do: 'checkTarget', target: { kind: 'remote', host: 'hermes-host.example-tailnet.ts.net' }, into: 'replace' })
+    expect(parseCommand({ do: 'checkTarget', target: { kind: 'local' }, into: 'replace' })).toEqual({ do: 'checkTarget', target: { kind: 'local' }, into: 'replace' })
+    expect(parseCommand({ do: 'checkTarget', target: { kind: 'url', url: 'https://hermes.example.com', token: 'dropped' }, into: 'replace' }))
+      .toEqual({ do: 'checkTarget', target: { kind: 'url', url: 'https://hermes.example.com' }, into: 'replace' })
     expect(parseCommand({ do: 'editTarget', target: { kind: 'local' } })).toEqual({ do: 'editTarget' })
   })
 
+  it('read what a check does with its target, and the edits of the saved servers', () => {
+    const lan = { kind: 'ssh', host: '192.168.1.20' }
+    for (const into of ['replace', 'addServer', 'addWay']) expect(parseCommand({ do: 'checkTarget', target: lan, into })).toEqual({ do: 'checkTarget', target: lan, into })
+    expect(parseCommand({ do: 'useServer', server: 'server-2', extra: 1 })).toEqual({ do: 'useServer', server: 'server-2' })
+    expect(parseCommand({ do: 'removeServer', server: 'server-2' })).toEqual({ do: 'removeServer', server: 'server-2' })
+    expect(parseCommand({ do: 'arrangeWays', ways: [{ ...lan, port: 22 }, { kind: 'local' }], pick: 'order' })).toEqual({ do: 'arrangeWays', ways: [lan, { kind: 'local' }], pick: 'order' })
+  })
+
   it.each([
-    ['a target ssh would read as an option', { do: 'checkTarget', target: { kind: 'remote', host: '-oProxyCommand=true' } }],
+    ['a target ssh would read as an option', { do: 'checkTarget', target: { kind: 'remote', host: '-oProxyCommand=true' }, into: 'replace' }],
     ['a check with no target', { do: 'checkTarget' }],
-    ['a check of an address that holds a password', { do: 'checkTarget', target: { kind: 'url', url: 'https://ada:secret@hermes.example.com' } }],
-    ['a check of an address the form would have spelled another way', { do: 'checkTarget', target: { kind: 'url', url: 'hermes.example.com' } }],
+    ['a check that does not say what to do with its target', { do: 'checkTarget', target: { kind: 'local' } }],
+    ['a check into something else', { do: 'checkTarget', target: { kind: 'local' }, into: 'everywhere' }],
+    ['a pick of no server', { do: 'useServer', server: '' }],
+    ['a removal of no server', { do: 'removeServer' }],
+    ['ways that are no list', { do: 'arrangeWays', ways: { kind: 'local' }, pick: 'order' }],
+    ['a way that is no target', { do: 'arrangeWays', ways: [{ kind: 'local' }, { kind: 'ssh', host: '-oProxyCommand=true' }], pick: 'order' }],
+    ['a pick it does not know', { do: 'arrangeWays', ways: [{ kind: 'local' }], pick: 'random' }],
+    ['a check of an address that holds a password', { do: 'checkTarget', target: { kind: 'url', url: 'https://ada:secret@hermes.example.com' }, into: 'replace' }],
+    ['a check of an address the form would have spelled another way', { do: 'checkTarget', target: { kind: 'url', url: 'hermes.example.com' }, into: 'replace' }],
     ['not an object', 'send'],
     ['an unknown verb', { do: 'format-disk' }],
     ['a verb from the prototype', { do: 'toString' }],
@@ -572,13 +588,13 @@ describe('validators', () => {
 
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
-      'accountUsage', 'addToolServer', 'answer', 'appSignIn', 'apps', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff',
+      'accountUsage', 'addToolServer', 'answer', 'appSignIn', 'apps', 'archive', 'arrangeWays', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff',
       'checkpoints', 'closePreview', 'completePath', 'compress', 'connectApp', 'contextBreakdown', 'control', 'controlRoutine', 'createBot', 'createFromTemplate', 'createGroup', 'deleteGroup', 'denyRules', 'describeBot', 'discard',
       'done', 'editBot', 'editTarget', 'examples', 'export', 'generatePicture', 'handBack', 'installPlugin', 'keepTarget', 'killProcess', 'listRoutines', 'loadEarlier', 'lockPasswordManager', 'markBot', 'memory', 'models', 'move',
       'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'pluginCatalog', 'plugins', 'preview', 'queued', 'react', 'readMessages', 'reconnect',
-      'reloadPreview', 'remove', 'removeApp', 'removeBotPicture', 'removeMemory', 'removeToolServer', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'saveMemory', 'send',
+      'reloadPreview', 'remove', 'removeApp', 'removeBotPicture', 'removeMemory', 'removeServer', 'removeToolServer', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'saveMemory', 'send',
       'sendToGroup', 'setAccent', 'setMode', 'setNotice', 'setOnClose', 'setPlugin', 'setSendKey', 'setSidebarWidth', 'setSkill', 'setSpellCheck', 'setTheme', 'side', 'skillText', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper',
-      'takeControl', 'toolServers', 'tools', 'tune', 'unlockPasswordManager', 'usePasswordManager', 'versions'
+      'takeControl', 'toolServers', 'tools', 'tune', 'unlockPasswordManager', 'usePasswordManager', 'useServer', 'versions'
     ])
   })
 })
@@ -600,10 +616,11 @@ const HEARD = async ({ mime, audio }: Recording): Promise<CommandOutcome<string>
 
 /** An owner live on a remote machine, whose every check passes, so a check of this computer switches to it at epoch 2. */
 const switchable = (hermes: Hermes) => ownConnection({
-  loaded: { state: 'saved', target: { kind: 'remote', host: 'box' as SshHost } },
+  loaded: savedAt({ kind: 'remote', host: 'box' as SshHost }),
   save: async () => {},
   check: async () => ({ ok: true }),
-  routeFor: () => ({ dial: async () => { throw new Error('the test never dials') }, transcribe: HEARD, dispose: () => {} }) as unknown as Route,
+  routeFor: () => ({ dial: async () => { throw new Error('the test never dials') }, transcribe: HEARD, dispose: () => {} }) as unknown as PickedRoute,
+  newId: () => 'server-2' as ServerId,
   open: () => ({ ...hermes, close: async () => {} }),
   armIntro: async () => {}
 })
@@ -791,7 +808,7 @@ describe('serveWindows', () => {
 
   it('serves every app topic a full value from its own feed, and nothing for a name that is no topic', () => {
     const { listeners, pushes, event } = harness()
-    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, about: ABOUT, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS, groups: NO_GROUPS, groupChat: null, routines: 0, activity: RESEARCH_WAITING, screen: null, skills: { state: 'reading', bot: null }, preview: { state: 'closed' }, mode: 'chats', theme: 'system', accent: 'bot', sidebarWidth: 'full', sendKey: 'enter', spellCheck: true, snoozes: {}, notices: { asks: true, replies: true, jobs: true }, onClose: 'quit', intro: { at: 'off' } }
+    const served: AppTopics = { setup: { at: 'pinned' }, servers: NO_SERVERS, link: LINK, about: ABOUT, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS, groups: NO_GROUPS, groupChat: null, routines: 0, activity: RESEARCH_WAITING, screen: null, skills: { state: 'reading', bot: null }, preview: { state: 'closed' }, mode: 'chats', theme: 'system', accent: 'bot', sidebarWidth: 'full', sendKey: 'enter', spellCheck: true, snoozes: {}, notices: { asks: true, replies: true, jobs: true }, onClose: 'quit', intro: { at: 'off' } }
     const watch = listeners.get(CHANNEL.watch)!
     Object.keys(served).forEach((name, id) => watch(event(), id, name))
     expect(pushes).toEqual(Object.entries(served).map(([name, full]) => ({ topic: name, rev: 1, full })))
@@ -849,12 +866,13 @@ describe('serveWindows', () => {
   })
 
   it('opens the chat before it publishes the example requests, and leaves them due when that open is refused', async () => {
-    const live = { target: { kind: 'local' as const }, epoch: 1 }
-    const setup = feed<Setup>({ at: 'saved', live, from: 'first-run' })
+    const live = liveAt({ kind: 'local' as const }, 1)
+    const setup = feed<Setup>({ at: 'saved', live, from: 'first-run', into: 'replace' })
     let allow = true
     const ran: string[] = []
     const owner = {
       setup,
+      servers: feed(NO_SERVERS),
       hermes: null,
       read: async () => { throw new Error('the test never reads') },
       transcribe: HEARD,
@@ -878,7 +896,7 @@ describe('serveWindows', () => {
     expect(intro.get()).toBe(EXAMPLES)
 
     allow = false
-    setup.set({ at: 'saved', live, from: 'first-run' })
+    setup.set({ at: 'saved', live, from: 'first-run', into: 'replace' })
     intro.set(DUE)
     await expect(run(event(), { do: 'examples' }, 1)).resolves.toMatchObject({ ok: false })
     expect(intro.get()).toBe(DUE)
@@ -979,9 +997,9 @@ describe('serveWindows', () => {
     const run = handlers.get(CHANNEL.run)!
     const pick = { do: 'open', ref: { kind: 'chat', sessionId: 'box-0001' } }
     await expect(run(event(), { do: 'editTarget' }, 1)).resolves.toEqual({ ok: true, value: undefined })
-    await expect(run(event(), { do: 'checkTarget', target: { kind: 'local' } }, 1)).resolves.toEqual({ ok: true, value: undefined })
+    await expect(run(event(), { do: 'checkTarget', target: { kind: 'local' }, into: 'replace' }, 1)).resolves.toEqual({ ok: true, value: undefined })
     await new Promise(resolve => setImmediate(resolve))
-    expect(owner!.setup.get()).toMatchObject({ at: 'saved', live: { target: { kind: 'local' }, epoch: 2 } })
+    expect(owner!.setup.get()).toMatchObject({ at: 'saved', live: liveAt({ kind: 'local' }, 2, 'server-2' as ServerId) })
 
     for (const sent of [1, undefined, '2']) {
       await expect(run(event(), pick, sent)).resolves.toMatchObject({ ok: false, refusal: { kind: 'stale' } })
@@ -1007,7 +1025,7 @@ describe('serveWindows', () => {
 
     await expect(run(event(), pick, 2)).resolves.toEqual({ ok: true, value: undefined })
     expect(commands).toEqual([pick])
-    expect(owner!.setup.get()).toEqual({ at: 'chat', live: { target: { kind: 'local' }, epoch: 2 } })
+    expect(owner!.setup.get()).toEqual({ at: 'chat', live: liveAt({ kind: 'local' }, 2, 'server-2' as ServerId) })
     await expect(run(event(), { do: 'editTarget' }, 1)).resolves.toEqual({ ok: true, value: undefined })
   })
 
@@ -1016,7 +1034,7 @@ describe('serveWindows', () => {
     const { handlers, event, commands } = harness(hermes => (owner = switchable(hermes)))
     const run = handlers.get(CHANNEL.run)!
     await run(event(), { do: 'editTarget' }, 1)
-    await run(event(), { do: 'checkTarget', target: { kind: 'local' } }, 1)
+    await run(event(), { do: 'checkTarget', target: { kind: 'local' }, into: 'replace' }, 1)
     await new Promise(resolve => setImmediate(resolve))
     const mark = { do: 'markBot', bot: 'box-bot', mark: 'pin' }
     const fresh = { do: 'open', ref: { kind: 'new', bot: 'box-bot', draftId: 'd1' }, upFront: true }
@@ -1030,7 +1048,7 @@ describe('serveWindows', () => {
     expect(owner!.setup.get(), 'a mark leaves Settings up').toMatchObject({ at: 'saved' })
     await expect(run(event(), fresh, 2)).resolves.toMatchObject({ ok: true })
     expect(commands).toEqual([mark, fresh])
-    expect(owner!.setup.get()).toEqual({ at: 'chat', live: { target: { kind: 'local' }, epoch: 2 } })
+    expect(owner!.setup.get()).toEqual({ at: 'chat', live: liveAt({ kind: 'local' }, 2, 'server-2' as ServerId) })
   })
 
   it("refuses a group chat's send, stop and open sent for an older connection, and passes them for the live one", async () => {
@@ -1038,7 +1056,7 @@ describe('serveWindows', () => {
     const { handlers, event, commands } = harness(hermes => (owner = switchable(hermes)))
     const run = handlers.get(CHANNEL.run)!
     await run(event(), { do: 'editTarget' }, 1)
-    await run(event(), { do: 'checkTarget', target: { kind: 'local' } }, 1)
+    await run(event(), { do: 'checkTarget', target: { kind: 'local' }, into: 'replace' }, 1)
     await new Promise(resolve => setImmediate(resolve))
     const send = { do: 'sendToGroup', group: 'launch-plan', text: '@sam ship it' }
     const stop = { do: 'stopGroup', group: 'launch-plan' }
@@ -1054,7 +1072,7 @@ describe('serveWindows', () => {
     expect(owner!.setup.get(), 'a send or a stop leaves Settings up').toMatchObject({ at: 'saved' })
     await expect(run(event(), open, 2)).resolves.toMatchObject({ ok: true })
     expect(commands).toEqual([send, stop, open])
-    expect(owner!.setup.get()).toEqual({ at: 'chat', live: { target: { kind: 'local' }, epoch: 2 } })
+    expect(owner!.setup.get()).toEqual({ at: 'chat', live: liveAt({ kind: 'local' }, 2, 'server-2' as ServerId) })
   })
 })
 
@@ -1175,7 +1193,7 @@ describe('the file call', () => {
     rig.listeners.get(CHANNEL.watch)!(rig.event(), 1, topic)
     rig.emit(diffMoment())
     await owner!.run({ do: 'editTarget' })
-    await owner!.run({ do: 'checkTarget', target: { kind: 'local' } })
+    await owner!.run({ do: 'checkTarget', target: { kind: 'local' }, into: 'replace' })
     await new Promise(resolve => setImmediate(resolve))
     const file = rig.handlers.get(CHANNEL.file)!
     await expect(file(rig.event(), asked('open', NOTES))).resolves.toEqual({ ok: false, reason: 'refused' })
@@ -1207,7 +1225,7 @@ describe('the image call', () => {
     rig.listeners.get(CHANNEL.watch)!(rig.event(), 1, topic)
     rig.emit(moments[3]!)
     await owner!.run({ do: 'editTarget' })
-    await owner!.run({ do: 'checkTarget', target: { kind: 'local' } })
+    await owner!.run({ do: 'checkTarget', target: { kind: 'local' }, into: 'replace' })
     await new Promise(resolve => setImmediate(resolve))
     expect(owner!.setup.get()).toMatchObject({ at: 'saved', live: { target: { kind: 'local' } } })
     await rig.handlers.get(CHANNEL.image)!(rig.event(), asked)
@@ -1375,9 +1393,9 @@ describe('the picture call', () => {
     const [openAcrossTheSwitch] = rig.lives
     expect(openAcrossTheSwitch!()).toBe(true)
     await run(rig.event(), { do: 'editTarget' }, 1)
-    await run(rig.event(), { do: 'checkTarget', target: { kind: 'local' } }, 1)
+    await run(rig.event(), { do: 'checkTarget', target: { kind: 'local' }, into: 'replace' }, 1)
     await new Promise(resolve => setImmediate(resolve))
-    expect(owner!.setup.get()).toMatchObject({ live: { target: { kind: 'local' }, epoch: 2 } })
+    expect(owner!.setup.get()).toMatchObject({ live: liveAt({ kind: 'local' }, 2, 'server-2' as ServerId) })
     expect(openAcrossTheSwitch!()).toBe(false)
 
     for (const sent of [1, undefined, '2']) {
@@ -1427,7 +1445,7 @@ describe('the transcribe call', () => {
     const run = rig.handlers.get(CHANNEL.run)!
     const call = rig.handlers.get(CHANNEL.transcribe)!
     await run(rig.event(), { do: 'editTarget' }, 1)
-    await run(rig.event(), { do: 'checkTarget', target: { kind: 'local' } }, 1)
+    await run(rig.event(), { do: 'checkTarget', target: { kind: 'local' }, into: 'replace' }, 1)
     await new Promise(resolve => setImmediate(resolve))
     await expect(call(rig.event(), RECORDING, 1)).resolves.toMatchObject({ ok: false, refusal: { kind: 'stale' } })
     await expect(call(rig.event(), RECORDING, 2)).resolves.toEqual({ ok: true, value: '3 bytes of audio/webm;codecs=opus' })

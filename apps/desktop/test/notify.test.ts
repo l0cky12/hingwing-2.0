@@ -5,6 +5,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { DUE, OFF, type Intro } from '../src/intro'
 import type { Notices, Setup } from '../src/ipc-contract'
 import type { ConnectionOwner } from '../src/main/connection'
+import { live } from './support/live'
 import { asksOf, jobNotices, noticeOf, notify, type Notice } from '../src/main/notify'
 
 const fixture = loadFixture('fixtures/errand.jsonl')
@@ -173,7 +174,7 @@ describe('notify', () => {
   it('notifies the shown chat while Settings covers it in a focused window', () => {
     const stub = stubHermes()
     const { shown, setup } = observe(stub.hermes, true)
-    setup.set({ at: 'form', live: { target: { kind: 'local' }, epoch: 1 }, notice: null })
+    setup.set({ at: 'form', live: live({ kind: 'local' }, 1), notice: null })
     stub.publish(asking)
     stub.publish(ended)
     expect(titles(shown)).toEqual(['Approval needed', 'Hermes finished'])
@@ -270,7 +271,7 @@ describe('notify', () => {
     const { shown, raise, ran, setup } = observe(stub.hermes, false, ON, DUE)
     stub.publish(running)
     stub.publish(ended)
-    setup.set({ at: 'chat', live: { target: { kind: 'local' }, epoch: 1 } })
+    setup.set({ at: 'chat', live: live({ kind: 'local' }, 1) })
     shown[0]!.click()
     expect(raise).toHaveBeenCalledOnce()
     expect(ran).toEqual([])

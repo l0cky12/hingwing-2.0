@@ -18,7 +18,7 @@ describe('the choices of the setup form', () => {
     ['local', 'ignored', { kind: 'local' }]
   ] as const)('read the %s choice with %j typed as a target main accepts', (kind, typed, target) => {
     expect(CHOICES[kind].read(typed)).toEqual({ ok: true, target })
-    expect(parseCommand({ do: 'checkTarget', target })).toEqual({ do: 'checkTarget', target })
+    expect(parseCommand({ do: 'checkTarget', target, into: 'addWay' })).toEqual({ do: 'checkTarget', target, into: 'addWay' })
   })
 
   it.each([

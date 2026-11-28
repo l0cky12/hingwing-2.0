@@ -120,7 +120,7 @@ export function bannerOf(link: Link, target: Target | null): BannerCopy | null {
     case 'blocked': return {
       words: link.message,
       action: link.why === 'signed-out' && target !== null
-        ? { label: 'Sign in', run: [{ do: 'editTarget' }, { do: 'checkTarget', target }] }
+        ? { label: 'Sign in', run: [{ do: 'editTarget' }, { do: 'checkTarget', target, into: 'replace' }] }
         : reconnect('Retry', false)
     }
     case 'waiting': return { words: link.message, action: link.why === 'not-running' ? reconnect('Start Hermes', true) : null }

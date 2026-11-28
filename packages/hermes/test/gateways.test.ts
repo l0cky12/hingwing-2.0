@@ -405,12 +405,12 @@ describe('keepOnly', () => {
     const gateways = gatewaysByUrl({ keep, browse: async url => (url.startsWith(`${saved.url}/`) ? saved : other).browse(url) })
     for (const web of [saved, other]) expect(await check(gateways, web.url).result).toEqual({ ok: true })
 
-    await gateways.keepOnly(saved.url)
+    await gateways.keepOnly([saved.url])
     expect(await keep.load(other.url)).toBeNull()
     expect(await dialFailure(routeOf(gateways, other.url).dial({ start: false }))).toMatchObject({ kind: 'signed-out' })
     ;(await routeOf(gateways, saved.url).dial({ start: false })).close()
 
-    await gateways.keepOnly(null)
+    await gateways.keepOnly([])
     expect(await keep.load(saved.url)).toBeNull()
     expect(await dialFailure(routeOf(gateways, saved.url).dial({ start: false }))).toMatchObject({ kind: 'signed-out' })
   })
@@ -430,7 +430,7 @@ describe('keepOnly', () => {
     const dial = routeOf(gateways, web.url).dial({ start: false })
     await until('the refresh to be asked', () => count(web, 'POST /auth/native/refresh') === 1)
 
-    await gateways.keepOnly(null)
+    await gateways.keepOnly([])
     release()
     ;(await dial).close()
     expect(await keep.load(web.url)).toBeNull()
@@ -439,7 +439,7 @@ describe('keepOnly', () => {
   it('never rejects, whatever the keeper does', async () => {
     const web = await webapp('ok')
     const failing: Keep = { ...memoryKeep(), keepOnly: async () => { throw new Error('the disk is full') } }
-    await expect(gatewaysTo(web, { keep: failing }).keepOnly(null)).resolves.toBeUndefined()
+    await expect(gatewaysTo(web, { keep: failing }).keepOnly([])).resolves.toBeUndefined()
   })
 })
 

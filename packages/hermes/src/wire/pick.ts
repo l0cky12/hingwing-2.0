@@ -18,7 +18,8 @@ export interface PickedRoute extends Route {
   /**
    * The server's ways and pick after an edit. Keeps the `Way` of a target it already has, makes the others
    * with `wayFor`, and disposes the ways no longer listed. A socket through a dropped way closes, and the
-   * link redials through the ways left. The order and the pick count from the next dial.
+   * link redials through the ways left. Otherwise the route times the ways again, and closes the socket only
+   * when a dial would now take another way, so an added way or a new order is used at once.
    */
   arrange(ways: readonly Target[], pick: PickMode): void
 }
@@ -34,11 +35,15 @@ export function pickedRoute(server: Pick<Server, 'ways' | 'pick'>, wayFor: (targ
   let held: { readonly way: Way; readonly socket: WireSocket } | null = null
 
   const through = (): Route => (held?.way ?? (ways[0] as Way)).route
+  /** One way is never timed: there is nothing to choose between. */
+  const timesOf = (timed: readonly Way[]) => (timed.length === 1 ? null : Promise.all(timed.map(way => way.time(life.signal))))
+  const told = (timed: readonly Way[], times: readonly (number | null)[] | null): readonly Timed[] =>
+    (times === null ? [] : timed.map(({ target }, at) => ({ target, ms: times[at] as number | null })))
 
   const dial: Dialer = async request => {
     if (life.signal.aborted) throw new DialError('dropped')
     const dialed = ways
-    const times = dialed.length === 1 ? null : await Promise.all(dialed.map(way => way.time(life.signal)))
+    const times = await timesOf(dialed)
     const failures = new Map<number, unknown>()
     for (const index of times === null ? [0] : rankWays(times, pick)) {
       const way = dialed[index] as Way
@@ -52,10 +57,21 @@ export function pickedRoute(server: Pick<Server, 'ways' | 'pick'>, wayFor: (targ
         continue
       }
       held = { way, socket }
-      onPick({ using: way.target, times: times === null ? [] : dialed.map(({ target }, at) => ({ target, ms: times[at] as number | null })) })
+      onPick({ using: way.target, times: told(dialed, times) })
       return socket
     }
     throw life.signal.aborted ? new DialError('dropped') : failures.get(0) ?? [...failures.values()][0] ?? new DialError('dropped')
+  }
+
+  const pickAgain = async () => {
+    const [timed, before] = [ways, held]
+    if (before === null) return
+    const times = await timesOf(timed)
+    if (life.signal.aborted || ways !== timed || held !== before) return
+    const best = times === null ? null : (rankWays(times, pick)[0] as number)
+    // The link takes the close as a drop and redials, and that dial picks.
+    if (best !== null && times?.[best] !== null && timed[best] !== before.way) return before.socket.close()
+    onPick({ using: before.way.target, times: told(timed, times) })
   }
 
   return {
@@ -73,6 +89,7 @@ export function pickedRoute(server: Pick<Server, 'ways' | 'pick'>, wayFor: (targ
         held = null
       }
       for (const way of dropped) way.route.dispose()
+      void pickAgain()
     },
     dispose: () => {
       life.abort()

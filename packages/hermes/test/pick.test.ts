@@ -114,14 +114,40 @@ describe('pickedRoute', () => {
     expect(await route.read('/api/x')).toEqual({ status: 200, body: 'tailnet' })
   })
 
-  it('arrange keeps the socket of a way that stays, and dials a way it adds', async () => {
+  it('arrange disposes no way that stays, and the next dial takes a way it added', async () => {
     const plans = planned([[TAILNET, { ms: 120 }], [LAN, { ms: 15 }], [WEB, { ms: 4 }]])
-    const { route, dial, log, sockets } = ways(plans, 'fastest', [TAILNET, LAN])
+    const { route, dial, log } = ways(plans, 'fastest', [TAILNET, LAN])
     await dial()
     route.arrange([WEB, LAN, TAILNET], 'order')
-    expect(sockets.get(LAN)?.closed).toBe(false)
     expect(log.some(line => line.startsWith('dispose'))).toBe(false)
     expect((await dial()).name).toBe('web')
+  })
+
+  it('arrange times the ways again, and closes the socket when a dial would now take another way', async () => {
+    const { route, dial, sockets, picks } = ways(planned([[TAILNET, { ms: 120 }], [LAN, { ms: 15 }]]), 'fastest', [TAILNET])
+    await dial()
+    route.arrange([TAILNET, LAN], 'fastest')
+    await until('the tailnet socket to close', () => sockets.get(TAILNET)?.closed === true)
+    expect((await dial()).name).toBe('lan')
+    expect(picks.at(-1)).toEqual({ using: LAN, times: [{ target: TAILNET, ms: 120 }, { target: LAN, ms: 15 }] })
+  })
+
+  it('arrange keeps the socket when the way in use is still the one a dial would take, and tells the new times', async () => {
+    const { route, dial, sockets, picks, log } = ways(planned([[TAILNET, { ms: 120 }], [LAN, { ms: 15 }], [WEB, { ms: 300 }]]), 'fastest', [TAILNET, LAN])
+    await dial()
+    route.arrange([WEB, LAN, TAILNET], 'fastest')
+    await until('the ways to be timed again', () => picks.length === 2)
+    expect(sockets.get(LAN)?.closed).toBe(false)
+    expect(picks[1]).toEqual({ using: LAN, times: [{ target: WEB, ms: 300 }, { target: LAN, ms: 15 }, { target: TAILNET, ms: 120 }] })
+    expect(log.filter(line => line.startsWith('dial'))).toEqual(['dial lan'])
+  })
+
+  it('arrange down to one way stops telling times', async () => {
+    const { route, dial, picks } = ways(planned([[TAILNET, { ms: 120 }], [LAN, { ms: 15 }]]))
+    await dial()
+    route.arrange([LAN], 'fastest')
+    await until('the pick to be told again', () => picks.length === 2)
+    expect(picks[1]).toEqual({ using: LAN, times: [] })
   })
 
   it('does not hand back a socket through a way an arrange dropped while it was being dialed', async () => {

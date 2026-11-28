@@ -115,9 +115,9 @@ export function signInStore(dir: string, sealOf: () => Promise<Seal | null>): Ke
       const sealed = (await found.seal(secret)).toString('base64')
       await rewrite(held => ({ ...held, [url]: sealed }))
     }),
-    keepOnly: url => inTurn(async () => {
-      await memory.keepOnly(url)
-      await rewrite(held => only(held, at => at === url))
+    keepOnly: urls => inTurn(async () => {
+      await memory.keepOnly(urls)
+      await rewrite(held => only(held, at => urls.some(url => url === at)))
     })
   }
 }

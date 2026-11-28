@@ -97,7 +97,7 @@ function Editor({ setup, view, onFold }: { readonly setup: CardSetup; readonly v
     event.preventDefault()
     const typed = CHOICES[kind].read(texts[kind])
     setTypo(typed.ok ? null : typed)
-    if (typed.ok) void run({ do: 'checkTarget', target: typed.target })
+    if (typed.ok) void run({ do: 'checkTarget', target: typed.target, into: 'replace' })
   }
   const problem = typo ?? view.problem
   const { foot, cancel } = view

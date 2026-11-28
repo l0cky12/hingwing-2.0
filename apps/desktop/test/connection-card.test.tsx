@@ -5,11 +5,12 @@ import { showsSettings, type Live, type Setup } from '../src/ipc-contract'
 import { cardOf } from '../src/renderer/setup/card-view'
 import { ConnectionCard } from '../src/renderer/setup/ConnectionCard'
 import { screenOf, type CardSetup } from '../src/renderer/setup/screens'
+import { live } from './support/live'
 
 const remote = (host: string): Target => ({ kind: 'remote', host: host as SshHost })
 const HOST = remote('hermes-host.example-tailnet.ts.net')
 const LAB = remote('hermes-lab')
-const LIVE: Live = { target: HOST, epoch: 1 }
+const LIVE: Live = live(HOST, 1)
 const ONLINE: Link = { state: 'online' }
 const AT_REST: CardSetup = { at: 'form', live: LIVE, notice: null }
 const waiting = (why: 'not-running' | 'dropped', message: string): Link => ({ state: 'waiting', attempt: 1, retryAt: 0, why, message })
@@ -19,13 +20,13 @@ describe('which screen the window shows', () => {
     ['the chat', { at: 'chat', live: LIVE }, 'chat'],
     ['a fixture run', { at: 'pinned' }, 'chat'],
     ['a first run', { at: 'form', live: null, notice: 'newer' }, 'first-run'],
-    ['a first run checking', { at: 'checking', live: null, target: LAB, step: 'ssh' }, 'first-run'],
-    ['a first run that failed', { at: 'failed', live: null, target: LAB, failure: 'host-offline' }, 'first-run'],
-    ['a first run that passed', { at: 'saved', live: LIVE, from: 'first-run' }, 'saved'],
+    ['a first run checking', { at: 'checking', live: null, target: LAB, into: 'replace', step: 'ssh' }, 'first-run'],
+    ['a first run that failed', { at: 'failed', live: null, target: LAB, into: 'replace', failure: 'host-offline' }, 'first-run'],
+    ['a first run that passed', { at: 'saved', live: LIVE, from: 'first-run', into: 'replace' }, 'saved'],
     ['the Settings button', AT_REST, 'settings'],
-    ['a check from Settings', { at: 'checking', live: LIVE, target: LAB, step: 'ssh' }, 'settings'],
-    ['a check from Settings that failed', { at: 'failed', live: LIVE, target: LAB, failure: 'host-offline' }, 'settings'],
-    ['a check from Settings that passed', { at: 'saved', live: { target: LAB, epoch: 2 }, from: 'settings' }, 'settings']
+    ['a check from Settings', { at: 'checking', live: LIVE, target: LAB, into: 'replace', step: 'ssh' }, 'settings'],
+    ['a check from Settings that failed', { at: 'failed', live: LIVE, target: LAB, into: 'replace', failure: 'host-offline' }, 'settings'],
+    ['a check from Settings that passed', { at: 'saved', live: live(LAB, 2), from: 'settings', into: 'replace' }, 'settings']
   ])('shows %s on %j, by the rule main uses for Settings', (_what, setup, show) => {
     expect(screenOf(setup).show).toBe(show)
     expect(showsSettings(setup)).toBe(show === 'settings')
@@ -42,7 +43,7 @@ describe('the connection row', () => {
   })
 
   it('shows a short name once, keeps a user@ in the mono line, and calls this computer by name', () => {
-    const summaryFor = (target: Target) => cardOf({ ...AT_REST, live: { target, epoch: 1 } }, ONLINE, false).summary
+    const summaryFor = (target: Target) => cardOf({ ...AT_REST, live: live(target, 1) }, ONLINE, false).summary
     expect(summaryFor(remote('hermes-host'))).toMatchObject({ title: 'hermes-host', host: null })
     expect(summaryFor(remote('me@hermes-host'))).toMatchObject({ title: 'hermes-host', host: 'me@hermes-host' })
     expect(summaryFor({ kind: 'local' })).toMatchObject({ kind: 'local', title: 'This computer', host: null })
@@ -59,11 +60,11 @@ describe('the connection row', () => {
 
   it('offers Sign in on a signed-out link, which checks the live connection in the Settings already open', () => {
     expect(cardOf(AT_REST, { state: 'blocked', why: 'signed-out', message: 'Sign in to Hermes again.' }, false).summary)
-      .toMatchObject({ linkMessage: 'Sign in to Hermes again.', action: { label: 'Sign in', run: [{ do: 'checkTarget', target: HOST }] } })
+      .toMatchObject({ linkMessage: 'Sign in to Hermes again.', action: { label: 'Sign in', run: [{ do: 'checkTarget', target: HOST, into: 'replace' }] } })
   })
 
   it('names a gateway by its host, with the address in mono when it says more', () => {
-    const summaryFor = (url: string) => cardOf({ ...AT_REST, live: { target: { kind: 'url', url: url as GatewayUrl }, epoch: 1 } }, ONLINE, false).summary
+    const summaryFor = (url: string) => cardOf({ ...AT_REST, live: live({ kind: 'url', url: url as GatewayUrl }, 1) }, ONLINE, false).summary
     expect(summaryFor('https://hermes.example.com:8443')).toMatchObject({ kind: 'url', title: 'hermes.example.com', host: 'https://hermes.example.com:8443' })
   })
 
@@ -80,18 +81,18 @@ describe('the editor in Settings', () => {
   })
 
   it('stays open and disabled while a check runs, with the step in the note\'s place and a Cancel that stops it', () => {
-    const view = cardOf({ at: 'checking', live: LIVE, target: LAB, step: 'ssh' }, ONLINE, false)
+    const view = cardOf({ at: 'checking', live: LIVE, target: LAB, into: 'replace', step: 'ssh' }, ONLINE, false)
     expect(view.editor).toEqual({ seed: LAB, disabled: true, problem: null, foot: { show: 'progress', words: 'Connecting to hermes-lab', hint: null }, cancel: 'stop' })
     expect(view.summary).toMatchObject({ title: 'hermes-host', online: true })
   })
 
   it('turns Cancel off while the connection is saved', () => {
-    expect(cardOf({ at: 'checking', live: LIVE, target: LAB, step: 'save' }, ONLINE, false).editor)
+    expect(cardOf({ at: 'checking', live: LIVE, target: LAB, into: 'replace', step: 'save' }, ONLINE, false).editor)
       .toMatchObject({ disabled: true, foot: { show: 'progress', words: 'Saving this connection' }, cancel: 'saving' })
   })
 
   it('says why a check failed under the field, keeps the draft, and still shows the current connection online', () => {
-    const view = cardOf({ at: 'failed', live: LIVE, target: LAB, failure: 'host-offline' }, ONLINE, false)
+    const view = cardOf({ at: 'failed', live: LIVE, target: LAB, into: 'replace', failure: 'host-offline' }, ONLINE, false)
     expect(view.editor).toEqual({
       seed: LAB, disabled: false, foot: { show: 'note' }, cancel: 'stop',
       problem: { words: 'Your tailnet lists hermes-lab, but it is offline.', fix: 'Turn that machine on, or start Tailscale on it.' }
@@ -100,7 +101,7 @@ describe('the editor in Settings', () => {
   })
 
   it('folds on the new machine once a check passes, and says so', () => {
-    const saved: CardSetup = { at: 'saved', live: { target: LAB, epoch: 2 }, from: 'settings' }
+    const saved: CardSetup = { at: 'saved', live: live(LAB, 2), from: 'settings', into: 'replace' }
     expect(cardOf(saved, undefined, false)).toMatchObject({ summary: { title: 'hermes-lab', host: null }, editor: null, news: 'Highwing now uses the Hermes on hermes-lab.' })
     expect(cardOf(saved, undefined, true).editor).toMatchObject({ seed: LAB, cancel: 'fold' })
   })
@@ -113,9 +114,9 @@ describe('the editor on a first run', () => {
   })
 
   it('puts the step in the empty slot while checking, and the failure under the field', () => {
-    expect(cardOf({ at: 'checking', live: null, target: { kind: 'local' }, step: 'hermes' }, undefined, false).editor)
+    expect(cardOf({ at: 'checking', live: null, target: { kind: 'local' }, into: 'replace', step: 'hermes' }, undefined, false).editor)
       .toMatchObject({ disabled: true, foot: { show: 'progress', words: 'Looking for Hermes on this computer' }, cancel: null })
-    expect(cardOf({ at: 'failed', live: null, target: LAB, failure: 'host-not-found' }, undefined, false).editor)
+    expect(cardOf({ at: 'failed', live: null, target: LAB, into: 'replace', failure: 'host-not-found' }, undefined, false).editor)
       .toMatchObject({ foot: { show: 'nothing' }, cancel: null, problem: { words: 'No machine called hermes-lab is on your tailnet.' } })
   })
 
@@ -135,7 +136,7 @@ const render = (setup: CardSetup) => renderToStaticMarkup(<ConnectionCard setup=
 const buttons = (markup: string) => [...markup.matchAll(/<button[^>]*>(.*?)<\/button>/g)].map(([, label]) => label)
 
 describe('the card while a check waits for a sign-in', () => {
-  const waiting = (live: Live | null): CardSetup => ({ at: 'checking', live, target: HOST, step: 'sign-in' })
+  const waiting = (live: Live | null): CardSetup => ({ at: 'checking', live, target: HOST, into: 'replace', step: 'sign-in' })
 
   it('says under the step that the browser has the sign-in page, and that Highwing never sees the password', () => {
     expect(text(render(waiting(null)))).toContain(
@@ -146,7 +147,7 @@ describe('the card while a check waits for a sign-in', () => {
   it('offers no Sign in in the row while a check runs, since the card runs one check at a time, and keeps Retry', () => {
     const signedOut: Link = { state: 'blocked', why: 'signed-out', message: 'Sign in to Hermes again.' }
     expect(cardOf(waiting(LIVE), signedOut, false).summary).toMatchObject({ linkMessage: 'Sign in to Hermes again.', action: null })
-    expect(cardOf({ at: 'checking', live: LIVE, target: HOST, step: 'save' }, signedOut, false).summary).toMatchObject({ action: null })
+    expect(cardOf({ at: 'checking', live: LIVE, target: HOST, into: 'replace', step: 'save' }, signedOut, false).summary).toMatchObject({ action: null })
     expect(cardOf(waiting(LIVE), { state: 'blocked', why: 'auth', message: 'Hermes turned Highwing away.' }, false).summary)
       .toMatchObject({ action: { label: 'Retry', run: [{ do: 'reconnect', start: false }] } })
   })
@@ -159,7 +160,7 @@ describe('the card while a check waits for a sign-in', () => {
   })
 
   it('offers no way out of a first run\'s check at a step that waits for no one', () => {
-    const markup = render({ at: 'checking', live: null, target: HOST, step: 'hermes' })
+    const markup = render({ at: 'checking', live: null, target: HOST, into: 'replace', step: 'hermes' })
     expect(buttons(markup)).toEqual(['Connect'])
     expect(text(markup)).not.toContain('sign-in page')
   })
@@ -181,7 +182,7 @@ describe('the card for a gateway address', () => {
   })
 
   it('opens on the address being edited, in the Gateway address field', () => {
-    const markup = render({ at: 'failed', live: null, target: at('https://hermes.example.com:8443'), failure: 'url-unreachable' })
+    const markup = render({ at: 'failed', live: null, target: at('https://hermes.example.com:8443'), into: 'replace', failure: 'url-unreachable' })
     expect(segments(markup)[2]).toBe('x Web address')
     expect(fieldOf(markup)).toMatchObject({ label: 'Gateway address', input: expect.stringContaining('value="https://hermes.example.com:8443"') })
     expect(fieldOf(markup).input).toContain('placeholder="https://hermes.example.com"')
@@ -189,7 +190,7 @@ describe('the card for a gateway address', () => {
   })
 
   it('warns under the field about a plain http address, and leaves Connect on', () => {
-    const markup = render({ at: 'failed', live: LIVE, target: at('http://hermes.example.com:9120'), failure: 'url-unreachable' })
+    const markup = render({ at: 'failed', live: LIVE, target: at('http://hermes.example.com:9120'), into: 'replace', failure: 'url-unreachable' })
     const warning = /<p class="caution" id="([^"]*)" role="status">([^<]*)<\/p>/.exec(markup)!
     expect(warning[2]).toBe(
       'This address uses plain http, so your Hermes sign-in and your chats travel unencrypted. Anyone on the network between here and hermes.example.com could read them. Use https if you can.'
@@ -199,7 +200,7 @@ describe('the card for a gateway address', () => {
   })
 
   it.each(Object.keys(URL_FAILURES) as UrlFailure[])('shows the words and the fix of a check that failed as %s', failure => {
-    const markup = text(render({ at: 'failed', live: null, target: at('https://hermes.example.com'), failure }))
+    const markup = text(render({ at: 'failed', live: null, target: at('https://hermes.example.com'), into: 'replace', failure }))
     expect(markup).toContain(URL_FAILURES[failure].words('hermes.example.com'))
     expect(markup).toContain(URL_FAILURES[failure].fix('hermes.example.com'))
   })

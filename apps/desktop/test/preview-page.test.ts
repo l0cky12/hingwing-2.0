@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Session, SshHost, Target } from '@highwing/hermes/domain'
+import type { ServerId, Session, SshHost, Target } from '@highwing/hermes/domain'
 import { describe, expect, it } from 'vitest'
 import type { PaneLayout, Setup } from '../src/ipc-contract'
 import { failureOf, nextPane, pageFor, pageInView, pageUrlOf, pathOfPageUrl, previewOf, reachable, reachOf, servedPath, type Pane, type PaneEvent } from '../src/main/preview-page'
@@ -74,11 +74,13 @@ describe('pageFor', () => {
 
 describe('reachOf', () => {
   it('reads a fixture run and a local connection as this computer, and a remote one as its machine', () => {
-    const live = (target: Target): Setup => ({ at: 'chat', live: { target, epoch: 1 } })
+    const live = (target: Target): Setup => ({ at: 'chat', live: { server: 'server-1' as ServerId, target, epoch: 1 } })
     expect(reachOf({ at: 'pinned' }, undefined)).toEqual({ session: undefined, local: true, machine: 'this computer', host: null })
     expect(reachOf(live({ kind: 'local' }), undefined)).toMatchObject({ local: true, machine: 'this computer', host: null })
     expect(reachOf(live({ kind: 'remote', host: 'hermes-host.example-tailnet.ts.net' as SshHost }), undefined))
       .toMatchObject({ local: false, machine: 'hermes-host', host: 'hermes-host.example-tailnet.ts.net' })
+    expect(reachOf(live({ kind: 'ssh', host: 'ada@192.168.1.20' as SshHost }), undefined))
+      .toMatchObject({ local: false, machine: '192.168.1.20', host: 'ada@192.168.1.20' })
   })
 })
 

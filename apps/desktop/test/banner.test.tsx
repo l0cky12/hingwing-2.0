@@ -10,7 +10,7 @@ describe('the connection banner', () => {
   it('offers Sign in on a signed-out link, which opens the Connection screen and checks the live target', () => {
     expect(bannerOf(SIGNED_OUT, REMOTE)).toEqual({
       words: ENDED,
-      action: { label: 'Sign in', run: [{ do: 'editTarget' }, { do: 'checkTarget', target: REMOTE }] }
+      action: { label: 'Sign in', run: [{ do: 'editTarget' }, { do: 'checkTarget', target: REMOTE, into: 'replace' }] }
     })
   })
 
