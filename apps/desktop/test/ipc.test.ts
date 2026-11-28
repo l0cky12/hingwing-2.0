@@ -244,6 +244,7 @@ describe('validators', () => {
       .toEqual({ do: 'editBot', bot: 'rae', edit: { name: 'Ray', description: '' }, revision: null })
     expect(parseCommand({ do: 'removeBotPicture', bot: 'rae', data: 'x' })).toEqual({ do: 'removeBotPicture', bot: 'rae' })
     expect(parseCommand({ do: 'botPicture', bot: 'rae' })).toEqual({ do: 'botPicture', bot: 'rae' })
+    expect(parseCommand({ do: 'setBotPicture', bot: 'rae', data: PICTURE, extra: 1 })).toEqual({ do: 'setBotPicture', bot: 'rae', data: PICTURE })
   })
 
   it('keep the panel commands: a process, a helper, a control button with what it takes, a checkpoint and its scope, and an emoji or none on a turn', () => {
@@ -431,7 +432,9 @@ describe('validators', () => {
     ['an edit with no revision', { do: 'editBot', bot: 'rae', edit: { persona: 'x' } }],
     ['an edit at a negative revision', { do: 'editBot', bot: 'rae', edit: { persona: 'x' }, revision: -1 }],
     ['an edit at a fractional revision', { do: 'editBot', bot: 'rae', edit: { persona: 'x' }, revision: 1.5 }],
-    ['a picture a window sends as bytes', { do: 'setBotPicture', bot: 'rae', data: 'data:image/png;base64,iVBORw0KGgo=' }],
+    ['a picture that is not a picture', { do: 'setBotPicture', bot: 'rae', data: `data:image/png;base64,${Buffer.from('not a picture').toString('base64')}` }],
+    ['a picture over the size limit', { do: 'setBotPicture', bot: 'rae', data: OVERSIZED }],
+    ['a picture for a bot with no name', { do: 'setBotPicture', bot: ' ', data: PICTURE }],
     ['a picture removal for a bot with no name', { do: 'removeBotPicture', bot: ' ' }],
     ['the picture of a bot with no name', { do: 'botPicture', bot: ' ' }],
     ['a blank first message', { do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null }, text: '' }],
@@ -622,7 +625,7 @@ describe('validators', () => {
       'done', 'editBot', 'editTarget', 'examples', 'export', 'generatePicture', 'handBack', 'installPlugin', 'keepTarget', 'killProcess', 'listRoutines', 'loadEarlier', 'lockPasswordManager', 'markBot', 'memory', 'models', 'move',
       'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'pluginCatalog', 'plugins', 'preview', 'queued', 'react', 'readMessages', 'reconnect',
       'reloadPreview', 'remove', 'removeApp', 'removeBotPicture', 'removeMemory', 'removeServer', 'removeToolServer', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'saveMemory', 'send',
-      'sendToGroup', 'setAccent', 'setAppearance', 'setBotBackup', 'setBotModel', 'setMode', 'setNotice', 'setOnClose', 'setPlugin', 'setSendKey', 'setShowWork', 'setSidebarWidth', 'setSkill', 'setSpellCheck', 'setTheme', 'side', 'skillText', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper',
+      'sendToGroup', 'setAccent', 'setAppearance', 'setBotBackup', 'setBotModel', 'setBotPicture', 'setMode', 'setNotice', 'setOnClose', 'setPlugin', 'setSendKey', 'setShowWork', 'setSidebarWidth', 'setSkill', 'setSpellCheck', 'setTheme', 'side', 'skillText', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper',
       'takeControl', 'toolServers', 'tools', 'tune', 'unlockPasswordManager', 'usePasswordManager', 'useServer', 'versions'
     ])
   })
