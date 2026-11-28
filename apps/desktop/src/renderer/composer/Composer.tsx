@@ -13,7 +13,7 @@ import { EDITING_WORDS, removalWords, type Editing } from './edit'
 import { RemoveDialog } from './RemoveDialog'
 import { mentionable, mentionWord, menuOf, picked, type Mention, type Menu, type MenuItem } from './menu'
 import { usePathFiles } from './paths'
-import { withQuote } from './quote'
+import { quoteOf, withQuote } from './quote'
 
 export interface ComposerGroup {
   readonly name: string
@@ -205,9 +205,11 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
 
   useLayoutEffect(() => {
     if (editing === null) return
-    caretTo.current = editing.text.length
-    writeDraft(slot, editing.text)
-    setCaret(editing.text.length)
+    const { quote, body } = quoteOf(editing.text)
+    caretTo.current = body.length
+    writeDraft(slot, body)
+    quoteInto(slot, quote)
+    setCaret(body.length)
     setRefusal(null)
     setConfirming(false)
     box.current?.focus()
@@ -312,6 +314,7 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
 
   const cancelEdit = () => {
     writeDraft(slot, '')
+    quoteInto(slot, null)
     setConfirming(false)
     onCancelEdit?.()
     box.current?.focus()
