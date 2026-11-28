@@ -171,7 +171,7 @@ describe('the accent in app.css', () => {
   const accentRules = rules.filter(rule => rule.media.length === 0 && /^\[data-accent="\w+"\]$/.test(rule.selector))
   const TONES = ['ink', 'slate', 'plum', 'olive', 'mauve', 'umber']
   const tokenOf = (tone: string) => /^var\(--([\w-]+)\)$/.exec(accentRules.find(rule => rule.selector === `[data-accent="${tone}"]`)?.declarations.get('--accent') ?? '')?.[1] ?? ''
-  const bandShare = Number(/color-mix\(in srgb, var\(--accent\) ([\d.]+)%, var\(--sheet\)\)/.exec(rules.find(rule => rule.selector === '.top .bar')?.declarations.get('background') ?? '')?.[1]) / 100
+  const bandShare = Number(/color-mix\(in srgb, var\(--accent, var\(--sheet\)\) ([\d.]+)%, var\(--sheet\)\)/.exec(rules.find(rule => rule.selector === '.top .bar :is(h1, .members, .pencil)')?.declarations.get('background') ?? '')?.[1]) / 100
   const mixed = (accent: string, sheet: string) => {
     const [a, b] = [channels(accent), channels(sheet)]
     return '#' + a.map((c, at) => Math.round((c * bandShare + b[at]! * (1 - bandShare)) * 255).toString(16).padStart(2, '0')).join('')
