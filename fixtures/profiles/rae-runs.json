@@ -1,0 +1,312 @@
+{
+  "profiles": [
+    {
+      "name": "default",
+      "path": "/tmp/hermes-proto-home",
+      "is_default": true,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": null,
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Emu",
+          "color": "#f5f5f4",
+          "shape": "blobatar::round",
+          "created": 1793000000000
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "dr-eggbot",
+      "path": "/tmp/hermes-proto-home/profiles/dr-eggbot",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": {
+        "id": "local-0000",
+        "resolved_id": "local-0000",
+        "root_title": "Bot Chat",
+        "title": "Bot Chat",
+        "preview": "the SOUL.md is the same thi",
+        "started_at": 1795164600,
+        "last_active": 1795251000,
+        "message_count": 12
+      },
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "dr eggbot",
+          "sectionId": "sec-mh2k9x1a-4f8qz",
+          "sectionName": "New section",
+          "color": "#f43f5e",
+          "shape": "blobatar::organic",
+          "created": 1793000000000
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "rae",
+      "path": "/tmp/hermes-proto-home/profiles/rae",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "Writes the weekly report",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": {
+        "id": "local-0007",
+        "resolved_id": "local-0007",
+        "root_title": "Bot Chat",
+        "title": "Bot Chat",
+        "preview": "The weekly report is ready",
+        "started_at": 1795164000,
+        "last_active": 1795250400,
+        "message_count": 4
+      },
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Rae",
+          "sectionId": "sec-mh2k9x1a-4f8qz",
+          "sectionName": "New section",
+          "color": "#0ea5e9",
+          "shape": "blobatar::round",
+          "created": 1793000000000
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "research",
+      "path": "/tmp/hermes-proto-home/profiles/research",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": {
+        "id": "local-0001",
+        "resolved_id": "local-0001",
+        "root_title": "Bot Chat",
+        "title": "Bot Chat",
+        "preview": "In Let's talk about QAing your",
+        "started_at": 1795164000,
+        "last_active": 1795250400,
+        "message_count": 12
+      },
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Research",
+          "color": "#ef4444",
+          "shape": "blobatar::cloud",
+          "created": 1793000000000
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "timothy",
+      "path": "/tmp/hermes-proto-home/profiles/timothy",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": {
+        "id": "local-0002",
+        "resolved_id": "local-0002",
+        "root_title": "Bot Chat",
+        "title": "Bot Chat",
+        "preview": "Should I start building Launch",
+        "started_at": 1795163400,
+        "last_active": 1795249800,
+        "message_count": 12
+      },
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Timothy · CEO",
+          "color": "#8b5cf6",
+          "shape": "blobatar::sun",
+          "created": 1793000000000
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "hermes-dev",
+      "path": "/tmp/hermes-proto-home/profiles/hermes-dev",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": {
+        "id": "local-0003",
+        "resolved_id": "local-0003",
+        "title": "Use cases",
+        "preview": "Use case 6 is the video's \"aut",
+        "started_at": 1795162800,
+        "last_active": 1795249200,
+        "message_count": 12
+      },
+      "worker_session": null,
+      "canonical_session": null,
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Hermes",
+          "color": "#f97316",
+          "shape": "blobatar::boxy",
+          "created": 1793000000000
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "highwing",
+      "path": "/tmp/hermes-proto-home/profiles/highwing",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": {
+        "id": "local-0004",
+        "resolved_id": "local-0004",
+        "root_title": "Bot Chat",
+        "title": "Bot Chat",
+        "preview": "The step 1 plan is ready in the",
+        "started_at": 1795162200,
+        "last_active": 1795248600,
+        "message_count": 12
+      },
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "highwing",
+          "color": "#22c55e",
+          "shape": "blobatar::hexagon",
+          "created": 1793000000000
+        }
+      },
+      "has_avatar": false
+    }
+  ],
+  "bot_mode_protocol": true,
+  "install_id": "fixture",
+  "souls": {
+    "rae": "You write short, plain reports for the team."
+  },
+  "chats": {
+    "rae": [
+      {
+        "id": "local-0201",
+        "title": "Morning digest",
+        "last_active": 1795251600,
+        "rows": [
+          {
+            "role": "user",
+            "text": "Run the Morning digest."
+          },
+          {
+            "role": "assistant",
+            "text": "Reading the inbox now."
+          }
+        ]
+      },
+      {
+        "id": "local-0202",
+        "title": "Morning digest",
+        "last_active": 1795165242,
+        "rows": [
+          {
+            "role": "user",
+            "text": "Run the Morning digest."
+          },
+          {
+            "role": "tool",
+            "text": ""
+          },
+          {
+            "role": "assistant",
+            "text": "You have 3 new messages. Two are from Acme about invoice 1042, and one is a calendar invite for Friday."
+          }
+        ]
+      },
+      {
+        "id": "local-0203",
+        "title": "Morning digest",
+        "last_active": 1795078980,
+        "rows": [
+          {
+            "role": "user",
+            "text": "Run the Morning digest."
+          },
+          {
+            "role": "tool",
+            "text": ""
+          }
+        ]
+      },
+      {
+        "id": "local-0204",
+        "title": "Morning digest",
+        "last_active": 1794992407,
+        "rows": [
+          {
+            "role": "user",
+            "text": "Run the Morning digest."
+          }
+        ]
+      }
+    ]
+  }
+}

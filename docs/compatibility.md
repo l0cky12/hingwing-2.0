@@ -1186,6 +1186,44 @@ jobs from Highwing." Hermes takes only lowercase letters, numbers, `-` and `_`
 for a profile's name, so the dialog's Bot name starts as the template's id, such
 as `nightly-repo-auditor`.
 
+### A routine's past runs
+
+Hermes has no socket method that lists a routine's runs. The Routines tab of a
+bot's details reads one route of the gateway's HTTP API, on the same listener as
+the socket (`hermes_cli/web_routers/cron.py`). It sends the credential that the
+[Task board](#task-board) section describes.
+
+| Route | When |
+| --- | --- |
+| `GET /api/cron/jobs/<job_id>/runs?profile=<bot>&limit=20` | Each time a routine's Past runs opens. Highwing shows the first 20 rows of the reply's `runs`, newest first, and drops a row it cannot read |
+
+Hermes answers a job it does not know with `200` and an empty list, so "No runs
+yet." can also mean the job is gone.
+
+A row is one of two kinds, named by its `source`. Highwing reads only the fields
+in the table, and passes on none of the rest (a session row also holds a chat id,
+a user id, the origin, the system prompt and the model's settings).
+
+| Row | Fields read | How it shows |
+| --- | --- | --- |
+| `source: "cron"`, an agent run's session | `id`, `started_at`, `ended_at`, `end_reason`, `is_active`, `title` | A `title` that starts `CANCELLED · ` is Cancelled, with the words after it as the reason. Otherwise `is_active` is Running, `end_reason: "cron_complete"` is Succeeded, and `cron_incomplete_no_output` is Failed, "It ended without a final reply." Any other `end_reason`, or none, is No result. The length is `ended_at` less `started_at`. Its `id` opens the run's chat |
+| `source: "cron_output"`, a run with no session | `id`, `started_at`, `title` | The word before ` · ` in `title` sets the state: `COMPLETED` or `OK` is Succeeded, `FAILED` or `ERROR` is Failed, `CANCELLED` is Cancelled, and `MISSED` is Missed. The words after it are the reason, or "Hermes gave no reason." for a Failed row with none. A `title` with no such word is No result. Hermes stamps `started_at` and `ended_at` alike, so the row shows no length. It has no chat to open |
+
+A run's chat opens in the bot's profile as a read-only chat: Highwing shows no
+composer and no edit, regenerate, branch or reaction, because Hermes takes no
+message there. When Hermes has no reason for a stopped run, it puts the run's own
+title after `CANCELLED · `, and Highwing cannot tell that from a reason, so the
+title shows as one.
+
+On an older Hermes, or one without the route:
+
+- If the route answers 404, the tab says "This Hermes can't show a routine's past
+  runs to Highwing."
+- If no ticket can be had, or the read gets no answer or any other status, the
+  tab says "Highwing couldn't reach Hermes for this routine's runs."
+- If the reply has no `runs` list, the tab says "Hermes answered with runs
+  Highwing can't read."
+
 ## Task board
 
 Hermes has no socket method that reads its kanban board. The Tasks view reads

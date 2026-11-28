@@ -383,6 +383,38 @@ describe("a linked chat's search", () => {
   })
 })
 
+describe("a routine's run in the pane", () => {
+  const run = (sessionId: SessionId, bot: BotId = RESEARCH): DeskEvent => ({ on: 'asked', ref: { kind: 'run', bot, sessionId } })
+
+  it('is shown at once as a run of the bot it came from, with no call to Hermes', () => {
+    const { desk, effects } = after([run(R2)], LAUNCHED)
+    expect(effects).toEqual([[]])
+    expect(desk.open).toEqual({ shown: { kind: 'run', bot: RESEARCH, sessionId: R2 }, opening: null, missing: null })
+    expect([shownChat(desk.open)?.sessionId, shownBot(desk.open)], 'the Chats column lists that bot and the open run is its chat').toEqual([R2, RESEARCH])
+  })
+
+  it('records the bot that owns the run, and keeps the owner a list gave first', () => {
+    expect(after([run(R2)]).desk.owners).toEqual({ [R2]: RESEARCH })
+    expect(after([listed(OPS, [R2]), run(R2)]).desk.owners).toEqual({ [R2]: OPS })
+  })
+
+  it('stays while Hermes says more, and gives way to the next chat opened', () => {
+    const open = after([run(R2)], LAUNCHED).desk
+    expect(nextDesk(open, facts({ [EMU]: HOME, [RESEARCH]: R1 }, { kind: 'bot', bot: EMU, sessionId: HOME })).desk.open).toBe(open.open)
+    expect(after([picked(R1)], open).desk.open.shown).toEqual({ kind: 'chat', bot: RESEARCH, sessionId: R1 })
+    expect(after([asked(EMU)], open).desk.open.shown).toEqual({ kind: 'bot', bot: EMU, sessionId: HOME })
+  })
+
+  it("moves to the bot's own chat when Hermes removes the run's session", () => {
+    expect(after([run(R2), { on: 'gone', sessionId: R2 }], LAUNCHED).desk.open.shown).toEqual({ kind: 'bot', bot: RESEARCH, sessionId: R1 })
+  })
+
+  it('is no new chat when opened again: the same run keeps one pane', () => {
+    const open = after([run(R2)], LAUNCHED).desk
+    expect(nextDesk(open, run(R2)).desk.open.shown).toEqual(open.open.shown)
+  })
+})
+
 describe('a group chat in the pane', () => {
   const PLAN = 'launch-plan' as GroupId
   const grouped: DeskEvent = { on: 'asked', ref: { kind: 'group', group: PLAN } }

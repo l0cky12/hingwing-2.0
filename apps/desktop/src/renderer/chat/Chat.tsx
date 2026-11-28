@@ -29,7 +29,7 @@ import type { RequestAnswer } from './Asks'
 import { Sides } from './Sides'
 import { closeSide, sortSides, useClosedSides } from './sides'
 import { useTail } from './tail'
-import { ChatBotContext, Thread, type AskAgain, type QueueControls, type QueuedRow } from './Thread'
+import { ChatBotContext, ReadOnlyContext, Thread, type AskAgain, type QueueControls, type QueuedRow } from './Thread'
 import { TIME_ZONE, useWakeAt } from './wake'
 
 const PAGE = 0.875
@@ -42,18 +42,24 @@ type Held = { readonly id: SessionId | null } & EditTarget
 const holdsText = (target: EventTarget | null) =>
   (target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement) && target.value !== ''
 
+function RunNote() {
+  return <p className="run-note" role="note">This is a routine's past run. Highwing shows it to read, and it takes no messages.</p>
+}
+
 /** `chat.sessionId` null: the chat is not started. The thread is empty, and the first message makes the session. */
 export function Chat({ chat }: { readonly chat: Shown }) {
   const id = chat.sessionId
+  const readOnly = chat.kind === 'run'
   const session = useTopic(id === null ? null : `session:${id}`)
   const bots = useTopic('bots')
   const bot = useMemo(() => (chat.bot === null ? null : botIn(bots, chat.bot)), [bots, chat.bot])
-  const relays = useTopic('relay')?.bySession[id ?? ''] ?? NO_RELAYS
+  const relayed = useTopic('relay')?.bySession[id ?? ''] ?? NO_RELAYS
+  const relays = readOnly ? NO_RELAYS : relayed
   const showWork = useTopic('showWork') ?? 'all'
   const [tick, wake] = useReducer((count: number) => count + 1, 0)
   const view = useMemo(() => (session === undefined ? null : threadView(session, { now: Date.now(), timeZone: TIME_ZONE })), [session, tick])
   const closed = useClosedSides(id)
-  const { cards, rows } = useMemo(() => sortSides(session?.sides ?? [], closed), [session?.sides, closed])
+  const { cards, rows } = useMemo(() => sortSides(readOnly ? [] : session?.sides ?? [], closed), [readOnly, session?.sides, closed])
   const drawn = useTail(view, relays, rows)
   const progress = useMemo(() => (drawn === null ? '' : progressOf(drawn.view, drawn.sides)), [drawn])
   const whole = drawn?.whole === true
@@ -219,7 +225,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   const [branching, setBranching] = useState(false)
   const branchKeys = useRef(new Map<number, BranchId>())
   const presses = useRef(0)
-  const canEdit = live === true && idle && !waiting && !rewriting
+  const canEdit = !readOnly && live === true && idle && !waiting && !rewriting
   const canBranch = canEdit && !branching
   const settled = view === null ? 0 : session?.run.state === 'running' ? view.turns.length - 1 : view.turns.length
   const regenerateTurn = view?.turns[settled - 1]
@@ -316,7 +322,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     if (outcome.ok && requests.length > 0) void run({ do: 'done' })
     return outcome
   }, [chat, requests])
-  const queue = useMemo((): QueueControls => ({ canAct: live, pressed, onAct: onQueued }), [live, pressed, onQueued])
+  const queue = useMemo((): QueueControls => ({ canAct: live && !readOnly, pressed, onAct: onQueued }), [live, readOnly, pressed, onQueued])
   const [stopping, setStopping] = useState<ReadonlySet<HelperId>>(new Set())
   const onStopHelper = useCallback(async (helperId: HelperId) => {
     if (id === null) return
@@ -327,7 +333,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     setStopping(held => new Set([...held].filter(other => other !== helperId)))
     setRefused({ id, message: outcome.refusal.message })
   }, [id])
-  const helpers = useMemo((): HelperControls | null => (live ? { stopping, onStop: helperId => void onStopHelper(helperId) } : null), [live, stopping, onStopHelper])
+  const helpers = useMemo((): HelperControls | null => (live && !readOnly ? { stopping, onStop: helperId => void onStopHelper(helperId) } : null), [live, readOnly, stopping, onStopHelper])
 
   const [menu, setMenu] = useState<{ readonly id: SessionId | null; readonly menu: ModelMenu | null }>({ id, menu: null })
   const asked = useRef(0)
@@ -339,7 +345,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     const doesNotList = !outcome.ok && outcome.refusal.kind === 'unsupported'
     if (outcome.ok || doesNotList) setMenu({ id, menu: outcome.ok ? outcome.value : null })
   }, [id])
-  useEffect(() => { if (live) void refreshModels() }, [live, refreshModels])
+  useEffect(() => { if (live && !readOnly) void refreshModels() }, [live, readOnly, refreshModels])
   const model = modelViewOf(menu.id === id ? menu.menu : null, session)
   const fill = session?.usage.context ?? null
   const approvals = id !== null && live ? (session?.tuning.approvals ?? null) : null
@@ -376,11 +382,13 @@ export function Chat({ chat }: { readonly chat: Shown }) {
             <FileCallContext value={fileCall}>
               <ImageSessionContext value={id}>
                 <ChatBotContext value={bot}>
-                  <Thread
-                    view={drawn.view} relays={drawn.relays} sides={drawn.sides} onAnswer={onAnswer} onAskAgain={live ? onAskAgain : null} onAnswerRequest={onAnswerRequest} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
-                    canEdit={canEdit} regenerateTurnKey={regenerateTurnKey} canRegenerate={canEdit && editing === null} onEdit={onEdit} onRegenerate={onRegenerate} onReply={onReply}
-                    canBranch={canBranch} onBranch={onBranch} onNewChat={onNewChat} versions={versions} onVersion={onVersion} queue={queue} canReact={live === true} onReact={onReact} helpers={helpers} showWork={showWork}
-                  />
+                  <ReadOnlyContext value={readOnly}>
+                    <Thread
+                      view={drawn.view} relays={drawn.relays} sides={drawn.sides} onAnswer={onAnswer} onAskAgain={live && !readOnly ? onAskAgain : null} onAnswerRequest={onAnswerRequest} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
+                      canEdit={canEdit} regenerateTurnKey={regenerateTurnKey} canRegenerate={canEdit && editing === null} onEdit={onEdit} onRegenerate={onRegenerate} onReply={onReply}
+                      canBranch={canBranch} onBranch={onBranch} onNewChat={onNewChat} versions={versions} onVersion={onVersion} queue={queue} canReact={live === true && !readOnly} onReact={onReact} helpers={helpers} showWork={showWork}
+                    />
+                  </ReadOnlyContext>
                 </ChatBotContext>
               </ImageSessionContext>
             </FileCallContext>
@@ -393,70 +401,72 @@ export function Chat({ chat }: { readonly chat: Shown }) {
         </button>
         <span id={words} role="status">{notice}</span>
       </div>
-      <Composer
-        slot={slotOf(chat)}
-        sessionId={id}
-        cwd={session?.cwd ?? null}
-        inputRef={composer}
-        autoFocus={chat.kind === 'branch' || (chat.kind === 'new' && chat.sessionId === null)}
-        seed={chat.kind === 'branch' ? chat.text : ''}
-        canSend={id === null || live}
-        canAttach={online}
-        showStop={session?.run.state === 'running'}
-        onSend={onSend}
-        planFor={planFor}
-        editing={editing}
-        onCancelEdit={() => setEditing(null)}
-        above={(
-          <>
-            {screen?.state === 'on' && <ComputerCard control={screen.control} thumbnail={screen.thumbnail} />}
-            {id !== null && cards.length > 0 && <Sides cards={cards} onClose={onCloseSide} returnFocus={returnFocus} />}
-            <ExampleRequests requests={requests} onSend={onExample} />
-          </>
-        )}
-        onEscape={onEscape}
-        onStop={() => { if (id !== null) void run({ do: 'stop', sessionId: id }) }}
-        onInput={onInput}
-        stack={id !== null && session !== undefined && (
-          <StatusStack
-            key={`stack-${id}`} processes={session.processes ?? NO_PROCESSES} control={session.control} disabled={!live}
-            onKill={processId => run({ do: 'killProcess', sessionId: id, processId })} onControl={action => run({ do: 'control', sessionId: id, action })}
-          />
-        )}
-        start={id !== null && (
-          <>
-            {approvals !== null && (
-              <Approvals
-                key={`approvals-${id}`} mode={approvals} yolo={session?.tuning.yolo === true}
-                onMode={to => run({ do: 'tune', sessionId: id, set: 'approvals', to })}
-                onYolo={on => run({ do: 'tune', sessionId: id, set: 'yolo', on })}
-              />
-            )}
-            {cwd !== null && (
-              <FolderChip
-                key={`folder-${id}`} cwd={cwd} field={folderFieldLabel(hermes)} disabled={!live} running={!idle}
-                onMove={to => run({ do: 'move', sessionId: id, cwd: to })}
-              />
-            )}
-          </>
-        )}
-        end={id !== null && (
-          <>
-            {model.show !== 'hidden' && (
-              <ModelPicker
-                key={`model-${id}`} view={model} onOpen={() => void refreshModels()}
-                onPick={(pick, confirm) => run({ do: 'pickModel', sessionId: id, model: pick, ...(confirm === null ? {} : { confirm }) })}
-              />
-            )}
-            {tuning !== null && (
-              <ThinkingPill key={`thinking-${id}`} tuning={tuning} disabled={!live} running={!idle} onTune={change => run({ do: 'tune', sessionId: id, ...change })} />
-            )}
-            {fill !== null && <ContextMeter key={`context-${id}`} fill={fill} stale={!live} onBreakdown={() => run({ do: 'contextBreakdown', sessionId: id })} />}
-          </>
-        )}
-      >
-        {visibleRefusal !== null && <p className="err refusal">{visibleRefusal.message}</p>}
-      </Composer>
+      {readOnly ? <RunNote /> : (
+        <Composer
+          slot={slotOf(chat)}
+          sessionId={id}
+          cwd={session?.cwd ?? null}
+          inputRef={composer}
+          autoFocus={chat.kind === 'branch' || (chat.kind === 'new' && chat.sessionId === null)}
+          seed={chat.kind === 'branch' ? chat.text : ''}
+          canSend={id === null || live}
+          canAttach={online}
+          showStop={session?.run.state === 'running'}
+          onSend={onSend}
+          planFor={planFor}
+          editing={editing}
+          onCancelEdit={() => setEditing(null)}
+          above={(
+            <>
+              {screen?.state === 'on' && <ComputerCard control={screen.control} thumbnail={screen.thumbnail} />}
+              {id !== null && cards.length > 0 && <Sides cards={cards} onClose={onCloseSide} returnFocus={returnFocus} />}
+              <ExampleRequests requests={requests} onSend={onExample} />
+            </>
+          )}
+          onEscape={onEscape}
+          onStop={() => { if (id !== null) void run({ do: 'stop', sessionId: id }) }}
+          onInput={onInput}
+          stack={id !== null && session !== undefined && (
+            <StatusStack
+              key={`stack-${id}`} processes={session.processes ?? NO_PROCESSES} control={session.control} disabled={!live}
+              onKill={processId => run({ do: 'killProcess', sessionId: id, processId })} onControl={action => run({ do: 'control', sessionId: id, action })}
+            />
+          )}
+          start={id !== null && (
+            <>
+              {approvals !== null && (
+                <Approvals
+                  key={`approvals-${id}`} mode={approvals} yolo={session?.tuning.yolo === true}
+                  onMode={to => run({ do: 'tune', sessionId: id, set: 'approvals', to })}
+                  onYolo={on => run({ do: 'tune', sessionId: id, set: 'yolo', on })}
+                />
+              )}
+              {cwd !== null && (
+                <FolderChip
+                  key={`folder-${id}`} cwd={cwd} field={folderFieldLabel(hermes)} disabled={!live} running={!idle}
+                  onMove={to => run({ do: 'move', sessionId: id, cwd: to })}
+                />
+              )}
+            </>
+          )}
+          end={id !== null && (
+            <>
+              {model.show !== 'hidden' && (
+                <ModelPicker
+                  key={`model-${id}`} view={model} onOpen={() => void refreshModels()}
+                  onPick={(pick, confirm) => run({ do: 'pickModel', sessionId: id, model: pick, ...(confirm === null ? {} : { confirm }) })}
+                />
+              )}
+              {tuning !== null && (
+                <ThinkingPill key={`thinking-${id}`} tuning={tuning} disabled={!live} running={!idle} onTune={change => run({ do: 'tune', sessionId: id, ...change })} />
+              )}
+              {fill !== null && <ContextMeter key={`context-${id}`} fill={fill} stale={!live} onBreakdown={() => run({ do: 'contextBreakdown', sessionId: id })} />}
+            </>
+          )}
+        >
+          {visibleRefusal !== null && <p className="err refusal">{visibleRefusal.message}</p>}
+        </Composer>
+      )}
     </>
   )
 }

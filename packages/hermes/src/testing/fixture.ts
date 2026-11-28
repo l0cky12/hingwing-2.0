@@ -359,12 +359,14 @@ export type RelayScript = { readonly reply: string; readonly delay_ms?: number }
  * `unscoped`: play a Hermes older than the `profile` param, which lists the home store for every profile and says nothing of scope.
  * `runs`: each one rewrites a home job's `last_run_at`, `last_status` and `last_error` `after_ms` after the gateway's first list,
  * and pushes `cron.changed` to every socket, as Hermes's watcher does when the scheduler writes cron/jobs.json (tui_gateway/change_watcher.py:468).
+ * `history`: each job's reply to `GET /api/cron/jobs/<job_id>/runs`, body as Hermes sends it. A job with no entry answers 404, as a Hermes without the route does.
  */
 export interface CronScript {
   readonly jobs: readonly CronRow[]
   readonly profiles?: { readonly [profile: string]: readonly CronRow[] }
   readonly unscoped?: boolean
   readonly runs?: readonly CronRun[]
+  readonly history?: { readonly [job_id: string]: unknown }
 }
 export interface CronRow { readonly job_id: string; readonly [key: string]: unknown }
 export interface CronRun { readonly after_ms: number; readonly job_id: string; readonly last_run_at: string; readonly last_status: string; readonly last_error?: string }
@@ -556,11 +558,15 @@ const isCronRun = (value: unknown): value is CronRun =>
 
 const isCronRows = (value: unknown) => Array.isArray(value) && value.every(job => isObject(job) && isText(job.job_id))
 
+const cronJobIds = (value: { readonly jobs?: unknown; readonly profiles?: unknown }): ReadonlySet<string> =>
+  new Set([value.jobs, ...(isObject(value.profiles) ? Object.values(value.profiles) : [])].flatMap(rows => (Array.isArray(rows) ? rows.map(job => (job as { job_id: string }).job_id) : [])))
+
 const isCronScript = (value: unknown): value is CronScript =>
   isObject(value) && isCronRows(value.jobs)
   && (value.profiles === undefined || (isObject(value.profiles) && Object.values(value.profiles).every(isCronRows)))
   && (value.unscoped === undefined || typeof value.unscoped === 'boolean')
   && (value.runs === undefined || (Array.isArray(value.runs) && value.runs.every(run => isCronRun(run) && (value.jobs as { job_id: string }[]).some(job => job.job_id === run.job_id))))
+  && (value.history === undefined || (isObject(value.history) && Object.keys(value.history).every(id => cronJobIds(value).has(id))))
 
 const MEMORY_FILES = new Set(['MEMORY.md', 'USER.md'])
 const isCharLimit = (value: unknown) => value === undefined || (Number.isSafeInteger(value) && (value as number) > 0)
@@ -786,7 +792,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   }
   const { cron } = value
   if (cron !== undefined && !isCronScript(cron)) {
-    return '"cron" must be { jobs, profiles?, unscoped?, runs? }: each job with a "job_id", "profiles" mapping a profile to such jobs, each run { after_ms, job_id, last_run_at, last_status, last_error? } of a listed home job'
+    return '"cron" must be { jobs, profiles?, unscoped?, runs?, history? }: each job with a "job_id", "profiles" mapping a profile to such jobs, each run { after_ms, job_id, last_run_at, last_status, last_error? } of a listed home job, and "history" mapping a listed job_id to its runs reply'
   }
   const { turnMs, activeList } = value
   if (turnMs !== undefined && !(isObject(turnMs) && Object.values(turnMs).every(ms => Number.isSafeInteger(ms) && (ms as number) >= 0))) {

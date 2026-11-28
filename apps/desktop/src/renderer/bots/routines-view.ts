@@ -1,4 +1,5 @@
-import type { CommandOutcome, Routine, RoutineId } from '@highwing/hermes/domain'
+import type { BotId, CommandOutcome, Routine, RoutineId, RoutineRun, RunOutcome, SessionId } from '@highwing/hermes/domain'
+import { whenWords, type ViewClock } from '@highwing/thread'
 
 export interface RoutineRow { readonly id: RoutineId; readonly name: string; readonly when: string; readonly paused: boolean }
 
@@ -95,4 +96,70 @@ export function afterControl(
   if (!listed.ok) return { listed, said: null }
   const now = answered.value
   return { listed: { ok: true, value: now === null ? listed.value.filter(held => held.id !== id) : listed.value.map(held => (held.id === id ? now : held)) }, said: null }
+}
+
+export const NO_RUNS = 'No runs yet.'
+
+/** How long an open list waits before it asks Hermes again. */
+export const REREAD_MS = 15_000
+
+/**
+ * When an open list reads the runs again, or null for never. Hermes sends `cron.changed` only for the gateway's own profile
+ * (tui_gateway/change_watcher.py), so another bot's runs start and end with no word from Hermes. A Hermes without the route
+ * is not asked again.
+ */
+export const rereadAfter = (listed: CommandOutcome<readonly RoutineRun[]> | null): number | null =>
+  listed !== null && !listed.ok && listed.refusal.kind === 'unsupported' ? null : REREAD_MS
+
+/** The list after another read: a failed read keeps the runs already shown, so a moment offline doesn't take them away. */
+export const afterReread = (
+  held: CommandOutcome<readonly RoutineRun[]> | null, answered: CommandOutcome<readonly RoutineRun[]>
+): CommandOutcome<readonly RoutineRun[]> => (!answered.ok && held?.ok === true ? held : answered)
+
+/** How a run went, in words, because a colour alone says nothing to everyone. */
+export const OUTCOME_WORDS: { readonly [S in RunOutcome['is']]: string } = {
+  running: 'Running', succeeded: 'Succeeded', failed: 'Failed', cancelled: 'Cancelled', missed: 'Missed', unknown: 'No result'
+}
+
+/** A run's length as `took 42 s`, `took 3 min` or `took 1 h 5 min`. */
+export function tookWords(seconds: number): string {
+  const whole = Math.round(seconds)
+  if (whole === 0) return 'took under 1 s'
+  if (whole < 60) return `took ${whole} s`
+  const minutes = Math.round(whole / 60)
+  if (minutes < 60) return `took ${minutes} min`
+  return minutes % 60 === 0 ? `took ${minutes / 60} h` : `took ${Math.floor(minutes / 60)} h ${minutes % 60} min`
+}
+
+const reasonOf = (outcome: RunOutcome): string | null => ('why' in outcome ? outcome.why : null)
+
+export interface RunRow {
+  readonly key: string
+  readonly outcome: RunOutcome['is']
+  readonly state: string
+  readonly when: string
+  readonly took: string | null
+  readonly why: string | null
+  /** The chat that opens it, and the bot whose profile holds it. null: Hermes kept none. */
+  readonly chat: { readonly sessionId: SessionId; readonly bot: BotId } | null
+}
+
+export type RunsView =
+  | { readonly state: 'loading' }
+  | { readonly state: 'refused'; readonly message: string }
+  | { readonly state: 'empty'; readonly hint: string }
+  | { readonly state: 'listed'; readonly rows: readonly RunRow[] }
+
+/** `bot`: the routine's bot, whose profile holds a run's chat when Hermes doesn't name another. */
+export function runsViewOf(listed: CommandOutcome<readonly RoutineRun[]> | null, clock: ViewClock, bot: BotId): RunsView {
+  if (listed === null) return { state: 'loading' }
+  if (!listed.ok) return { state: 'refused', message: listed.refusal.message }
+  if (listed.value.length === 0) return { state: 'empty', hint: NO_RUNS }
+  return {
+    state: 'listed',
+    rows: listed.value.map(run => ({
+      key: run.key, outcome: run.outcome.is, state: OUTCOME_WORDS[run.outcome.is], when: whenWords(run.at, clock),
+      took: run.seconds === null ? null : tookWords(run.seconds), why: reasonOf(run.outcome), chat: run.chat === null ? null : { sessionId: run.chat, bot: run.owner ?? bot }
+    }))
+  }
 }

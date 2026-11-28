@@ -1,7 +1,7 @@
 import type { Hermes } from '@highwing/hermes'
 import { isTaskId, type BotId, type CommandOutcome, type Session, type SessionId } from '@highwing/hermes/domain'
 import {
-  CHANNEL, epochOf, isAppTopic, isLocal, OTHER_CONNECTION, isPreviewCommand, isSetupCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseRecording, parseTopic,
+  CHANNEL, epochOf, isAppTopic, isLocal, OTHER_CONNECTION, isPreviewCommand, isSetupCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseRecording, parseRoutineId, parseTopic,
   type Accent, type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type ImageType, type Mode, type Notices, type OnClose, type PictureChoice, type PictureFile, type Push, type SessionPatch, type StageResult,
   type SendKey, type ShowWork, type SidebarWidth, type Snoozes, type Tail, type Theme, type Topic
 } from '../ipc-contract'
@@ -17,6 +17,7 @@ import type { ImageLoader } from './images'
 import { snoozed, type PreferenceStore } from './preferences'
 import type { PreviewPane } from './preview'
 import type { Saver } from './saves'
+import { readRoutineRuns } from './routine-runs'
 import { readTaskBoard, readTaskChat } from './tasks'
 
 export const COALESCE_MS = 16
@@ -307,6 +308,12 @@ export function serveWindows(
   ipc.handle(CHANNEL.taskBoard, async event => (trusted(event) ? readTaskBoard(owner.read) : REFUSED))
   ipc.handle(CHANNEL.taskChat, async (event, id) => (trusted(event) && isTaskId(id) ? readTaskChat(owner.read, id) : REFUSED))
 
+  ipc.handle(CHANNEL.routineRuns, async (event, bot, routine) => {
+    const named = parseBotId(bot)
+    const id = parseRoutineId(routine)
+    return trusted(event) && named !== null && id !== null ? readRoutineRuns(owner.read, named, id) : REFUSED
+  })
+
   ipc.handle(CHANNEL.drafts, async event => (trusted(event) ? drafts.load() : []))
   ipc.on(CHANNEL.keepDraft, (event, raw) => {
     const draft = parseDraft(raw)
@@ -358,6 +365,7 @@ export function serveWindows(
       ipc.removeHandler(CHANNEL.image)
       ipc.removeHandler(CHANNEL.taskBoard)
       ipc.removeHandler(CHANNEL.taskChat)
+      ipc.removeHandler(CHANNEL.routineRuns)
       ipc.removeHandler(CHANNEL.drafts)
       ipc.removeAllListeners(CHANNEL.keepDraft)
       ipc.removeHandler(CHANNEL.pickPicture)

@@ -126,6 +126,7 @@ describe('validators', () => {
     expect(parseCommand({ do: 'open', ref: { kind: 'chat', sessionId: 's9', bot: '' } })).toBeNull()
     expect(parseCommand({ do: 'open', ref: { kind: 'chat', sessionId: 's9', bot: 7 } })).toBeNull()
     expect(parseCommand({ do: 'open', ref: { kind: 'link', sessionId: 's9', bot: 'research' } })).toEqual({ do: 'open', ref: { kind: 'link', sessionId: 's9' } })
+    expect(parseCommand({ do: 'open', ref: { kind: 'run', bot: 'research', sessionId: 's9', x: 1 } })).toEqual({ do: 'open', ref: { kind: 'run', bot: 'research', sessionId: 's9' } })
     expect(parseCommand({ do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null, draftId: 'd1' }, text: 'hello', sessionId: 's9' }))
       .toEqual({ do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null }, text: 'hello', attachments: [] })
     expect(parseCommand({ do: 'start', chat: { kind: 'new', bot: null, draftId: 'd1', sessionId: null }, text: 'hello' }))
@@ -347,6 +348,8 @@ describe('validators', () => {
     ['an open that names no chat', { do: 'open' }],
     ['an open of a kind of chat Highwing does not know', { do: 'open', ref: { kind: 'session', sessionId: 's1' } }],
     ['an open of a bot with no name', { do: 'open', ref: { kind: 'bot', bot: ' ' } }],
+    ['an open of a run with no bot', { do: 'open', ref: { kind: 'run', sessionId: 's9' } }],
+    ['an open of a run with no session', { do: 'open', ref: { kind: 'run', bot: 'research' } }],
     ['an open of a new chat with no draft id', { do: 'open', ref: { kind: 'new', bot: 'research', draftId: ' ' } }],
     ['an open of a new chat whose bot is not a name or null', { do: 'open', ref: { kind: 'new', draftId: 'd1' } }],
     ['a first message with no chat', { do: 'start', text: 'hello' }],
@@ -1402,6 +1405,34 @@ describe('the task calls', () => {
     served.dispose()
     expect(handlers.has(CHANNEL.taskBoard)).toBe(false)
     expect(handlers.has(CHANNEL.taskChat)).toBe(false)
+  })
+})
+
+describe("the routine runs call", () => {
+  const RUNS = { runs: [{ id: 'local-s1', source: 'cron', started_at: 1000, ended_at: 1042, end_reason: 'cron_complete', title: 'Morning digest' }], limit: 20 }
+
+  it("reads the routine's runs for the named bot, as the list draws them", async () => {
+    const rig = harness()
+    rig.answers({ status: 200, body: RUNS })
+    await expect(rig.handlers.get(CHANNEL.routineRuns)!(rig.event(), 'rae', 'a1')).resolves.toEqual({
+      ok: true, value: [{ key: 'local-s1', outcome: { is: 'succeeded' }, at: 1_000_000, seconds: 42, chat: 'local-s1', owner: null }]
+    })
+    expect(rig.reads).toEqual(['/api/cron/jobs/a1/runs?profile=rae&limit=20'])
+  })
+
+  it('refuses a foreign frame, and a bot or routine that is not a name, without reading', async () => {
+    const rig = harness()
+    const runs = rig.handlers.get(CHANNEL.routineRuns)!
+    for (const [event, bot, routine] of [[rig.event('https://example.com/'), 'rae', 'a1'], [rig.event(), '', 'a1'], [rig.event(), 'rae', ' '], [rig.event(), 7, 'a1'], [rig.event(), 'rae', { id: 'a1' }], [rig.event(), undefined, undefined]] as const) {
+      await expect(runs(event, bot, routine)).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    }
+    expect(rig.reads).toEqual([])
+  })
+
+  it('stops answering once disposed', () => {
+    const { handlers, served } = harness()
+    served.dispose()
+    expect(handlers.has(CHANNEL.routineRuns)).toBe(false)
   })
 })
 

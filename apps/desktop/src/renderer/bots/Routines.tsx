@@ -1,7 +1,8 @@
-import type { BotId, CommandOutcome, Routine, RoutineAction, RoutineId } from '@highwing/hermes/domain'
-import { useEffect, useState } from 'react'
+import type { BotId, CommandOutcome, Routine, RoutineAction, RoutineId, RoutineRun, SessionId } from '@highwing/hermes/domain'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { TIME_ZONE } from '../chat/wake'
 import { DeleteDialog } from './DeleteDialog'
-import { afterControl, routinesViewOf, type RoutineRow, type RoutinesView } from './routines-view'
+import { afterControl, afterReread, rereadAfter, routinesViewOf, runsViewOf, type RoutineRow, type RoutinesView, type RunRow, type RunsView } from './routines-view'
 
 export interface RoutinesProps {
   readonly bot: BotId
@@ -11,12 +12,16 @@ export interface RoutinesProps {
   readonly revision: number | undefined
   readonly onList: (bot: BotId) => Promise<CommandOutcome<readonly Routine[]>>
   readonly onControl: (bot: BotId, routine: RoutineId, action: RoutineAction) => Promise<CommandOutcome<Routine | null>>
+  /** Asks Hermes for a routine's newest runs. */
+  readonly onRuns: (bot: BotId, routine: RoutineId) => Promise<CommandOutcome<readonly RoutineRun[]>>
+  /** Opens the chat of a run, read-only, in the bot whose profile holds it. */
+  readonly onOpenRun: (bot: BotId, sessionId: SessionId) => void
 }
 
 type Listed = { readonly bot: BotId; readonly outcome: CommandOutcome<readonly Routine[]>; readonly said: string | null }
 
 /** A bot's Routines tab: the jobs Hermes runs for it on a schedule, each with Pause or Resume and Delete. */
-export function Routines({ bot, name, revision, onList, onControl }: RoutinesProps) {
+export function Routines({ bot, name, revision, onList, onControl, onRuns, onOpenRun }: RoutinesProps) {
   const [listed, setListed] = useState<Listed | null>(null)
   const [busy, setBusy] = useState<RoutineId | null>(null)
   const [deleting, setDeleting] = useState<RoutineRow | null>(null)
@@ -39,12 +44,13 @@ export function Routines({ bot, name, revision, onList, onControl }: RoutinesPro
     })
   }
 
+  const history = useMemo((): RunHistory => ({ bot, revision, read: routine => onRuns(bot, routine), onOpen: onOpenRun }), [bot, revision, onRuns, onOpenRun])
   const shown = listed?.bot === bot ? listed : null
   return (
     <>
       {shown?.said == null ? null : <p className="routines-note routines-refused" role="alert">{shown.said}</p>}
       <RoutinesList
-        view={routinesViewOf(shown?.outcome ?? null, name)} busy={busy}
+        view={routinesViewOf(shown?.outcome ?? null, name)} busy={busy} history={history}
         onToggle={row => void control(row.id, row.paused ? 'resume' : 'pause')} onDelete={setDeleting}
       />
       {deleting === null ? null : (
@@ -57,32 +63,103 @@ export function Routines({ bot, name, revision, onList, onControl }: RoutinesPro
   )
 }
 
+export interface RunHistory {
+  readonly bot: BotId
+  /** The `routines` topic. An open list is asked for again whenever it changes, so a run that ends there shows how it went. */
+  readonly revision: number | undefined
+  /** Hermes's newest runs of the routine. */
+  readonly read: (routine: RoutineId) => Promise<CommandOutcome<readonly RoutineRun[]>>
+  /** Opens the chat of a run. */
+  readonly onOpen: (bot: BotId, sessionId: SessionId) => void
+}
+
 export interface RoutinesListProps {
   readonly view: RoutinesView
   /** The routine whose control is on its way to Hermes. */
   readonly busy: RoutineId | null
+  /** What each row's Past runs needs: Hermes's list of the routine's runs, and what opening one does. */
+  readonly history: RunHistory
   readonly onToggle: (row: RoutineRow) => void
   readonly onDelete: (row: RoutineRow) => void
 }
 
-export function RoutinesList({ view, busy, onToggle, onDelete }: RoutinesListProps) {
+export function RoutinesList({ view, busy, history, onToggle, onDelete }: RoutinesListProps) {
   if (view.state === 'loading') return <p className="routines-note" aria-busy="true">Loading routines…</p>
   if (view.state === 'refused') return <p className="routines-note routines-refused" role="alert">{view.message}</p>
   if (view.state === 'empty') return <p className="routines-note">{view.hint}</p>
   return (
     <ul className="routines" aria-label="Routines">
-      {view.rows.map(row => (
-        <li key={row.id} className="routine" aria-busy={busy === row.id}>
-          <span className="routine-name">{row.name}</span>
-          <span className="routine-when">{row.when}</span>
-          <span className="routine-controls">
-            <button type="button" disabled={busy !== null} aria-label={`${row.paused ? 'Resume' : 'Pause'} ${row.name}`} onClick={() => onToggle(row)}>
-              {row.paused ? 'Resume' : 'Pause'}
-            </button>
-            <button type="button" disabled={busy !== null} aria-label={`Delete ${row.name}…`} onClick={() => onDelete(row)}>Delete…</button>
-          </span>
-        </li>
-      ))}
+      {view.rows.map(row => <RoutineItem key={row.id} row={row} busy={busy} history={history} onToggle={onToggle} onDelete={onDelete} />)}
     </ul>
+  )
+}
+
+type ItemProps = Pick<RoutinesListProps, 'busy' | 'history' | 'onToggle' | 'onDelete'> & { readonly row: RoutineRow }
+
+function RoutineItem({ row, busy, history, onToggle, onDelete }: ItemProps) {
+  const [open, setOpen] = useState(false)
+  const runs = useId()
+  return (
+    <li className="routine" aria-busy={busy === row.id}>
+      <span className="routine-name">{row.name}</span>
+      <span className="routine-when">{row.when}</span>
+      <span className="routine-controls">
+        <button type="button" aria-expanded={open} aria-controls={runs} aria-label={`Past runs of ${row.name}`} onClick={() => setOpen(!open)}>Past runs</button>
+        <button type="button" disabled={busy !== null} aria-label={`${row.paused ? 'Resume' : 'Pause'} ${row.name}`} onClick={() => onToggle(row)}>
+          {row.paused ? 'Resume' : 'Pause'}
+        </button>
+        <button type="button" disabled={busy !== null} aria-label={`Delete ${row.name}…`} onClick={() => onDelete(row)}>Delete…</button>
+      </span>
+      {open && <PastRuns id={runs} routine={row.id} name={row.name} history={history} />}
+    </li>
+  )
+}
+
+/** Mounted while a routine's Past runs is open, so each time it opens it asks Hermes afresh. */
+function PastRuns({ id, routine, name, history }: { readonly id: string; readonly routine: RoutineId; readonly name: string; readonly history: RunHistory }) {
+  const [held, setHeld] = useState<{ readonly listed: CommandOutcome<readonly RoutineRun[]> | null; readonly answers: number }>({ listed: null, answers: 0 })
+  const [polled, poll] = useState(0)
+  const read = useRef(history.read)
+  read.current = history.read
+  useEffect(() => {
+    let current = true
+    void read.current(routine).then(answered => {
+      if (current) setHeld(before => ({ listed: afterReread(before.listed, answered), answers: before.answers + 1 }))
+    })
+    return () => { current = false }
+  }, [routine, history.revision, polled])
+  const wait = rereadAfter(held.listed)
+  useEffect(() => {
+    if (wait === null || held.answers === 0) return
+    const timer = window.setTimeout(() => poll(count => count + 1), wait)
+    return () => window.clearTimeout(timer)
+  }, [wait, held.answers])
+  return <RunsList id={id} name={name} view={runsViewOf(held.listed, { now: Date.now(), timeZone: TIME_ZONE }, history.bot)} onOpen={history.onOpen} />
+}
+
+export function RunsList({ id, name, view, onOpen }: { readonly id: string; readonly name: string; readonly view: RunsView; readonly onOpen: RunHistory['onOpen'] }) {
+  return (
+    <div id={id} className="routine-runs">
+      {view.state === 'loading' && <p className="routines-note" aria-busy="true">Loading runs…</p>}
+      {view.state === 'refused' && <p className="routines-note routines-refused" role="alert">{view.message}</p>}
+      {view.state === 'empty' && <p className="routines-note">{view.hint}</p>}
+      {view.state === 'listed' && (
+        <ul aria-label={`Past runs of ${name}`}>
+          {view.rows.map(run => <RunItem key={run.key} run={run} onOpen={onOpen} />)}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function RunItem({ run, onOpen }: { readonly run: RunRow; readonly onOpen: RunHistory['onOpen'] }) {
+  const { chat } = run
+  return (
+    <li className={`run run-${run.outcome}`}>
+      <span className="run-state">{run.state}</span>
+      <span className="run-when">{run.took === null ? run.when : `${run.when} · ${run.took}`}</span>
+      {chat !== null && <button type="button" aria-label={`Open run from ${run.when}`} onClick={() => onOpen(chat.bot, chat.sessionId)}>Open run</button>}
+      {run.why !== null && <span className="run-why">{run.why}</span>}
+    </li>
   )
 }

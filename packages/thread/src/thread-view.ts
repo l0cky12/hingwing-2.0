@@ -7,9 +7,10 @@ import {
 import { askCard, askLines, closedWords, type AskCard } from './asks'
 import { multiAnswers } from './multi'
 import { hidesAt, isShownAt, moaWords, NOTICE_TONES } from './says'
-import { changesAt, elapsedWords, leftChangesAt, leftWords, timeLines, type ViewClock } from './when'
+import { changesAt, elapsedWords, leftChangesAt, leftWords, timeLines, whenWords, type ViewClock } from './when'
 
 export type { ViewClock }
+export { whenWords }
 
 export { leafText, parseMarkdown, proseLeaves, type Align, type Block, type Cell, type CodeBlock, type Inline, type ProseLeaf } from './prose'
 export { drawnQuestions, type AskCard, type ConnectCard, type DrawnQuestion, type QuestionsCard, type QuestionView, type SecretCard, type SecretField, type TargetView } from './asks'

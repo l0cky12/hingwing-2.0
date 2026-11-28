@@ -29,6 +29,7 @@ const bridge: Bridge = {
   choosePicture: () => ipcRenderer.invoke(CHANNEL.choosePicture),
   taskBoard: () => ipcRenderer.invoke(CHANNEL.taskBoard),
   taskChat: id => ipcRenderer.invoke(CHANNEL.taskChat, id),
+  routineRuns: (bot, routine) => ipcRenderer.invoke(CHANNEL.routineRuns, bot, routine),
   attachPick: () => ipcRenderer.invoke(CHANNEL.attachPick),
   attachPaste: () => ipcRenderer.invoke(CHANNEL.attachPaste),
   openScreen: (epoch, request) => ipcRenderer.send(CHANNEL.screen, epoch, request),

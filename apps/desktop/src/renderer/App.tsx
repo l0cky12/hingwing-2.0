@@ -39,6 +39,7 @@ function samePaneOnFirstMessage(shown: Shown | ShownGroup): string {
     case 'new': return `new:${shown.draftId}`
     case 'chat': return `chat:${shown.sessionId}`
     case 'branch': return `branch:${shown.sessionId}`
+    case 'run': return `run:${shown.sessionId}`
     case 'group': return `group:${shown.group}`
   }
 }
