@@ -2,7 +2,7 @@ import type { SessionId } from '@highwing/hermes/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { Preview } from '../src/ipc-contract'
-import { paneKey, reloadsPane, type PaneSeen } from '../src/renderer/chat/page-reload'
+import { paneKey, reloadsPane, seenNext, type PaneSeen } from '../src/renderer/chat/page-reload'
 import { NewestPagesContext, Pages } from '../src/renderer/chat/Pages'
 
 describe('the pages a turn made', () => {
@@ -50,6 +50,17 @@ describe('reloading the open page when its chat writes it again', () => {
     expect(reloadsPane(seen('t1/0'), seen('t2/1', '/w/b.html'))).toBe(false)
   })
 
+  it('reloads a page deleted and then written again, by keeping its last version while it has no card', () => {
+    const gone = seenNext(seen('t1/0'), seen(undefined))
+    expect(gone).toEqual(seen('t1/0'))
+    expect(reloadsPane(gone, seen('t1/0 t1/2'))).toBe(true)
+  })
+
+  it('forgets the version once the pane shows another page', () => {
+    expect(seenNext(seen('t1/0'), seen(undefined, '/w/b.html'))).toEqual(seen(undefined, '/w/b.html'))
+    expect(seenNext(seen('t1/0'), null)).toBeNull()
+  })
+
   it('does not reload when no card in the chat names the page, before or after', () => {
     expect(reloadsPane(seen(undefined), seen('t2/1'))).toBe(false)
     expect(reloadsPane(seen('t1/0'), seen(undefined))).toBe(false)
@@ -64,6 +75,10 @@ describe('which page the open pane shows', () => {
 
   it('is the path this chat asked for, which Hermes may name relative to its folder', () => {
     expect(paneKey(pane('site/index.html', '/w/site/index.html'), S1, newest)).toBe('site/index.html')
+  })
+
+  it('stays the path this chat asked for while no card names it, so a page deleted and written again keeps one key', () => {
+    expect(paneKey(pane('site/index.html', '/w/site/index.html'), S1, new Map())).toBe('site/index.html')
   })
 
   it('is the address when no card names the request', () => {
