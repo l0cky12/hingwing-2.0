@@ -1604,6 +1604,8 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .hub-name { display: flex; align-items: baseline; gap: 8px; min-width: 0; margin: 0; font-weight: 600; overflow-wrap: anywhere; }
 .hub-kind { flex: none; font-size: var(--text-xs); font-weight: 400; color: var(--graphite); }
 .hub-detail { overflow: hidden; margin: 2px 0 0; font-size: var(--text-sm); color: var(--graphite); text-overflow: ellipsis; white-space: nowrap; }
+.hub-detail[data-wrap] { white-space: normal; }
+.hub-whole { white-space: nowrap; }
 .hub-detail[data-mono] { font: var(--text-xs)/1.6 var(--mono); }
 .hub-later { margin: 4px 0 0; font-size: var(--text-xs); color: var(--caution); }
 .hub-ask { margin: 4px 0 0; font-size: var(--text-xs); color: var(--ink); }
@@ -1639,7 +1641,18 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 :is(.tool-header, .tool-foot) button { flex: none; border: 1px solid var(--rule); background: var(--paper); color: var(--ink); border-radius: var(--radius-sm); padding: 4px 10px; font-size: var(--text-sm); }
 .tool-foot button.primary { background: var(--ink); color: var(--sheet); border-color: var(--ink); }
 :is(.tool-header, .tool-foot) button:disabled, .tool-form fieldset:disabled { opacity: .55; }
+.template-dialog { width: min(520px, calc(100% - 32px)); }
+.template-dialog .field { grid-template-columns: 128px minmax(0, 1fr); }
+.template-dialog .field-stack { display: grid; min-width: 0; }
+.template-dialog .field-hint { margin: 4px 0 0; font-size: var(--text-xs); color: var(--graphite); }
+.template-sets { margin-top: 16px; padding: 12px 14px; border: 1px solid var(--rule); border-radius: var(--radius-md); background: var(--paper); }
+.template-sets h3 { margin: 0 0 8px; font-size: var(--text-sm); font-weight: 600; }
+.template-sets dl { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 6px 12px; margin: 0; font-size: var(--text-sm); }
+.template-sets dt { color: var(--graphite); }
+.template-sets dd { margin: 0; overflow-wrap: anywhere; }
+.template-dialog .form-soon { margin: 8px 0 0; font-size: var(--text-sm); color: var(--graphite); text-align: right; }
 @media (forced-colors: active) {
+  .template-sets { border: 1px solid ButtonText; }
   .hub-tabs [role="tab"][aria-selected="true"], .hub-chips button[aria-pressed="true"], .tool-kinds button[aria-pressed="true"] { outline: 2px solid Highlight; }
   .account .connectors-open, .hub-search, .hub-search button, .hub-card, .hub-actions button, .hub-chips, .hub-note button, .tool-kinds button { border: 1px solid ButtonText; }
   .hub-switch { border: 1px solid ButtonText; }

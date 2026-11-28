@@ -1,20 +1,19 @@
 import {
-  CONNECTOR_FILTERS, connectorsView, pluginsView, shownBot, shownChat, STANDING_WORDS, type CatalogPlugin, type CommandOutcome, type AppEntry, type AppsBoard, type BotId, type ConnectorFilter, type ConnectorShelf, type ConnectorsQuery, type ConnectorsView, type ServerSetup, type Toolset, type ToolServer
+  APPROVAL_WORDS, BOT_TEMPLATES, CONNECTOR_FILTERS, connectorsView, pluginsView, scheduleWords, shownBot, shownChat, STANDING_WORDS, TOOLSET_WORDS, type BotTemplate, type BotTemplateId, type CatalogPlugin, type CommandOutcome, type AppEntry, type AppsBoard, type BotId, type ConnectorFilter, type ConnectorShelf, type ConnectorsQuery, type ConnectorsView, type ServerSetup, type Toolset, type ToolServer
 } from '@highwing/hermes/domain'
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { Fragment, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { ICON } from '../chrome/PopupMenu'
 import { connectorsKeys } from '../keys'
 import { line } from '../setup/ConnectionCard'
 import { nameOf, useSkillSwitches } from '../setup/Skills'
 import { run, useTopic } from '../store'
 import { useSwitches } from '../switches'
+import { TABS, tabAfterKey, type Tab } from './connectors-tabs'
 import { askWords, catalogKind, installedKind, installedWords, AVAILABLE_PAGE } from './plugins-view'
+import { TemplateDialog } from './Templates'
 import { ToolServerForm, useToolServers } from './ToolServers'
 import { namedTools, STATES, toolCount } from './tool-servers-view'
 
-type Tab = 'skills' | 'plugins' | 'connectors' | 'tools'
-const TABS: readonly { readonly tab: Tab; readonly label: string }[] = [
-  { tab: 'skills', label: 'Skills' }, { tab: 'plugins', label: 'Plugins' }, { tab: 'connectors', label: 'Connectors' }, { tab: 'tools', label: 'Tools' }
-]
 const FILTER_WORDS: { readonly [F in ConnectorFilter]: string } = { all: 'All', added: 'Added', available: 'Available' }
 const SHELF_WORDS: { readonly [S in ConnectorShelf]: string } = { added: 'Added', available: 'Available' }
 
@@ -213,24 +212,27 @@ interface CardProps {
   readonly detail: string
   readonly mono?: boolean
   readonly toolNames?: string
+  readonly lines?: readonly ReactNode[]
+  readonly tile?: ReactNode
   readonly state?: { readonly standing: string; readonly words: string }
   readonly later?: boolean
   readonly below?: ReactNode
   readonly children?: ReactNode
 }
 
-function Card({ name, kind, logo = null, detail, mono = false, toolNames = '', state, later = false, below, children }: CardProps) {
+function Card({ name, kind, logo = null, tile, detail, mono = false, toolNames = '', lines = [], state, later = false, below, children }: CardProps) {
   const [broken, setBroken] = useState<string | null>(null)
   return (
     <li className="hub-card">
       <span className="hub-tile" aria-hidden="true">
-        {logo !== null && broken !== logo ? <img alt="" src={logo} onError={() => setBroken(logo)} /> : name.slice(0, 1).toUpperCase()}
+        {tile ?? (logo !== null && broken !== logo ? <img alt="" src={logo} onError={() => setBroken(logo)} /> : name.slice(0, 1).toUpperCase())}
       </span>
       <div className="hub-copy">
         <p className="hub-name">{name}{kind !== undefined && <span className="hub-kind">{kind}</span>}</p>
-        {detail !== '' && <p className="hub-detail" data-mono={mono || undefined} title={detail}>{detail}</p>}
+        {detail !== '' && <p className="hub-detail" data-mono={mono || undefined} data-wrap={lines.length > 0 || undefined} title={detail}>{detail}</p>}
         {toolNames !== '' && <p className="hub-detail" data-mono title={toolNames}>{toolNames}</p>}
         {later && <p className="hub-later">Takes effect when Hermes restarts.</p>}
+        {lines.map((words, at) => <p key={at} className="hub-detail" data-wrap>{words}</p>)}
         {below}
       </div>
       <div className="hub-side">
@@ -478,6 +480,45 @@ function ToolsPanel({ read }: { readonly read: Listed<Toolset> }) {
   )
 }
 
+const TILE = { ...ICON, width: 18, height: 18 } as const
+
+const TEMPLATE_TILES: { readonly [T in BotTemplateId]: ReactNode } = {
+  'bot-builder': <svg {...TILE}><rect x="4" y="8" width="16" height="12" rx="2" /><path d="M12 8V5M9 13v2M15 13v2" /><circle cx="12" cy="4" r="1" /></svg>,
+  'deep-researcher': <svg {...TILE}><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>,
+  'nightly-repo-auditor': <svg {...TILE}><path d="M12 3 5 6v6c0 4 3 7 7 9 4-2 7-5 7-9V6z" /><path d="m9 12 2 2 4-4" /></svg>
+}
+
+const turnsOn = (template: BotTemplate) => (
+  <>Turns on: {template.toolsets.map((toolset, at) => <Fragment key={toolset}>{at > 0 && ', '}<span className="hub-whole">{TOOLSET_WORDS[toolset]}</span></Fragment>)}</>
+)
+
+function TemplatesPanel() {
+  const [chosen, setChosen] = useState<BotTemplate | null>(null)
+  const opener = useRef<HTMLElement | null>(null)
+  const close = () => {
+    setChosen(null)
+    opener.current?.focus()
+  }
+  return (
+    <>
+      <p className="hub-lead">Start a new bot from a template.</p>
+      <ul className="hub-grid">
+        {BOT_TEMPLATES.map(template => (
+          <Card
+            key={template.id} name={template.name} kind="Template" detail={template.summary} tile={TEMPLATE_TILES[template.id]}
+            lines={[turnsOn(template), `Approval: ${APPROVAL_WORDS[template.approval].label}`, ...(template.schedule === null ? [] : [scheduleWords(template.schedule.defaultTime)])]}
+          >
+            <div className="hub-actions">
+              <button type="button" aria-label={`Use template ${template.name}`} onClick={event => { opener.current = event.currentTarget; setChosen(template) }}>Use template</button>
+            </div>
+          </Card>
+        ))}
+      </ul>
+      {chosen !== null && <TemplateDialog key={chosen.id} template={chosen} onClose={close} />}
+    </>
+  )
+}
+
 export function Connectors({ onClose }: { readonly onClose: () => void }) {
   const ids = useId()
   const open = useTopic('open')
@@ -498,7 +539,8 @@ export function Connectors({ onClose }: { readonly onClose: () => void }) {
     skills: switches.library?.state === 'listed' ? switches.library.skills.length : null,
     plugins: plugins.read.at === 'read' ? plugins.read.items.length : null,
     connectors: reading ? null : view.total,
-    tools: toolsets.at === 'read' ? toolsets.items.length : null
+    tools: toolsets.at === 'read' ? toolsets.items.length : null,
+    templates: BOT_TEMPLATES.length
   }
 
   const root = useRef<HTMLElement>(null)
@@ -516,10 +558,9 @@ export function Connectors({ onClose }: { readonly onClose: () => void }) {
   }, [onClose])
 
   const step = (event: KeyboardEvent<HTMLButtonElement>, at: number) => {
-    const by = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0
-    if (by === 0) return
+    const next = tabAfterKey(at, event.key)
+    if (next === null) return
     event.preventDefault()
-    const next = TABS[(at + by + TABS.length) % TABS.length]!.tab
     setTab(next)
     tabs.current.get(next)?.focus()
   }
@@ -539,7 +580,7 @@ export function Connectors({ onClose }: { readonly onClose: () => void }) {
             </button>
           ))}
         </div>
-        <p className="hub-for">Configuring: <span>{name}</span></p>
+        {tab !== 'templates' && <p className="hub-for">Configuring: <span>{name}</span></p>}
         <button type="button" className="hub-close" aria-label="Close" onClick={onClose}><Cross /></button>
       </header>
       <main>
@@ -548,6 +589,7 @@ export function Connectors({ onClose }: { readonly onClose: () => void }) {
           <div role="tabpanel" id={`${ids}-plugins-panel`} aria-labelledby={`${ids}-plugins`} hidden={tab !== 'plugins'}><PluginsPanel name={name} plugins={plugins} /></div>
           <div role="tabpanel" id={`${ids}-connectors-panel`} aria-labelledby={`${ids}-connectors`} hidden={tab !== 'connectors'}><ConnectorsPanel apps={apps} servers={servers} view={view} reading={reading} query={query} onQuery={setQuery} /></div>
           <div role="tabpanel" id={`${ids}-tools-panel`} aria-labelledby={`${ids}-tools`} hidden={tab !== 'tools'}><ToolsPanel read={toolsets} /></div>
+          <div role="tabpanel" id={`${ids}-templates-panel`} aria-labelledby={`${ids}-templates`} hidden={tab !== 'templates'}><TemplatesPanel /></div>
         </div>
       </main>
     </section>
