@@ -16,12 +16,17 @@ const DIAGRAM_CONFIGS = [
 ] as const satisfies readonly (keyof MermaidConfig)[]
 
 const token = (style: CSSStyleDeclaration, name: string) => style.getPropertyValue(name).trim()
-/** Mermaid parses plain colors only, and a Contrast other than 100 draws the quiet colors as a mix. A canvas resolves it to hex. */
+/**
+ * Mermaid parses plain colors only, and a Contrast other than 100 draws the quiet colors as a mix. A canvas reads a mix back as
+ * `color(srgb …)`, so the mix is painted and its pixel read.
+ */
 function plain(color: string): string {
-  const paint = color.startsWith('color-mix(') ? document.createElement('canvas').getContext('2d') : null
+  const canvas = color.startsWith('color-mix(') ? document.createElement('canvas') : null
+  const paint = canvas?.getContext('2d', { willReadFrequently: true }) ?? null
   if (paint === null) return color
   paint.fillStyle = color
-  return paint.fillStyle
+  paint.fillRect(0, 0, 1, 1)
+  return `#${[...paint.getImageData(0, 0, 1, 1).data.slice(0, 3)].map(channel => channel.toString(16).padStart(2, '0')).join('')}`
 }
 
 export type Palette = 'light' | 'dark'
