@@ -27,6 +27,7 @@ export type { Skill, SkillLibrary } from './skills'
 export { ROUTINE_ACTIONS, type Routine, type RoutineAction, type RoutineId } from './routines'
 export { mentionedBots, mentionOf, typedMention } from './mention'
 export type { Job, JobId } from './jobs'
+export { NO_REASON, parseRoutineRuns, RUNS_SHOWN, runsPath, type RoutineRun, type RunOutcome } from './runs'
 export type { Relay, RelayDesk, RelayId, RelayState } from './relay'
 export { shownBot, shownChat, shownGroup, type ChatRef, type OpenChat, type Shown, type ShownGroup, type Unstarted } from './open'
 export {
