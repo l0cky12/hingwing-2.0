@@ -175,6 +175,13 @@ describe('loadFixture', () => {
     expect(() => loadFixture(clash)).toThrow(`${clash}:1: "configureClash" must be the title another client writes`)
   })
 
+  it("reads each bot's own memory under profiles, and refuses a profile whose entries are not memory entries", () => {
+    const memory = { entries: [], profiles: { rae: { entries: [{ file: 'MEMORY.md', text: 'Likes lists.' }], limits: { memory: 90 } } } }
+    expect(loadFixture(write([{ ...header, memory }])).header.memory).toEqual(memory)
+    const path = write([{ ...header, memory: { entries: [], profiles: { rae: { entries: [{ file: 'NOTES.md', text: 'x' }] } } } }])
+    expect(() => loadFixture(path)).toThrow(`${path}:1: "memory" must be`)
+  })
+
   it('keeps the account usage, usage bars and insights replies a file cans, and refuses one that is not an object', () => {
     const replies = { accountUsage: { lines: ['Acme Pro'], nous_route: false }, usageBars: { available: false }, insights: { days: 30, sessions: 4, messages: 9 } }
     expect(loadFixture(write([{ ...header, ...replies }])).header).toMatchObject(replies)

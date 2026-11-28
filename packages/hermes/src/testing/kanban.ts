@@ -1,6 +1,7 @@
 import { BOARD_PATH, parseTaskBoard, taskPath } from '../domain/tasks'
 import type { ReadHermes } from '../wire/link'
-import type { CronScript } from './fixture'
+import type { CronScript, MemoryScript } from './fixture'
+import { memoryReads } from './memory-book'
 
 export interface Kanban {
   readonly board: unknown
@@ -27,8 +28,11 @@ function runsJobOf(path: string): string | null {
 }
 
 /** The REST routes of the fixture's Hermes. What the header gives answers, and every other path is a 404, as it is on a Hermes without that route. */
-export function fixtureRead({ kanban, cron }: { readonly kanban?: Kanban | undefined; readonly cron?: CronScript | undefined }): ReadHermes {
+export function fixtureRead({ kanban, cron, memory }: { readonly kanban?: Kanban | undefined; readonly cron?: CronScript | undefined; readonly memory?: MemoryScript | undefined }): ReadHermes {
+  const memoryRead = memoryReads(memory)
   return async path => {
+    const remembered = memoryRead(path)
+    if (remembered !== null) return remembered
     if (kanban !== undefined) {
       if (path === BOARD_PATH) return { status: 200, body: kanban.board }
       const task = Object.keys(kanban.tasks).find(held => taskPath(held) === path)

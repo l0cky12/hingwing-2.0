@@ -1,7 +1,10 @@
 import { createHash } from 'node:crypto'
-import type { MemoryScript } from './fixture'
+import type { MemoryFiles, MemoryScript } from './fixture'
 
 const DELIMITER = '\n§\n'
+/** The most of an entry the graph's cards carry: `chunk[:1200]` in agent/learning_graph.py. */
+const CARD_BODY_MAX = 1200
+const DEFAULT_LIMITS = { memory: 2200, user: 1375 } as const
 const FILES = { memory: 'MEMORY.md', profile: 'USER.md' } as const
 type Source = keyof typeof FILES
 
@@ -9,6 +12,10 @@ const grouped = (n: number) => n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ','
 const fingerprint = (text: string) => createHash('sha256').update(text.trim(), 'utf8').digest('hex').slice(0, 12)
 
 export interface MemoryBook {
+  /** The dashboard API's `GET /api/learning/graph`. */
+  graph(): unknown
+  /** The dashboard API's `GET /api/config`, as far as the memory caps. */
+  config(): unknown
   frames(): unknown
   detail(id: string): unknown
   edit(id: string, content: string): unknown
@@ -16,12 +23,12 @@ export interface MemoryBook {
 }
 
 /** The memory files a fixture holds, written the way agent/learning_mutations.py writes them. */
-export function memoryBook(script: MemoryScript): MemoryBook {
+export function memoryBook(script: MemoryFiles): MemoryBook {
   const entries: { readonly [S in Source]: string[] } = {
     memory: script.entries.flatMap(entry => entry.file === 'MEMORY.md' ? [entry.text.trim()] : []),
     profile: script.entries.flatMap(entry => entry.file === 'USER.md' ? [entry.text.trim()] : [])
   }
-  const limitOf = (source: Source) => (source === 'profile' ? script.limits?.user ?? 1375 : script.limits?.memory ?? 2200)
+  const limitOf = (source: Source) => (source === 'profile' ? script.limits?.user ?? DEFAULT_LIMITS.user : script.limits?.memory ?? DEFAULT_LIMITS.memory)
   const cards = () => [...entries.memory.map(text => ({ source: 'memory' as const, text })), ...entries.profile.map(text => ({ source: 'profile' as const, text }))]
   const idOf = (source: Source, index: number, text: string) => `memory:${source}:${index}:${fingerprint(text)}`
 
@@ -51,6 +58,16 @@ export function memoryBook(script: MemoryScript): MemoryBook {
   }
 
   return {
+    graph() {
+      const all = cards()
+      return {
+        memory: all.map(card => ({ source: card.source, timestamp: 0, title: (card.text.split('\n')[0] ?? '').slice(0, 80), body: [...card.text].slice(0, CARD_BODY_MAX).join(''), fingerprint: fingerprint(card.text) })),
+        nodes: all.map((card, index) => ({ id: idOf(card.source, index, card.text), kind: 'memory', memorySource: card.source, label: (card.text.split('\n')[0] ?? '').slice(0, 80) }))
+      }
+    },
+    config() {
+      return { memory: { memory_char_limit: limitOf('memory'), user_char_limit: limitOf('profile') } }
+    },
     frames() {
       const nodes = cards().map((card, index) => node(card.source, index, card.text))
       return {
@@ -84,5 +101,39 @@ export function memoryBook(script: MemoryScript): MemoryBook {
       entries[found.source].splice(found.local, 1)
       return { ok: true, message: `deleted memory from ${FILES[found.source]}` }
     }
+  }
+}
+
+function bookFor(script: MemoryScript, profile: string): MemoryFiles {
+  if (profile === 'default') return script
+  const own = script.profiles?.[profile]
+  const limits = own?.limits ?? script.limits
+  return { entries: own?.entries ?? [], ...(limits === undefined ? {} : { limits }) }
+}
+
+export const GRAPH_ROUTE = '/api/learning/graph'
+export const CONFIG_ROUTE = '/api/config'
+export const NODE_ROUTE = '/api/learning/node'
+
+/**
+ * The dashboard API's memory reads of a fixture's Hermes, one book per profile asked. null: not a memory route.
+ * Without a script every memory route is a 404, as on a Hermes that lacks them.
+ */
+export function memoryReads(script: MemoryScript | undefined): (path: string) => { readonly status: number; readonly body: unknown } | null {
+  const books = new Map<string, MemoryBook>()
+  const bookOf = (held: MemoryScript, profile: string) => {
+    const book = books.get(profile) ?? memoryBook(bookFor(held, profile))
+    books.set(profile, book)
+    return book
+  }
+  return path => {
+    const url = new URL(path, 'http://hermes.invalid')
+    if (url.pathname !== GRAPH_ROUTE && url.pathname !== CONFIG_ROUTE && url.pathname !== NODE_ROUTE) return null
+    if (script === undefined) return { status: 404, body: { detail: 'Not Found' } }
+    const book = bookOf(script, url.searchParams.get('profile') ?? 'default')
+    if (url.pathname === GRAPH_ROUTE) return { status: 200, body: book.graph() }
+    if (url.pathname === CONFIG_ROUTE) return { status: 200, body: book.config() }
+    const detail = book.detail(url.searchParams.get('id') ?? '') as { readonly ok: boolean }
+    return { status: detail.ok ? 200 : 404, body: detail }
   }
 }
