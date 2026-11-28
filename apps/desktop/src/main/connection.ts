@@ -235,9 +235,9 @@ export function ownConnection(deps: ConnectionDeps): ConnectionOwner {
     }
     const edit: ServerEdit = into === 'addWay' ? { do: into, target } : { do: into, target, id: deps.newId() }
     const next = nextServers(servers, edit)
+    if (next === null) return void apply({ do: 'fail', failure: 'cant-save' })
     apply({ do: 'step', step: 'save' })
     try {
-      if (next === null) throw new Error('The saved servers refused the edit.')
       if (open === null) await deps.armIntro()
       await deps.save(next)
     } catch {
