@@ -60,7 +60,7 @@ export const ROWS: readonly Row[] = [
   { id: 'models', page: 'models', searchText: 'Models. Bot. Each bot keeps its own models. Default model. New chats with this bot start on it. Backup model. Used when the default model fails. No backup. fallback failover provider LLM switch' },
   { id: 'theme', page: 'appearance', searchText: 'Theme. System, Light, Dark. System follows your computer’s light or dark setting. mode colour color' },
   { id: 'accent', page: 'appearance', searchText: 'Accent. Bot, Ink, Slate, Plum, Olive, Mauve, Umber. Bot uses the color of the open chat’s bot. colour color tint header send button' },
-  { id: 'show-work', page: 'appearance', searchText: 'Show the bot’s work. Replies only, Actions, Everything. Replies only hides thinking and tool calls, and shows the bot hopping while it works. thinking reasoning thought tool call steps activity pet animation hide collapse verbose' },
+  { id: 'show-work', page: 'appearance', searchText: 'Show the bot’s work. Replies only, Actions, Everything. Replies only shows the bot hopping while it works, then just its final reply. thinking reasoning thought tool call steps activity narration pet animation hide collapse verbose' },
   { id: 'sidebar', page: 'appearance', searchText: 'Show in the sidebar. Bots, Chats. Bots shows your bots. Chats shows the chats of the open bot.' },
   ...fontRows,
   { id: 'chat-width', page: 'appearance', searchText: 'Chat width. Narrow, Comfortable, Wide, Full width. How wide messages and the composer can grow in a wide window. width column measure line length' },

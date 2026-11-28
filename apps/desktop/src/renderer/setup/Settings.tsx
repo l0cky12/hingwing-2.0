@@ -296,7 +296,7 @@ export function Settings({ setup, mode, theme, accent, onRequestClose, onShowSho
       <div className="card rows">
         <Choice label="Theme" desc="System follows your computer’s light or dark setting." value={theme} segments={looksOf(tone)} hidden={off('theme')} look="looks" onPick={picked => void run({ do: 'setTheme', theme: picked })} />
         <Choice label="Accent" desc="Bot uses the color of the open chat’s bot." value={accent} segments={ACCENTS} hidden={off('accent')} look="tones" onPick={picked => void run({ do: 'setAccent', accent: picked })} />
-        <Choice label="Show the bot’s work" desc="Replies only hides thinking and tool calls, and shows the bot hopping while it works." value={showWork} segments={SHOW_WORK} hidden={off('show-work')} onPick={picked => void run({ do: 'setShowWork', showWork: picked })} />
+        <Choice label="Show the bot’s work" desc="Replies only shows the bot hopping while it works, then just its final reply." value={showWork} segments={SHOW_WORK} hidden={off('show-work')} onPick={picked => void run({ do: 'setShowWork', showWork: picked })} />
         <Choice label="Show in the sidebar" desc="Bots shows your bots. Chats shows the chats of the open bot." value={mode} segments={SIDEBAR} hidden={off('sidebar')} onPick={picked => void run({ do: 'setMode', mode: picked })} />
         <AppearanceRows off={off} />
       </div>
