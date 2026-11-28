@@ -5,10 +5,10 @@ import type { ToolServer } from '../src/domain/tool-servers'
 
 const BOARD: AppsBoard = {
   apps: [
-    { slug: 'slack', name: 'Slack', description: 'Channels and direct messages.', category: 'Chat', account: { connectionId: 'slack-1', standing: 'connected', label: 'Work' } },
-    { slug: 'github', name: 'GitHub', description: 'Repositories, issues and pull requests.', category: 'Recommended', account: null },
-    { slug: 'notion', name: 'Notion', description: 'Pages and databases.', category: 'Notes', account: { connectionId: 'notion-1', standing: 'needs-sign-in', label: 'Notes' } },
-    { slug: 'linear', name: 'Linear', description: 'Issues.', category: 'Work', account: null }
+    { slug: 'slack', name: 'Slack', description: 'Channels and direct messages.', category: 'Chat', logo: null, account: { connectionId: 'slack-1', standing: 'connected', label: 'Work' } },
+    { slug: 'github', name: 'GitHub', description: 'Repositories, issues and pull requests.', category: 'Recommended', logo: null, account: null },
+    { slug: 'notion', name: 'Notion', description: 'Pages and databases.', category: 'Notes', logo: null, account: { connectionId: 'notion-1', standing: 'needs-sign-in', label: 'Notes' } },
+    { slug: 'linear', name: 'Linear', description: 'Issues.', category: 'Work', logo: null, account: null }
   ]
 }
 const SERVERS: readonly ToolServer[] = [

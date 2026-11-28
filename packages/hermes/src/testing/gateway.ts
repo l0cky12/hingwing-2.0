@@ -1087,7 +1087,7 @@ export class ScriptedGateway {
   /** The scheduled jobs `cron.manage` lists, rewritten by each run. null: no `cron` in the header. */
   private readonly jobs: Obj[] | null
   private jobsListed = false
-  private readonly connectorCatalog: readonly { readonly slug: string; readonly name: string; readonly description: string; readonly category: string }[] | null
+  private readonly connectorCatalog: readonly { readonly slug: string; readonly name: string; readonly description: string; readonly category: string; readonly logo_url: string | null }[] | null
   private readonly connectorAccounts: HeldAccount[] | null
   private readonly signInUrl: string | null
   private readonly connectorOps = new Map<string, ConnectorOp>()
@@ -1144,7 +1144,7 @@ export class ScriptedGateway {
     // Each profile's store, with the home profile's being `jobs`, which the header's runs rewrite.
     this.cronStores = new Map([...Object.entries(fixture.header.cron?.profiles ?? {}).map(([profile, rows]) => [profile, rows.map(row => ({ ...row }))] as const), ...(this.jobs === null ? [] : [[this.home, this.jobs] as const])])
     const board = fixture.header.connectors
-    this.connectorCatalog = board === undefined ? null : board.catalog.map(row => ({ slug: row.slug, name: row.name, description: row.description, category: row.category }))
+    this.connectorCatalog = board === undefined ? null : board.catalog.map(row => ({ slug: row.slug, name: row.name, description: row.description, category: row.category, logo_url: row.logo_url ?? null }))
     this.connectorAccounts = board === undefined ? null : board.accounts.map(row => ({ ...row }))
     this.signInUrl = board?.signInUrl ?? null
     this.rooms = fixture.header.groups === undefined ? null : new ScriptedRooms(fixture.header.groups, {

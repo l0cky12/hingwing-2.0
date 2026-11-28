@@ -8,6 +8,8 @@ const directives = new Map(policy.split(';').map(part => part.trim()).filter(Boo
   return [name, sources] as const
 }))
 
+const LOGOS = 'https://logos.composio.dev'
+
 const REMOTE = /^(?:https?:|\*|[a-z][a-z0-9+.-]*:\/\/|(?:\*\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?::\d+)?(?:\/.*)?$)/i
 
 describe('the renderer Content Security Policy', () => {
@@ -15,13 +17,13 @@ describe('the renderer Content Security Policy', () => {
     expect(directives.size).toBeGreaterThan(0)
   })
 
-  it('names no remote source in any directive', () => {
+  it('names no remote source in any directive but the connector logo host', () => {
     for (const [name, sources] of directives) {
-      for (const source of sources) expect(REMOTE.test(source), `${name} ${source}`).toBe(false)
+      for (const source of sources) expect(REMOTE.test(source) && !(name === 'img-src' && source === LOGOS), `${name} ${source}`).toBe(false)
     }
   })
 
-  it('lets images come from the app and from blob urls, and nowhere else', () => {
-    expect(directives.get('img-src')).toEqual(["'self'", 'blob:'])
+  it('lets images come from the app, from blob urls and from the connector logo host, and nowhere else', () => {
+    expect(directives.get('img-src')).toEqual(["'self'", 'blob:', LOGOS])
   })
 })

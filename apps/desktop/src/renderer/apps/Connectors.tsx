@@ -169,6 +169,7 @@ function usePlugins(bot: BotId | null) {
 interface CardProps {
   readonly name: string
   readonly kind?: string
+  readonly logo?: string | null
   readonly detail: string
   readonly mono?: boolean
   readonly toolNames?: string
@@ -177,10 +178,13 @@ interface CardProps {
   readonly children?: ReactNode
 }
 
-function Card({ name, kind, detail, mono = false, toolNames = '', state, later = false, children }: CardProps) {
+function Card({ name, kind, logo = null, detail, mono = false, toolNames = '', state, later = false, children }: CardProps) {
+  const [broken, setBroken] = useState<string | null>(null)
   return (
     <li className="hub-card">
-      <span className="hub-tile" aria-hidden="true">{name.slice(0, 1).toUpperCase()}</span>
+      <span className="hub-tile" aria-hidden="true">
+        {logo !== null && broken !== logo ? <img alt="" src={logo} onError={() => setBroken(logo)} /> : name.slice(0, 1).toUpperCase()}
+      </span>
       <div className="hub-copy">
         <p className="hub-name">{name}{kind !== undefined && <span className="hub-kind">{kind}</span>}</p>
         {detail !== '' && <p className="hub-detail" data-mono={mono || undefined} title={detail}>{detail}</p>}
@@ -203,7 +207,7 @@ function AppCard({ app, waiting, onConnect, onRemove }: { readonly app: AppEntry
     : app.account === null ? { standing: 'available', words: 'Available' }
     : { standing: app.account.standing, words: STANDING_WORDS[app.account.standing] }
   return (
-    <Card name={app.name} kind={`App · ${app.category}`} detail={app.description} state={state}>
+    <Card name={app.name} kind={`App · ${app.category}`} logo={app.logo} detail={app.description} state={state}>
       <div className="hub-actions">
         {again !== null && <button type="button" onClick={() => void run({ do: 'browse', url: again })}>Open sign-in again</button>}
         <button type="button" aria-label={`${reconnect ? 'Reconnect' : 'Connect'} ${app.name}`} disabled={waiting !== null} onClick={onConnect}>{reconnect ? 'Reconnect' : 'Connect'}</button>

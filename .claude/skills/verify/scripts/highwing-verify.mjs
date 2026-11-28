@@ -566,6 +566,22 @@ const STEPS = {
       if (held !== drawn) throw new Error(`the avatar of "${name}" draws ${held}, not a ${drawn}`)
     }
   },
+  tile: {
+    arity: 2,
+    run: async (ctx, name, drawn) => {
+      if (drawn !== 'picture' && drawn !== 'letter') throw new Error(`tile takes "picture" or "letter", not "${drawn}"`)
+      const card = ctx.page.locator('li.hub-card').filter({ has: ctx.page.locator('.hub-name', { hasText: name }) }).first()
+      const read = () => card.evaluate(item => {
+        const tile = item.querySelector('.hub-tile')
+        const image = tile?.querySelector('img')
+        if (image) return image.complete && image.naturalWidth > 0 ? 'picture' : 'unloaded picture'
+        return tile?.textContent ? 'letter' : 'nothing'
+      }, undefined, { timeout: ctx.timeout })
+      const held = await poll(ctx, read, found => found === drawn)
+      log(ctx, `  the tile of "${name}" draws ${held}`)
+      if (held !== drawn) throw new Error(`the tile of "${name}" draws ${held}, not a ${drawn}`)
+    }
+  },
   'paste-image': {
     arity: 1,
     run: async (ctx, path) => {

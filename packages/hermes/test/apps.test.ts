@@ -44,8 +44,8 @@ describe('parseApps', () => {
 
   it('keeps one account per catalog app and drops a blank or repeated slug', () => {
     expect(parseApps(catalog, accounts).apps).toEqual([
-      { slug: 'github', name: 'GitHub', description: 'Repos.', category: 'Recommended', account: null },
-      { slug: 'slack', name: 'Slack', description: 'Chat.', category: 'Chat', account: { connectionId: 'slack-1', standing: 'connected', label: 'Work' } }
+      { slug: 'github', name: 'GitHub', description: 'Repos.', category: 'Recommended', logo: null, account: null },
+      { slug: 'slack', name: 'Slack', description: 'Chat.', category: 'Chat', logo: null, account: { connectionId: 'slack-1', standing: 'connected', label: 'Work' } }
     ])
     expect(parseApps(null, null)).toEqual({ apps: [] })
   })
@@ -64,9 +64,18 @@ describe('parseApps', () => {
       ]
     }
     expect(parseApps(catalog, accounts).apps).toEqual([
-      { slug: 'github', name: 'GitHub', description: '', category: 'Other', account: { connectionId: 'gh-1', standing: 'connected', label: 'GitHub' } },
-      { slug: 'slack', name: 'Slack', description: '', category: 'Chat', account: { connectionId: 'slack-1', standing: 'connected', label: 'Slack' } }
+      { slug: 'github', name: 'GitHub', description: '', category: 'Other', logo: null, account: { connectionId: 'gh-1', standing: 'connected', label: 'GitHub' } },
+      { slug: 'slack', name: 'Slack', description: '', category: 'Chat', logo: null, account: { connectionId: 'slack-1', standing: 'connected', label: 'Slack' } }
     ])
+  })
+
+  it('keeps a logo only when it is an https address', () => {
+    const logos = [
+      'https://logos.composio.dev/api/slack', undefined, null, '  ', 'http://logos.composio.dev/api/slack',
+      'data:image/png;base64,AAAA', 'javascript:alert(1)', 'not a url'
+    ]
+    const catalog = { connectors: logos.map((logo_url, at) => ({ slug: `app-${at}`, name: 'App', description: '', category: 'Chat', logo_url })) }
+    expect(parseApps(catalog, null).apps.map(app => app.logo)).toEqual(['https://logos.composio.dev/api/slack', null, null, null, null, null, null, null])
   })
 
   it('reads a sign-in when it has settled, and only an http(s) page', () => {

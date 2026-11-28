@@ -1,0 +1,12 @@
+{
+  "catalog": [
+    {"slug": "linear", "name": "Linear", "description": "Search, create, and update issues and projects", "category": "Work management", "logo_url": "https://logos.composio.dev/api/linear"},
+    {"slug": "notion", "name": "Notion", "description": "Search, read, and edit pages and databases", "category": "Files and docs", "logo_url": "https://logos.composio.dev/api/notion"},
+    {"slug": "sentry_mcp", "name": "Sentry", "description": "Investigate issues, events, and releases", "category": "Data and monitoring", "logo_url": "https://logos.composio.dev/api/sentry_mcp"},
+    {"slug": "slack", "name": "Slack", "description": "Read and post messages, and search channels", "category": "Communication", "logo_url": "https://logos.composio.dev/api/slack"},
+    {"slug": "stripe_mcp", "name": "Stripe", "description": "Read and manage customers, products, and payments", "category": "Commerce", "logo_url": "https://logos.composio.dev/api/stripe_mcp"},
+    {"slug": "elsewhere", "name": "Elsewhere", "description": "A logo on a host the window does not load from.", "category": "Developer", "logo_url": "https://example.com/logo.svg"}
+  ],
+  "accounts": [],
+  "signInUrl": "https://example.com/connect"
+}
