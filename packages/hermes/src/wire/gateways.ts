@@ -80,6 +80,8 @@ export interface Gateways {
 const SIGN_IN_MS = 600_000
 const REQUEST_MS = 10_000
 const HIDDEN = '•••'
+/** Hermes's dashboard reads `profile=current` as its own profile (hermes_cli/web_server_profiles.py), in any case, so a bot of that name cannot be told apart from it. */
+const DASHBOARD_PROFILE = 'current'
 
 type Obj = Readonly<Record<string, unknown>>
 const isObject = (value: unknown): value is Obj => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -434,6 +436,7 @@ export function gatewaysByUrl(deps: GatewayDeps): Gateways {
         }
       }
       const call: CallHermes = async ask => {
+        if (ask.profile?.toLowerCase() === DASHBOARD_PROFILE) throw new Error('The web dashboard reads a profile named current as its own.')
         const { path, json } = profiled(ask)
         const sent = (bearer: string) => send(ask.method, `${url}${path}`, { bearer, signal: life.signal, ...(json === undefined ? {} : { json }) })
         const held = loginOf(url)

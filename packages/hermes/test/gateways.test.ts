@@ -311,6 +311,20 @@ describe('the route to a gateway address, against the fake Webapp', () => {
     expect(await route.call({ method: 'GET', path: '/api/plugins/kanban/missing', profile: null }), 'a status passes through for the caller to read').toEqual({ status: 404, body: { detail: 'Not Found' } })
   })
 
+  it('sends nothing for a bot the dashboard would take for its own profile, and reaches the others', async () => {
+    const web = await webapp('ok')
+    const route = routeOf(await signedIn(web), web.url)
+    await route.call({ method: 'GET', path: '/api/config', profile: 'ada' })
+    await route.call({ method: 'PUT', path: '/api/config', profile: 'ada', json: { config: {} } })
+    expect(web.requests.filter(request => request.endsWith('/api/config'))).toEqual(['GET /api/config', 'PUT /api/config'])
+    const before = web.requests.length
+    for (const profile of ['current', 'Current']) {
+      await expect(route.call({ method: 'GET', path: '/api/config', profile })).rejects.toThrow('current')
+      await expect(route.call({ method: 'PUT', path: '/api/config', profile, json: { config: {} } })).rejects.toThrow('current')
+    }
+    expect(web.requests, 'nothing was sent').toHaveLength(before)
+  })
+
   it('rejects a read for a sign-in Hermes ended', async () => {
     const web = await webapp('ok')
     const route = routeOf(await signedIn(web), web.url)
