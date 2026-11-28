@@ -1072,9 +1072,11 @@ async function checkInView(ctx, role, name) {
   await locator.first().waitFor({ state: 'visible', timeout: ctx.timeout })
   const problem = await locator.first().evaluate(element => {
     const box = element.getBoundingClientRect()
-    const outside = (rect, label) => (box.top < rect.top - 0.5 || box.bottom > rect.bottom + 0.5 || box.left < rect.left - 0.5 || box.right > rect.right + 0.5
-      ? `${label} spans ${Math.round(rect.top)}..${Math.round(rect.bottom)} but the element spans ${Math.round(box.top)}..${Math.round(box.bottom)}`
-      : null)
+    const outside = (rect, label) => {
+      const axes = [['x', 'left', 'right'], ['y', 'top', 'bottom']].filter(([, start, end]) => box[start] < rect[start] - 0.5 || box[end] > rect[end] + 0.5)
+      const spans = r => axes.map(([axis, start, end]) => `${axis} ${Math.round(r[start])}..${Math.round(r[end])}`).join(', ')
+      return axes.length ? `${label} spans ${spans(rect)} but the element spans ${spans(box)}` : null
+    }
     for (let parent = element.parentElement; parent; parent = parent.parentElement) {
       const { overflowX, overflowY } = getComputedStyle(parent)
       if (/(auto|scroll|hidden|clip)/.test(overflowX + overflowY)) {
