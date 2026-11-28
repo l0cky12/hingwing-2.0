@@ -1,6 +1,6 @@
 # Reply to a message
 
-The user answers one message in particular. "Reply", right after "Copy request" on every sent message and after "Copy reply" under every settled reply, puts a quote of that message in a chip at the top of the composer card. The chip shows the quote on one line, ending in an ellipsis when it is long, and has a "Remove quote" button. While it is there, the empty box says "Reply…". Send puts the quote ahead of the text in the shape Hermes's own gateway gives a platform reply, `[Replying to your previous message: "…"]` for a quote of Hermes and `[Replying to: "…"]` for a quote of your own message, then clears the chip. A sent message that carries a quote shows it as a muted block above its words, after a reload too. The quote is part of the draft, so it stays across a chat switch and a restart. "Edit message" on a message that carries a quote puts the quote back in the chip and only the words in the box.
+The user answers one message in particular. "Reply", right after "Copy request" on every sent message and after "Copy reply" under every settled reply and every side question's answer, puts a quote of that message in a chip at the top of the composer card. The chip shows the quote on one line, ending in an ellipsis when it is long, and has a "Remove quote" button. While it is there, the empty box says "Reply…". Send puts the quote ahead of the text in the shape Hermes's own gateway gives a platform reply, `[Replying to your previous message: "…"]` for a quote of Hermes and `[Replying to: "…"]` for a quote of your own message, then clears the chip. A sent message that carries a quote shows it as a muted block above its words, after a reload too. The quote is part of the draft, so it stays across a chat switch and a restart. "Edit message" on a message that carries a quote puts the quote back in the chip and only the words in the box.
 
 ## Sub-features
 
@@ -11,12 +11,13 @@ The user answers one message in particular. "Reply", right after "Copy request" 
 - `reply-shown` draws the quote as a block above the words of a sent message, and never the raw `[Replying to` line.
 - `reply-edit` splits a quoted message on "Edit message": the chip holds the quote, the box holds the words, and the edit sends them framed again. Cancel clears both.
 - `reply-kept` keeps the chip across a restart, as a draft.
-- `reply-command` sends a slash command from the catalog as typed and leaves the chip held, because a quote ahead of it would make Hermes read it as a prompt.
+- `reply-command` sends a slash command from the catalog as typed and leaves the chip held, because with a quote ahead of it Highwing would no longer read it as a command and would send it as a prompt.
+- `reply-side` quotes a side question's answer as Hermes's.
 - `reply-find` counts the quoted message's stored text, so find marks the words after the quote, and a match inside the quote marks the whole quote block.
 
 ## How to get to it (user POV)
 
-- Hover a sent message or a settled reply and press "Reply", the curved arrow right after Copy.
+- Hover a sent message, a settled reply or a side question's answer and press "Reply", the curved arrow right after Copy.
 - Press the x in the chip, "Remove quote", to drop it.
 
 ## Driving it with highwing-verify
@@ -35,6 +36,7 @@ Preconditions:
 - **Kept across a restart.** Run `$H cleanup --run reply-restart`, then `$H run --fixture fixtures/reply.jsonl --run reply-restart wait live click-at button "Reply" 8 drafts 1 relaunch wait live count group "Replying to" 1 placeholder "Message Hermes" "Reply…" shot reply-restart click button "Remove quote" drafts 0 quiet`.
 - **Find.** Run `` $H run --fixture fixtures/reply.jsonl --run reply-find wait live press Control+f type "Find in chat" "What is in" press Enter see "1 of 1" marks 1 marked "What is in" type "Find in chat" 'holds `notes.md`' press Enter see "1 of 1" marks 1 marked 'The folder holds `notes.md` and a `scratch` folder.' shot reply-find quiet ``.
 - **Slash command.** Run `$H run --fixture fixtures/commands.jsonl --acted-elsewhere --timeout 20000 --run reply-command wait live type "Message Hermes" "What does notes.md say about the release?" click button Send said "notes.md lists three tasks" gone button Stop type "Message Hermes" "Then outline docs/plan.md." click button Send said "docs/plan.md has two parts" gone button Stop count button "Reply" 4 click-at button "Reply" 4 count group "Replying to" 1 type "Message Hermes" "/btw Which file holds the plan?" click button Send called prompt.btw '{"text":"Which file holds the plan?"}' 1 said "The plan is in docs/plan.md." count group "Replying to" 1 placeholder "Message Hermes" "Reply…" shot reply-command quiet`.
+- **Reply to a side answer.** Run `$H run --fixture fixtures/commands.jsonl --acted-elsewhere --timeout 20000 --run reply-side wait live type "Message Hermes" "What does notes.md say about the release?" click button Send said "notes.md lists three tasks" gone button Stop type "Message Hermes" "Then outline docs/plan.md." click button Send said "docs/plan.md has two parts" gone button Stop type "Message Hermes" "/btw Which file holds the plan?" click button Send said "The plan is in docs/plan.md." count button "Reply" 5 click-at button "Reply" 5 count group "Replying to" 1 placeholder "Message Hermes" "Reply…" focused textbox "Message Hermes" shot reply-side type "Message Hermes" "Open it" click button Send called prompt.submit '{"text":"[Replying to your previous message: \"The plan is in docs/plan.md.\"]\n\nOpen it"}' 1 quiet`. The story has ended, so the gateway never admits this message and the chip stays until it would.
 - **Dark.** Add `--theme dark` to the Reply to Hermes recipe, with its own `--run` name, to shoot the chip and the quote block in the dark palette.
 
 ## Gotchas
