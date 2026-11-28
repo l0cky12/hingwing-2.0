@@ -80,6 +80,15 @@ describe('the Permissions rules', () => {
     expect(draw(RULES, { state: { said: 'Removed “ls” from Always allowed.' } })).toContain('<p class="sr" role="status">Removed “ls” from Always allowed.</p>')
   })
 
+  it('keeps the alert of a change that failed in view when a search hides the Add form, with Remove still on screen', () => {
+    const html = draw(RULES, { state: { problem: "Hermes didn't save that change." }, off: row => row === 'add-rule' })
+    const [form = '', after = ''] = html.split('</form>')
+    expect(form).toMatch(/<form class="row wrapped add-rule" hidden="">/)
+    expect(form).not.toContain('role="alert"')
+    expect(after).toMatch(/<div class="row"><p class="desc problem-line" role="alert">Hermes didn&#x27;t save that change\./)
+    expect(removes(html)).toHaveLength(3)
+  })
+
   it('asks before a rule goes, in a dialog that names the rule and what Hermes does then', () => {
     const html = draw(RULES, { state: { removing: { kind: 'allow', rule: 'podman *' } } })
     expect(html).toMatch(/<dialog[^>]*class="remove"/)
@@ -176,7 +185,7 @@ describe('rulesWatch', () => {
 
   it('reads once at the start, takes the token first, and reads again only when it moves', async () => {
     const reads: string[] = []
-    const watch = rulesWatch({ stamp: stamps('a', 'a', 'a', 'b', 'b', 'c'), read: async () => void reads.push('read') })
+    const watch = rulesWatch({ stamp: stamps('a', 'a', 'a', 'b', 'b', 'c'), read: async () => (reads.push('read'), true) })
     await watch.start()
     expect(reads).toHaveLength(1)
     await watch.look(false)
@@ -192,7 +201,7 @@ describe('rulesWatch', () => {
 
   it('reads a change that happened between the token and the first read as soon as it looks again', async () => {
     const reads: string[] = []
-    const watch = rulesWatch({ stamp: stamps('a', 'b'), read: async () => void reads.push('read') })
+    const watch = rulesWatch({ stamp: stamps('a', 'b'), read: async () => (reads.push('read'), true) })
     await watch.start()
     await watch.look(false)
     expect(reads).toHaveLength(2)
@@ -200,7 +209,7 @@ describe('rulesWatch', () => {
 
   it('reads a Hermes that gives no token when the window comes back, and not on the timer', async () => {
     const reads: string[] = []
-    const watch = rulesWatch({ stamp: stamps(null), read: async () => void reads.push('read') })
+    const watch = rulesWatch({ stamp: stamps(null), read: async () => (reads.push('read'), true) })
     await watch.start()
     await watch.look(false)
     await watch.look(false)
@@ -209,9 +218,34 @@ describe('rulesWatch', () => {
     expect(reads).toHaveLength(2)
   })
 
+  it('keeps the old token when a read fails, so the next look reads again and a window that comes back does too', async () => {
+    const reads: boolean[] = []
+    const answers = [true, false, false, true]
+    const watch = rulesWatch({ stamp: stamps('a', 'b', 'b', 'b', 'b'), read: async () => { const taken = answers.shift() ?? true; reads.push(taken); return taken } })
+    await watch.start()
+    await watch.look(false)
+    expect(reads, 'the token moved and the read failed').toEqual([true, false])
+    await watch.look(false)
+    expect(reads, 'the same token is read again, since the failed read did not take it').toEqual([true, false, false])
+    await watch.look(false)
+    expect(reads).toEqual([true, false, false, true])
+    await watch.look(false)
+    expect(reads, 'a read that was taken keeps its token').toHaveLength(4)
+  })
+
+  it('does not keep the first token when the first read fails', async () => {
+    const reads: boolean[] = []
+    const answers = [false, true]
+    const watch = rulesWatch({ stamp: stamps('a', 'a', 'a'), read: async () => { const taken = answers.shift() ?? true; reads.push(taken); return taken } })
+    await watch.start()
+    await watch.look(false)
+    await watch.look(false)
+    expect(reads).toEqual([false, true])
+  })
+
   it('takes a token after a start that had none, and reads once for it', async () => {
     const reads: string[] = []
-    const watch = rulesWatch({ stamp: stamps(null, 'a', 'a'), read: async () => void reads.push('read') })
+    const watch = rulesWatch({ stamp: stamps(null, 'a', 'a'), read: async () => (reads.push('read'), true) })
     await watch.start()
     await watch.look(false)
     await watch.look(false)

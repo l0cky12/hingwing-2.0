@@ -85,23 +85,25 @@ export const POLL_MS = 4000
 /**
  * Reads the lists again only when the config's token moved. Hermes sends no event for a change made in config.yaml or by another
  * window, and a read is a ticket and a request, where the token is one call on the socket that is open already.
+ * `read` answers whether the page took what it read. A token is kept only then, so a read that failed is tried again on the next look.
  */
-export function rulesWatch({ stamp, read }: { readonly stamp: () => Promise<CommandOutcome<string>>; readonly read: () => Promise<void> }) {
+export function rulesWatch({ stamp, read }: { readonly stamp: () => Promise<CommandOutcome<string>>; readonly read: () => Promise<boolean> }) {
   let seen: string | null = null
   return {
     /** Takes the token before the first read, so a change after the read shows as another token. */
     start: async () => {
       const first = await stamp()
-      seen = first.ok ? first.value : null
-      await read()
+      if (await read()) seen = first.ok ? first.value : null
     },
     /** `manual`: the window came back to the front, so a Hermes that gives no token is read anyway. */
     look: async (manual: boolean) => {
       const next = await stamp()
-      if (!next.ok) return manual ? read() : undefined
+      if (!next.ok) {
+        if (manual) await read()
+        return
+      }
       if (next.value === seen) return
-      seen = next.value
-      await read()
+      if (await read()) seen = next.value
     }
   }
 }

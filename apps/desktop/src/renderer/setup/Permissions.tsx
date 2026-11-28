@@ -37,7 +37,9 @@ export function CommandRulesCard({ off }: { readonly off: (row: RowId) => boolea
       read: async () => {
         const asked = ++latest.current
         const outcome = await commandRules(bot)
-        if (current && asked === latest.current) dispatch({ on: 'read', outcome })
+        const taken = current && asked === latest.current
+        if (taken) dispatch({ on: 'read', outcome })
+        return taken && outcome.ok
       }
     })
     void watch.start()
@@ -152,8 +154,8 @@ export function RuleLists({ name, section, state, text, kind, off, onText, onKin
               <button type="submit" className="btn primary" disabled={plan.edit === null || saving}>Add</button>
             </div>
             {plan.note !== null && <p className="desc">{plan.note}</p>}
-            {problem !== null && <p className="desc problem-line" role="alert">{problem}</p>}
           </form>
+          {problem !== null && <div className="row"><p className="desc problem-line" role="alert">{problem}</p></div>}
           <p className="sr" role="status">{said}</p>
           {removing !== null && (
             <RemoveDialog
