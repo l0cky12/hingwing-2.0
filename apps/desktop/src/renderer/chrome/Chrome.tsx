@@ -89,7 +89,7 @@ export function TopBar({ target }: { readonly target: Target | null }) {
         type="button" className="bot-pill" aria-label={`Details for ${pill.name}`} aria-haspopup="dialog" aria-keyshortcuts={keys.aria}
         title={`Bot details (${keys.shown})`} onClick={() => void open(pill)}
       >
-        <Avatar bot={pill} size={20} />{pill.name}
+        <Avatar bot={pill} size={20} /><span className="name">{pill.name}</span>
       </button>
       {rest !== '' && <span className="where">{rest}</span>}
     </>
