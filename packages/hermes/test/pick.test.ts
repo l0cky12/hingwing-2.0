@@ -105,6 +105,52 @@ describe('pickedRoute', () => {
     expect((await dialing).name).toBe('tailnet')
   })
 
+  it('lets only the latest of two dials in flight set the way in use', async () => {
+    let connect = () => {}
+    const slow = new Promise<void>(resolve => { connect = resolve })
+    const plans = planned([[TAILNET, { ms: 120 }], [LAN, { ms: 15, dial: slow }]])
+    const { route, dial, log, picks, sockets } = ways(plans)
+    const first = dial()
+    await until('the first dial to reach the LAN way', () => log.includes('dial lan'))
+    plans.set(LAN, { ms: null, dial: new DialError('unreachable') })
+    expect((await dial()).name).toBe('tailnet')
+    connect()
+    await expect(first).rejects.toMatchObject({ kind: 'dropped' })
+    expect(sockets.get(LAN)?.closed).toBe(true)
+    expect(picks.map(({ using }) => using)).toEqual([TAILNET])
+    expect(await route.read('/api/x')).toEqual({ status: 200, body: 'tailnet' })
+  })
+
+  it('picks again when the pick changed while a dial was in flight, and closes a socket the new pick would not take', async () => {
+    let connect = () => {}
+    const slow = new Promise<void>(resolve => { connect = resolve })
+    const { route, dial, log, sockets } = ways(planned([[TAILNET, { ms: 120 }], [LAN, { ms: 15, dial: slow }]]))
+    const dialing = dial()
+    await until('the dial to reach the LAN way', () => log.includes('dial lan'))
+    route.arrange([TAILNET, LAN], 'order')
+    connect()
+    expect((await dialing).name).toBe('lan')
+    await until('the LAN socket to close', () => sockets.get(LAN)?.closed === true)
+    expect((await dial()).name).toBe('tailnet')
+  })
+
+  it('does not let the late times of an earlier dial hide the times of a way added since', async () => {
+    let answer: (ms: number | null) => void = () => {}
+    const silent = new Promise<number | null>(resolve => { answer = resolve })
+    const clock = manualClock()
+    const plans = planned([[TAILNET, { ms: silent }], [LAN, { ms: 15 }], [WEB, { ms: 300 }]])
+    const { route, dial, picks } = ways(plans, 'fastest', [TAILNET, LAN], clock)
+    const dialing = dial()
+    await clock.advance(TIE_MS)
+    await dialing
+    plans.set(TAILNET, { ms: 120 })
+    route.arrange([TAILNET, LAN, WEB], 'fastest')
+    await until('the ways to be timed again', () => picks.some(({ times }) => times.length === 3))
+    answer(null)
+    await clock.advance(TIME_MS)
+    expect(picks.at(-1)).toEqual({ using: LAN, times: [{ target: TAILNET, ms: 120 }, { target: LAN, ms: 15 }, { target: WEB, ms: 300 }] })
+  })
+
   it('picks again on every dial', async () => {
     const plans = planned([[TAILNET, { ms: 120 }], [LAN, { ms: 15 }]])
     const { dial, picks } = ways(plans)
