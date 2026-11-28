@@ -1215,3 +1215,65 @@ On an older Hermes, or one without the kanban plugin:
   task board."
 - If the reply isn't Hermes's board, the view says "Hermes answered with a task
   board Highwing can't read."
+
+## Command rules
+
+Settings → Permissions lists what a bot's Hermes always allows and always
+denies, and adds and removes a rule. Hermes has no socket method for either
+list, and no list of commands to ask about first, so the page offers allow and
+deny. Highwing reads and writes the bot's config over the gateway's HTTP API
+(`hermes_cli/web_routers/config_env.py`).
+
+| Call | When |
+| --- | --- |
+| `GET /api/config`, naming the bot's profile | When the page opens, when the token below has moved, when the window comes back to the front, and after each change |
+| `PUT /api/config` with `{"config": {…}, "profile": "<bot>"}` | On Add and on Remove, once, with only the list that changes |
+| `config.get {key: "mtime"}` on the socket, for the bot's profile | Every 4 s while the page is open, and when the window comes back to the front. It answers a token that changes with `config.yaml` (`gateway/session_config.py:96`) |
+
+- `command_allowlist` is the Always allowed list and `approvals.deny` the
+  Denied list. Both read as Hermes reads them: each entry trimmed, blanks left
+  out (`tools/approval_floors.py`). An allow entry is a command, a pattern such
+  as `podman *`, or the name of a kind of command Hermes flagged when you chose
+  Always allow, such as `delete in root path`. A deny entry is a
+  case-insensitive pattern.
+- A PUT deep-merges its `config` over the file: dicts merge and lists replace
+  (`hermes_cli/config.py:1353-1368`). A change sends the list as Highwing just
+  read it with the one rule added or dropped, and no other key, so
+  `approvals.mode` stays as it is. Highwing then reads the config again and
+  checks the change is there, because `save_config` drops the keys a managed
+  install holds and still answers `{"ok": true}`.
+- Hermes reads the file again at each check (`_sync_permanent_from_disk` for
+  the allow list, a cache keyed on the file's signature for the deny list), so
+  a change applies to open chats without a restart. `save_permanent_allowlist`
+  can only add an entry, which is why a removal is this write.
+- A rule is one line of text. Highwing trims it, and refuses an empty rule or a
+  second line before it calls Hermes. Adding a rule a list holds, and removing
+  one it lacks, write nothing.
+
+Each call sends one credential:
+
+| Connection | Credential |
+| --- | --- |
+| This computer, or another machine | A new ticket for each call, as for the task board. For a bot, the line written to `hermes gateway tickets --serve --json` is `{"id":1,"purpose":"native-http","profile":"<bot>"}`, which binds the ticket to that profile's home (`hermes_cli/gateway_runtime_tickets.py:77-120`). A launch-profile ticket with `?profile=<other>` is refused 403 `profile_scope_mismatch`, so each bot needs its own. The profile also goes in the query of a GET and the body of a PUT. The ticket goes with no `Origin`, so the request goes through `node:http` |
+| A web address | `Authorization: Bearer <access token>`, refreshed once on a 401, and `profile` in the query of a GET and the body of a PUT |
+
+On an older Hermes, or one that keeps the rules out of reach:
+
+- If the route answers 404, 405 or 403, or `--serve` answers
+  `unsupported_purpose` or `invalid_request` to a ticket for a profile, the page
+  says "This Hermes can't show its command rules to Highwing. Update Hermes,
+  then try again."
+- If no ticket can be had for any other reason (no gateway, `unknown_profile`,
+  `profile_not_served`), or the call gets no answer, it says "Highwing couldn't
+  reach Hermes to read its command rules." A change says "Highwing couldn't
+  reach Hermes, so it didn't change the rule." and the rule stays as it was.
+- If the reply isn't a config, it says "Hermes answered with command rules
+  Highwing can't read."
+- If a save is refused, or the config read afterwards lacks the change, it says
+  "Hermes didn't save that change. An administrator may manage this setting."
+- A Hermes that gives no `mtime` has the page read on open, after each change
+  and when the window comes back to the front, and not on a timer.
+
+After Always allow on an approval card, Hermes writes the flagged kind of
+command to `command_allowlist` itself. The answered card says "Saved as an
+allow rule." and Open Permissions opens Settings on this page.
