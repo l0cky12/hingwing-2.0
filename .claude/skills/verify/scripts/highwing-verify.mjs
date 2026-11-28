@@ -309,7 +309,10 @@ const STEPS = {
       if (palette !== 'light' && palette !== 'dark') throw new Error(`"palette" takes light or dark, not "${palette}"`)
       const read = () => ctx.page.evaluate(() => {
         const token = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim()
-        const fill = token('--signal-soft').toLowerCase()
+        const paint = document.createElement('canvas').getContext('2d', { willReadFrequently: true })
+        paint.fillStyle = token('--signal-soft')
+        paint.fillRect(0, 0, 1, 1)
+        const fill = `#${[...paint.getImageData(0, 0, 1, 1).data.slice(0, 3)].map(channel => channel.toString(16).padStart(2, '0')).join('')}`
         const diagrams = [...document.querySelectorAll('.diagram > .drawn svg')].map(svg => svg.outerHTML.toLowerCase().includes(fill))
         return { palette: matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light', paper: token('--paper'), graphite: token('--graphite'), body: getComputedStyle(document.body).backgroundColor, diagrams: diagrams.length, stale: diagrams.filter(fresh => !fresh).length }
       })

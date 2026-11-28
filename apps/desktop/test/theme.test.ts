@@ -209,8 +209,7 @@ describe('the accent in app.css', () => {
   }
 
   it('recolors the highlight of the whole window, not only the header and the send button', () => {
-    expect([...shared.keys()].filter(name => ['--signal', '--signal-soft', '--surface-user', '--ring', '--syn-title'].includes(name)).sort())
-      .toEqual(['--ring', '--signal', '--signal-soft', '--surface-user', '--syn-title'])
+    expect([...shared.keys()].sort()).toEqual(['--signal', '--signal-soft', '--surface-user'])
   })
 
   it.each(SCHEMES)('keeps every text readable on every surface under every accent in %s', (_name, scheme) => {

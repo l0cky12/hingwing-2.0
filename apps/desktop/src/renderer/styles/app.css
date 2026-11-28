@@ -1393,8 +1393,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 [data-accent="olive"] { --accent: var(--avatar-olive); }
 [data-accent="mauve"] { --accent: var(--avatar-mauve); }
 [data-accent="umber"] { --accent: var(--avatar-umber); }
-/* Tokens that derive from --signal on :root resolve there, so they are derived again here from the accent. */
-[data-accent] { --signal: var(--accent); --signal-soft: color-mix(in srgb, var(--accent) 12%, var(--sheet)); --surface-user: color-mix(in srgb, var(--accent) 8%, var(--sheet)); --ring: 0 0 0 3px var(--signal-soft); --syn-title: var(--signal); }
+[data-accent] { --signal: var(--accent); --signal-soft: color-mix(in srgb, var(--accent) 12%, var(--sheet)); --surface-user: color-mix(in srgb, var(--accent) 8%, var(--sheet)); }
 .bots-note { margin: 18px 12px; font-size: var(--text-sm); color: var(--graphite); }
 .bots-refused { margin: 0; padding: 10px 20px 14px; font-size: var(--text-sm); color: var(--brick); border-top: 1px solid var(--rule); }
 .bots-warned { color: var(--caution); }
