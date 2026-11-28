@@ -1,4 +1,4 @@
-import { parseSshHost, type SshHost, type Tuning } from '@highwing/hermes/domain'
+import type { Tuning } from '@highwing/hermes/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { FolderChip } from '../src/renderer/composer/FolderChip'
@@ -66,8 +66,8 @@ describe('the folder chip', () => {
   })
 
   it('names the machine the folder is on, or the Hermes machine when it has no name', () => {
-    expect(folderFieldLabel({ kind: 'remote', host: parseSshHost('hermes-host.example-tailnet.ts.net') as SshHost })).toBe('Folder on hermes-host')
-    expect(folderFieldLabel({ kind: 'local' })).toBe('Folder on this computer')
+    expect(folderFieldLabel('hermes-host')).toBe('Folder on hermes-host')
+    expect(folderFieldLabel('this computer')).toBe('Folder on this computer')
     expect(folderFieldLabel(null)).toBe('Folder on the Hermes machine')
   })
 })
