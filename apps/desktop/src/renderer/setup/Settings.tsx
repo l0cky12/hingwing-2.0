@@ -226,6 +226,7 @@ export function Settings({ setup, mode, theme, accent, onRequestClose, onShowSho
 }) {
   const saving = setup.at === 'checking' && setup.step === 'save'
   const link = useTopic('link')
+  const book = useTopic('servers')
   const onClose = useTopic('onClose') ?? 'quit'
   const tone = accentTone(accent, toneOfBot(useTopic('bots'), shownChat(useTopic('open'))?.bot ?? null))
   const heading = useRef<HTMLHeadingElement>(null)
@@ -278,7 +279,7 @@ export function Settings({ setup, mode, theme, accent, onRequestClose, onShowSho
   const off = (row: RowId) => !view.rows.has(row)
   const shown = (at: Page) => view.pages.includes(at)
   const cards: { readonly [P in Page]: ReactNode } = {
-    connection: <ConnectionCard setup={setup} link={link} />,
+    connection: <ConnectionCard setup={setup} link={link} {...(book === undefined ? {} : { book })} />,
     appearance: (
       <div className="card rows">
         <Choice label="Theme" desc="System follows your computer’s light or dark setting." value={theme} segments={looksOf(tone)} hidden={off('theme')} look="looks" onPick={picked => void run({ do: 'setTheme', theme: picked })} />
