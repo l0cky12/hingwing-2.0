@@ -1,17 +1,17 @@
 import { refusalOf } from './actor'
 import { GENERATED_MAX_BYTES, MARK_SETS, PICTURE_RULE, type BotCreated, type BotDetails, type BotDraft, type BotEdit, type BotId, type BotMark, type PetChoice } from './domain/bots'
-import type { Command, ModelMenu, Outcome, Refusal } from './domain/command'
+import type { Backup, BotModelSettings, Command, ModelMenu, ModelSaved, Outcome, Refusal } from './domain/command'
 import type { BotManagers } from './domain/passwords'
 import type { Plugin, PluginInstalled, PluginSwitched } from './domain/plugins'
 import type { Toolset } from './domain/toolsets'
-import type { SessionId } from './domain/session'
+import type { ModelId, ModelOption, SessionId } from './domain/session'
 import type { Skill } from './domain/skills'
 import type { Added, ServerSetup, Tested, ToolServer } from './domain/tool-servers'
 import { NOT_CONNECTED } from './open'
 import { METHOD_NOT_FOUND, Offline, RpcRefusal, type Connection } from './wire/link'
 import {
-  descriptionOf, parseBotAt, parseBotManagers, parseBotRecord, parseCatalog, parseConfigured, parseCreated, parseDenyRules, parseDetails, parseGenerated, parseImageProbe, parseModelMenu, parsePetPicture, parsePets,
-  parsePicture, parsePluginInstalled, parsePlugins, parseRestartNeeded, parseSkillStates, parseSkillText, parseTested, parseToolsets, parseToolServers, type Configured
+  descriptionOf, parseBackupChain, parseBotAt, parseBotManagers, parseBotRecord, parseCatalog, parseCliFailure, parseConfigured, parseConfigValue, parseConfirmAsked, parseCreated, parseDenyRules, parseDetails, parseGenerated, parseImageProbe, parseModelMenu, parsePetPicture, parsePets,
+  parsePicture, parsePluginInstalled, parsePlugins, parseRestartNeeded, parseSkillStates, parseSkillText, parseTested, parseToolsets, parseToolServers, type BackupEntry, type Configured, type ConfigValue
 } from './wire/parse'
 
 export type Wire = Pick<Connection, 'call' | 'as'>
@@ -74,6 +74,83 @@ export async function createBot(conn: Wire, draft: BotDraft, picture: string | n
 /** With no session Hermes reads the profile's own config (tui_gateway/methods_complete.py:297-299, :320-334), so a bot with no chat has a list. */
 export const botModels = (conn: Wire, bot: BotId | null): Promise<Outcome<ModelMenu>> =>
   guarded({}, async () => ({ ok: true, value: parseModelMenu(await (bot === null ? conn : conn.as(bot)).call('model.options', { explicit_only: true })) }))
+
+const SAVED: Outcome<ModelSaved> = { ok: true, value: { saved: true } }
+
+/** A costly model is pinned only once the call comes back with `confirm_expensive_model` (tui_gateway/methods_profiles.py:582-604). */
+export const setBotModel = (conn: Wire, bot: BotId, model: ModelOption, confirm: boolean): Promise<Outcome<ModelSaved>> =>
+  guarded(EDIT_REASONS, async () => {
+    const reply = await conn.call('profiles.configure', { name: bot, model: model.id, provider: model.provider, ...(confirm ? { confirm_expensive_model: true } : {}) })
+    const asked = parseConfirmAsked(reply)
+    if (asked !== null) return { ok: true, value: { saved: false, confirm: asked } }
+    const done = edited(parseConfigured(reply, ['model']), ['model'])
+    return done.ok ? SAVED : done
+  })
+
+const BACKUP_REASONS: Reasons = { [METHOD_NOT_FOUND]: () => ({ kind: 'unsupported', message: "This Hermes can't change backup models from Highwing." }) }
+const CLI_TIMEOUT_S = 60
+
+type Calls = ReturnType<Wire['as']>
+
+/** `cli.exec` runs in the gateway's own home, so `-p` names the bot. Without it the CLI may follow the sticky active profile (hermes_cli/main.py:431-460). */
+const hermesCli = (calls: Calls, bot: BotId, argv: readonly string[]) => calls.call('cli.exec', { argv: ['-p', bot, ...argv], timeout: CLI_TIMEOUT_S })
+
+const rejected = (message: string): Outcome<never> => ({ ok: false, refusal: { kind: 'rejected', message } })
+
+/** `legacy`: the config holds a `fallback_model`, which a rewrite of the chain takes out, as `hermes fallback` does (hermes_cli/fallback_cmd.py:27-30). */
+interface Chain { readonly entries: readonly BackupEntry[]; readonly legacy: boolean }
+
+async function readChain(calls: Calls, bot: BotId): Promise<Outcome<Chain>> {
+  const read = (key: string) => hermesCli(calls, bot, ['config', 'get', key, '--json']).then(parseConfigValue)
+  const [providers, legacy] = await Promise.all([read('fallback_providers'), read('fallback_model')])
+  if (providers.is === 'failed') return rejected(providers.words)
+  if (legacy.is === 'failed') return rejected(legacy.words)
+  const valueOf = (held: ConfigValue) => (held.is === 'value' ? held.value : null)
+  return { ok: true, value: { entries: parseBackupChain(valueOf(providers), valueOf(legacy)), legacy: legacy.is === 'value' } }
+}
+
+function backupOf([first, ...rest]: readonly BackupEntry[]): Backup {
+  return first === undefined ? { state: 'none' } : { state: 'set', model: { id: first.model as ModelId, provider: first.provider }, more: rest.length }
+}
+
+export const botModelSettings = (conn: Wire, bot: BotId): Promise<Outcome<BotModelSettings>> =>
+  guarded({}, async () => {
+    const calls = conn.as(bot)
+    const [menu, chain] = await Promise.all([calls.call('model.options', { explicit_only: true }).then(parseModelMenu), guarded(BACKUP_REASONS, () => readChain(calls, bot))])
+    const backup: Backup = chain.ok ? backupOf(chain.value.entries) : { state: 'unknown', words: chain.refusal.message }
+    return { ok: true, value: { options: menu.options, main: menu.fallback, backup } }
+  })
+
+const SECRET_KEYS = new Set(['api_key', 'apikey', 'key', 'token', 'access_token', 'refresh_token', 'id_token', 'secret', 'client_secret', 'password', 'passwd', 'authorization', 'private_key', 'bearer', 'jwt'])
+const SECRET_ENDINGS = ['_api_key', '_token', '_secret', '_password', '_key', '_access_key']
+const ENV_PLACEHOLDER = /^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/
+
+/** `config get` masks a credential an entry holds (hermes_cli/config.py:2729-2748, :3300-3306), so writing that entry back would save the mask over the key. */
+const holdsKey = (entry: BackupEntry['asHeld']) => Object.entries(entry).some(([key, value]) => {
+  const leaf = key.toLowerCase().replaceAll('-', '_')
+  const secret = SECRET_KEYS.has(leaf) || SECRET_ENDINGS.some(ending => leaf.endsWith(ending))
+  return secret && (typeof value === 'number' || (typeof value === 'string' && value !== '' && !ENV_PLACEHOLDER.test(value)))
+})
+
+const KEEPS_KEY = "One of this bot's backups keeps its own key, which Highwing can't copy. Change its backups with hermes fallback on the Hermes machine."
+
+function withFirstBackup(entries: readonly BackupEntry[], { id, provider }: ModelOption): readonly BackupEntry['asHeld'][] {
+  const at = entries.findIndex(entry => entry.provider === provider && entry.model === id)
+  return [entries[at]?.asHeld ?? { provider, model: id }, ...entries.flatMap((entry, index) => (index === 0 || index === at ? [] : [entry.asHeld]))]
+}
+
+export const setBotBackup = (conn: Wire, bot: BotId, model: ModelOption | null): Promise<Outcome> =>
+  guarded(BACKUP_REASONS, async () => {
+    const calls = conn.as(bot)
+    const read = await readChain(calls, bot)
+    if (!read.ok) return read
+    const chain = model === null ? [] : withFirstBackup(read.value.entries, model)
+    if (chain.some(holdsKey)) return rejected(KEEPS_KEY)
+    // --force: Hermes refuses to replace a fallback_providers written as one mapping without it (hermes_cli/config_section_guard.py:45-61).
+    const failed = parseCliFailure(await hermesCli(calls, bot, ['config', 'set', '--force', 'fallback_providers', JSON.stringify(chain)]))
+      ?? (read.value.legacy ? parseCliFailure(await hermesCli(calls, bot, ['config', 'unset', 'fallback_model'])) : null)
+    return failed === null ? DONE : rejected(failed)
+  })
 
 /** With no session `config.get full` reads the profile's own config.yaml (gateway/session_config.py:65-115). */
 export const denyRules = (conn: Wire, bot: BotId | null): Promise<Outcome<readonly string[]>> =>

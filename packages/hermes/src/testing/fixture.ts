@@ -142,6 +142,12 @@ export interface Fixture {
      * manager not here is not installed. Absent: the gateway refuses every `vault.*` call as an unknown method, as a Hermes without them does.
      */
     readonly vault?: VaultScript
+    /**
+     * profile -> the backup model keys of its config.yaml, which `cli.exec` reads and writes as `hermes -p <profile> config get|set|unset`
+     * does. A profile not here holds only Hermes's default, an empty `fallback_providers`. Absent: the gateway refuses `cli.exec` as an
+     * unknown method, as an older Hermes does, and so does a socket bound to one profile.
+     */
+    readonly backups?: { readonly [profile: string]: BackupConfig }
     /** What `mcp.servers.*` answer. Absent: the gateway refuses every one as an unknown method, as a Hermes without them does, and so does a socket bound to one profile. */
     readonly mcp?: McpScript
     /**
@@ -293,6 +299,10 @@ export interface ManagerSeed {
 }
 export const VAULT_MANAGERS = ['onepassword', 'bitwarden'] as const
 export type VaultScript = { readonly [profile: string]: { readonly [M in typeof VAULT_MANAGERS[number]]?: ManagerSeed } }
+
+/** The two keys Hermes reads a profile's backup models from, each as config.yaml holds it (hermes_cli/fallback_config.py:139-152). */
+export const BACKUP_KEYS = ['fallback_providers', 'fallback_model'] as const
+export type BackupConfig = { readonly [K in typeof BACKUP_KEYS[number]]?: unknown }
 
 /**
  * One tool server a profile holds. `status` and `tools`: what `mcp.servers.status` says of it (default `configured`, 0).
@@ -625,6 +635,9 @@ const isVaultScript = (value: unknown): value is VaultScript =>
   isObject(value) && Object.values(value).every(managers => isObject(managers)
     && Object.entries(managers).every(([name, seed]) => VAULT_MANAGERS.some(known => known === name) && isManagerSeed(seed)))
 
+const isBackups = (value: unknown): value is { readonly [profile: string]: BackupConfig } =>
+  isObject(value) && Object.values(value).every(config => isObject(config) && Object.keys(config).every(key => BACKUP_KEYS.some(known => known === key)))
+
 const isDelay = (value: unknown) => value === undefined || (typeof value === 'number' && value >= 0)
 
 const isTurnScript = (value: unknown): value is TurnScript => {
@@ -720,6 +733,8 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (vault !== undefined && !isVaultScript(vault)) {
     return '"vault" must map a profile to { onepassword?, bitwarden? }, each { installed, enabled?, unlocked?, logins?, password?, refuses?, token?, listFails? }'
   }
+  const { backups } = value
+  if (backups !== undefined && !isBackups(backups)) return '"backups" must map a profile to { fallback_providers?, fallback_model? }'
   const { mcp } = value
   if (mcp !== undefined && !isMcpScript(mcp)) {
     return '"mcp" must be { servers, probes? }: "servers" maps a profile to its servers, each { name, url or command, headers?, args?, status?, tools?, needs_auth?, plugin? }, and "probes" maps a name to { tools }, { error } or { oauth_needed: true }'
@@ -811,6 +826,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(skillsElsewhere === undefined ? {} : { skillsElsewhere: skillsElsewhere as NonNullable<Fixture['header']['skillsElsewhere']> }), ...(configureClash === undefined ? {} : { configureClash: configureClash as string | { title: string; times: number } }),
     ...(assetFails === undefined ? {} : { assetFails }),
     ...(images === undefined ? {} : { images }), ...(display === undefined ? {} : { display }), ...(pets === undefined ? {} : { pets }), ...(oneshot === undefined ? {} : { oneshot }), ...(vault === undefined ? {} : { vault }),
+    ...(backups === undefined ? {} : { backups }),
     ...(connectors === undefined ? {} : { connectors }),
     ...(memory === undefined ? {} : { memory }),
     ...(mcp === undefined ? {} : { mcp }),

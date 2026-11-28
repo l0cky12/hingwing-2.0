@@ -8,7 +8,7 @@ export {
 export { CONNECTOR_FILTERS, connectorsView, type ConnectorCard, type ConnectorFilter, type ConnectorShelf, type ConnectorsQuery, type ConnectorsSection, type ConnectorsView } from './connectors'
 export { APPROVAL_MODES, EFFORTS, PLAIN_CONTROLS, reissues } from './session'
 export {
-  EXPORT_FORMATS, type Checkpoint, type CheckpointDiff, type Checkpoints, type Command, type ContextBreakdown, type ExportFormat, type Exported, type MemoryEntry, type ModelConfirm, type ModelMenu, type Outcome as CommandOutcome, type Recording, type Refusal, type Restored, type RestoreScope,
+  EXPORT_FORMATS, type Backup, type BotModelSettings, type Checkpoint, type CheckpointDiff, type Checkpoints, type Command, type ContextBreakdown, type ExportFormat, type Exported, type MemoryEntry, type ModelConfirm, type ModelMenu, type ModelSaved, type Outcome as CommandOutcome, type Recording, type Refusal, type Restored, type RestoreScope,
   type ResultOf, type AccountReport
 } from './command'
 export { activityOf, turnActivityOf, type Activity, type TurnActivity } from './reduce'

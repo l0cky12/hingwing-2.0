@@ -148,6 +148,18 @@ export type Command =
   | { readonly do: 'removeMemory'; readonly id: string }
   /** The models a bot's chat could use, with no chat open. null: the socket's own profile, which a new bot copies its credentials from. */
   | { readonly do: 'botModels'; readonly bot: BotId | null }
+  /**
+   * The bot's default model, the models it could use and its backup, read with no chat open. The backup is the first of
+   * the models Hermes tries when the default fails. A backup Hermes can't say leaves the rest of the answer whole.
+   */
+  | { readonly do: 'botModelSettings'; readonly bot: BotId }
+  /** Sets the model the bot's new chats start on. Hermes may want a second yes first, usually for a costly model: send it again with `confirm`. */
+  | { readonly do: 'setBotModel'; readonly bot: BotId; readonly model: ModelOption; readonly confirm?: true }
+  /**
+   * Makes `model` the bot's first backup and keeps the backups after it. null removes every backup. Hermes picks the
+   * change up at the start of the next turn, in open chats too.
+   */
+  | { readonly do: 'setBotBackup'; readonly bot: BotId; readonly model: ModelOption | null }
   /** The globs of the bot's `approvals.deny`: Hermes blocks a matching command whatever the approval mode, YOLO included. null: the socket's own profile. */
   | { readonly do: 'denyRules'; readonly bot: BotId | null }
   | { readonly do: 'describeBot'; readonly bot: BotId }
@@ -285,6 +297,8 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'answer' } ? Told | undefined
   : C extends { do: 'models' | 'botModels' } ? ModelMenu
   : C extends { do: 'createBot' | 'createFromTemplate' } ? BotCreated
+  : C extends { do: 'botModelSettings' } ? BotModelSettings
+  : C extends { do: 'setBotModel' } ? ModelSaved
   : C extends { do: 'describeBot' } ? BotDetails
   : C extends { do: 'skillText' } ? string
   : C extends { do: 'listRoutines' } ? readonly Routine[]
@@ -329,6 +343,19 @@ export interface Exported { readonly filename: string; readonly content: string 
 
 /** What Hermes offers this chat. `options` empty: nothing is set up. `fallback`: the model Hermes names for it. */
 export interface ModelMenu { readonly options: readonly ModelOption[]; readonly fallback: ModelRef | null }
+
+/** A bot's models as its config holds them. `main`: the model new chats start on, null when Hermes names none. */
+export interface BotModelSettings { readonly options: readonly ModelOption[]; readonly main: ModelRef | null; readonly backup: Backup }
+
+/** The first model Hermes tries when the default fails, and how many it would try after that one. */
+export type Backup =
+  | { readonly state: 'none' }
+  | { readonly state: 'set'; readonly model: ModelRef; readonly more: number }
+  /** Hermes couldn't say, in `words`. */
+  | { readonly state: 'unknown'; readonly words: string }
+
+/** `confirm`: Hermes's words asking for a second yes. Nothing was saved. */
+export type ModelSaved = { readonly saved: true } | { readonly saved: false; readonly confirm: string }
 
 /** Hermes wants a second yes before it switches, usually for a costly model. Nothing changed yet. */
 export interface ModelConfirm { readonly token: string; readonly message: string }

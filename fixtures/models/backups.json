@@ -1,0 +1,7 @@
+{
+  "dr-eggbot": { "fallback_providers": [{ "provider": "local", "model": "local-7b" }] },
+  "research": {
+    "fallback_providers": [{ "provider": "acme", "model": "careful-large" }],
+    "fallback_model": { "provider": "acme", "model": "fast-small" }
+  }
+}
