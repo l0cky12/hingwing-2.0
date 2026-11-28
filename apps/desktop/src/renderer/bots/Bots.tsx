@@ -12,6 +12,7 @@ import { COMMAND_KEY, isShortcut } from '../keys'
 import { modalOpen } from '../shortcuts'
 import { run, useTopic } from '../store'
 import { useBotDrafts } from '../composer/drafts'
+import { setMade, useMade } from './made'
 import { Avatar } from './Avatar'
 import { BotEditor, type BotEditorProps } from './BotEditor'
 import { BOT_EDIT_CALLS } from './BotPanel'
@@ -256,7 +257,8 @@ export function BotsPanel({
   const [form, setForm] = useState<{ readonly models: ModelMenu | 'loading' } | null>(null)
   const [grouping, setGrouping] = useState(false)
   const closeGroupForm = () => setGrouping(false)
-  const [made, setMade] = useState<BotCreated | null>(null)
+  const made = useMade()
+  useEffect(() => () => setMade(null), [])
   const [editing, setEditing] = useState<BotDetails | null>(null)
   const [deleting, setDeleting] = useState<Bot | null>(null)
   const [memory, setMemory] = useState(false)

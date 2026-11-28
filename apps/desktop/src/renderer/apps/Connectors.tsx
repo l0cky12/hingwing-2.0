@@ -1,7 +1,9 @@
 import {
-  APPROVAL_WORDS, BOT_TEMPLATES, CONNECTOR_FILTERS, connectorsView, pluginsView, scheduleWords, shownBot, shownChat, STANDING_WORDS, TOOLSET_WORDS, type BotTemplate, type BotTemplateId, type CatalogPlugin, type CommandOutcome, type AppEntry, type AppsBoard, type BotId, type ConnectorFilter, type ConnectorShelf, type ConnectorsQuery, type ConnectorsView, type ServerSetup, type Toolset, type ToolServer
+  APPROVAL_WORDS, BOT_TEMPLATES, CONNECTOR_FILTERS, connectorsView, pluginsView, scheduleWords, shownBot, shownChat, STANDING_WORDS, TOOLSET_WORDS, type BotTemplate, type BotTemplateId, type TemplateAnswers, type CatalogPlugin, type CommandOutcome, type AppEntry, type AppsBoard, type BotId, type ConnectorFilter, type ConnectorShelf, type ConnectorsQuery, type ConnectorsView, type ServerSetup, type Toolset, type ToolServer
 } from '@highwing/hermes/domain'
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { nameProblem } from '../bots/bot-form'
+import { setMade } from '../bots/made'
 import { ICON } from '../chrome/PopupMenu'
 import { connectorsKeys } from '../keys'
 import { line } from '../setup/ConnectionCard'
@@ -495,6 +497,12 @@ const turnsOn = (template: BotTemplate) => (
 function TemplatesPanel() {
   const [chosen, setChosen] = useState<BotTemplate | null>(null)
   const opener = useRef<HTMLElement | null>(null)
+  const bots = useTopic('bots')
+  const create = async (template: BotTemplate, answers: TemplateAnswers) => {
+    const outcome = await run({ do: 'createFromTemplate', template: template.id, answers })
+    setMade(outcome.ok ? outcome.value : null)
+    return outcome
+  }
   const close = () => {
     setChosen(null)
     opener.current?.focus()
@@ -514,7 +522,9 @@ function TemplatesPanel() {
           </Card>
         ))}
       </ul>
-      {chosen !== null && <TemplateDialog key={chosen.id} template={chosen} onClose={close} />}
+      {chosen !== null && (
+        <TemplateDialog key={chosen.id} template={chosen} problemOf={name => nameProblem(name, bots)} onCreate={answers => create(chosen, answers)} onClose={close} />
+      )}
     </>
   )
 }

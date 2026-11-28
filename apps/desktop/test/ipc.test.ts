@@ -142,6 +142,12 @@ describe('validators', () => {
     expect(parseCommand({ do: 'pickModel', sessionId: 's1', model, confirm: 'tok' })).toEqual({ do: 'pickModel', sessionId: 's1', model, confirm: 'tok' })
   })
 
+  it('keep the template and the three answers of a bot made from one', () => {
+    const answers = { name: 'Ledger', folder: '/srv/billing', time: '02:00' }
+    expect(parseCommand({ do: 'createFromTemplate', template: 'nightly-repo-auditor', answers: { ...answers, extra: 1 }, extra: 1 })).toEqual({ do: 'createFromTemplate', template: 'nightly-repo-auditor', answers })
+    expect(parseCommand({ do: 'createFromTemplate', template: 'bot-builder', answers: { name: 'Builder', folder: '', time: '' } })).toEqual({ do: 'createFromTemplate', template: 'bot-builder', answers: { name: 'Builder', folder: '', time: '' } })
+  })
+
   it('keep the four fields of a new bot, and the bot whose models are listed or null for the socket\'s own', () => {
     const model = { id: 'careful-large', provider: 'acme', providerName: 'Acme' }
     const draft = { name: 'Rae', description: '', model, persona: 'You write short reports.\n' }
@@ -335,6 +341,9 @@ describe('validators', () => {
     ['a new bot whose model is not a model', { do: 'createBot', draft: { name: 'Rae', description: '', model: { id: 'm' }, persona: '' } }],
     ['a new bot whose model is left out', { do: 'createBot', draft: { name: 'Rae', description: '', persona: '' } }],
     ['a new bot with no draft', { do: 'createBot', picture: null }],
+    ['a bot made from a template that is not one', { do: 'createFromTemplate', template: 'cook', answers: { name: 'Ledger', folder: '', time: '' } }],
+    ['a bot made from a template with an answer left out', { do: 'createFromTemplate', template: 'bot-builder', answers: { name: 'Ledger', folder: '' } }],
+    ['a bot made from a template with an answer that is not text', { do: 'createFromTemplate', template: 'bot-builder', answers: { name: 'Ledger', folder: 7, time: '' } }],
     ['a new bot with no picture named', { do: 'createBot', draft: { name: 'Rae', description: '', model: null, persona: '' } }],
     ['a new bot whose picture is text', { do: 'createBot', draft: { name: 'Rae', description: '', model: null, persona: '' }, picture: `data:image/png;base64,${Buffer.from('not a picture').toString('base64')}` }],
     ['a new bot whose picture is a GIF', { do: 'createBot', draft: { name: 'Rae', description: '', model: null, persona: '' }, picture: `data:image/gif;base64,${Buffer.from('GIF89a').toString('base64')}` }],
@@ -564,7 +573,7 @@ describe('validators', () => {
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
       'accountUsage', 'addToolServer', 'answer', 'appSignIn', 'apps', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff',
-      'checkpoints', 'closePreview', 'completePath', 'compress', 'connectApp', 'contextBreakdown', 'control', 'controlRoutine', 'createBot', 'createGroup', 'deleteGroup', 'denyRules', 'describeBot', 'discard',
+      'checkpoints', 'closePreview', 'completePath', 'compress', 'connectApp', 'contextBreakdown', 'control', 'controlRoutine', 'createBot', 'createFromTemplate', 'createGroup', 'deleteGroup', 'denyRules', 'describeBot', 'discard',
       'done', 'editBot', 'editTarget', 'examples', 'export', 'generatePicture', 'handBack', 'installPlugin', 'keepTarget', 'killProcess', 'listRoutines', 'loadEarlier', 'lockPasswordManager', 'markBot', 'memory', 'models', 'move',
       'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'pluginCatalog', 'plugins', 'preview', 'queued', 'react', 'readMessages', 'reconnect',
       'reloadPreview', 'remove', 'removeApp', 'removeBotPicture', 'removeMemory', 'removeToolServer', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'saveMemory', 'send',

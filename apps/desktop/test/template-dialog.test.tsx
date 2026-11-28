@@ -1,13 +1,17 @@
-import { BOT_TEMPLATES } from '@highwing/hermes/domain'
+import { BOT_TEMPLATES, type BotId } from '@highwing/hermes/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { TemplateDialog } from '../src/renderer/apps/Templates'
 
-const dialog = (id: string) => renderToStaticMarkup(<TemplateDialog template={BOT_TEMPLATES.find(item => item.id === id)!} onClose={() => {}} />)
+const dialog = (id: string, problemOf: (name: string) => string | null = () => null) =>
+  renderToStaticMarkup(
+    <TemplateDialog template={BOT_TEMPLATES.find(item => item.id === id)!} problemOf={problemOf} onCreate={async () => ({ ok: true, value: { bot: 'rae' as BotId, warnings: [] } })} onClose={() => {}} />
+  )
+const createButton = (html: string) => /<button[^>]*>(?:Create bot|Creating…)<\/button>/.exec(html)?.[0]
 
 describe("a template's setup dialog", () => {
-  it("fills the bot's name with the template's name", () => {
-    expect(dialog('deep-researcher')).toContain('value="Deep Researcher"')
+  it("fills the bot's name with a name Hermes takes for a profile", () => {
+    expect(dialog('deep-researcher')).toContain('value="deep-researcher"')
   })
 
   it('asks only for a name when the template has no schedule', () => {
@@ -36,11 +40,22 @@ describe("a template's setup dialog", () => {
     expect(dialog('deep-researcher')).toContain('Smart: asks only when a command looks risky')
   })
 
-  it('cannot make the bot yet, and says so', () => {
-    for (const template of BOT_TEMPLATES) {
-      const html = dialog(template.id)
-      expect(html, template.id).toMatch(/<button[^>]*disabled=""[^>]*>Create bot<\/button>/)
-      expect(html, template.id).toContain('Making the bot comes in the next update.')
-    }
+  it('can make a bot that needs only a name, from the first moment', () => {
+    for (const id of ['bot-builder', 'deep-researcher']) expect(createButton(dialog(id)), id).not.toContain('disabled')
+  })
+
+  it('waits for the auditor\'s folder', () => {
+    expect(createButton(dialog('nightly-repo-auditor'))).toContain('disabled=""')
+  })
+
+  it('says why a name Hermes would refuse cannot be used, and waits for another', () => {
+    const html = dialog('bot-builder', name => `There's already a bot called ${name}.`)
+    expect(html).toContain('There&#x27;s already a bot called bot-builder.')
+    expect(html).toContain('aria-invalid="true"')
+    expect(createButton(html)).toContain('disabled=""')
+  })
+
+  it('no longer says the making comes later', () => {
+    for (const template of BOT_TEMPLATES) expect(dialog(template.id), template.id).not.toContain('next update')
   })
 })

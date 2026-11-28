@@ -1096,6 +1096,28 @@ Hermes desktop does (`apps/desktop/src/app/capabilities/catalog/catalog-data.ts`
 This read needs no connection to Hermes. A row with no name or an unknown
 `tier` is dropped.
 
+### A bot made from a template
+
+The Connectors screen's Templates tab makes a bot in four steps, one call each.
+The first is `profiles.create`, which New bot also uses. The rest run for the
+new bot, in this order, and each is safe to send again.
+
+| Method | Params | What Highwing does with the answer |
+| --- | --- | --- |
+| `profiles.create` | `{name, description, soul}`, with the template's summary as `description` and its persona as `soul` | Refused as it is for New bot, so a name Hermes refuses is shown at the Bot name field and nothing else is sent. A bare `-32601` reads "This Hermes can't create bots from Highwing." |
+| `profiles.configure` | `{name, enabled_toolsets}` | Hermes replaces the profile's toolset list. The answer's `applied.toolsets` must be true (`tui_gateway/methods_profiles.py:724-746`). |
+| `config.set` | `{key: "approval_mode", value}`, with the new bot's `profile` and no `session_id` | Writes the bot's approval mode (`tui_gateway/methods_config_set.py:507-522`). |
+| `cron.manage` | `{action: "list", include_disabled: true}`, then `{action: "add", name, schedule, prompt, deliver: "bot-chat"}`, both with the new bot's `profile` | Adds the nightly job only when the list holds no job of that name. `schedule` is a cron line such as `0 2 * * *`. `deliver: "bot-chat"` puts the report in the bot's own chat. A `success: false` answer is refused in its `error` words (`tui_gateway/methods_tools.py:1311-1325`). |
+
+Once the bot exists, a step that fails does not stop the ones after it. The bot
+opens, and the Bots column shows one warning for each failed step, such as "the
+nightly job wasn't added." with the reason after it. A bare `-32601` on a step
+reads "This Hermes can't turn on a bot's tools from Highwing.", "This Hermes
+can't set a bot's approval mode from Highwing." or "This Hermes can't schedule
+jobs from Highwing." Hermes takes only lowercase letters, numbers, `-` and `_`
+for a profile's name, so the dialog's Bot name starts as the template's id, such
+as `nightly-repo-auditor`.
+
 ## Task board
 
 Hermes has no socket method that reads its kanban board. The Tasks view reads

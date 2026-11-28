@@ -1,5 +1,5 @@
 import {
-  APPROVAL_MODES, BOT_MARKS, BOT_TONES, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isManagerName, isPetSlug, onThisComputer, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, ROUTINE_ACTIONS, targetOf,
+  APPROVAL_MODES, BOT_MARKS, BOT_TEMPLATES, BOT_TONES, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isManagerName, isPetSlug, onThisComputer, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, ROUTINE_ACTIONS, targetOf,
   type About, type AdmissionId, type AvatarTone, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type Bots, type BranchId, type BusyMode, type ChatRef,
   type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupChat, type GroupDraft, type GroupId, type Groups, type Header, type HelperId, type Item, type Link, type ModelOption,
   type BotActivities, type CatalogPlugin, type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type Recording, type RelayDesk, type RequestId, type RequestReply,
@@ -567,6 +567,13 @@ export const validators: Validators = {
     const draft = draftOf(raw.draft)
     const picture = raw.picture === null ? null : pictureDataUrlOf(raw.picture, PICTURE_MAX_BYTES)
     return draft && (raw.picture === null || picture !== null) ? { do: 'createBot', draft, picture } : null
+  },
+  createFromTemplate: raw => {
+    const answers = isObject(raw.answers) ? raw.answers : null
+    const template = BOT_TEMPLATES.find(({ id }) => id === raw.template)
+    return template !== undefined && answers !== null && text(answers.name) && text(answers.folder) && text(answers.time)
+      ? { do: 'createFromTemplate', template: template.id, answers: { name: answers.name, folder: answers.folder, time: answers.time } }
+      : null
   },
   canGeneratePicture: () => ({ do: 'canGeneratePicture' }),
   generatePicture: raw => (filled(raw.prompt) ? { do: 'generatePicture', prompt: raw.prompt } : null),
