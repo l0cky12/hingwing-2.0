@@ -34,4 +34,15 @@ describe('prose', () => {
       }])
     ])
   })
+
+  it('marks a fence tagged html in any case for preview, with its source intact, and no other fence', () => {
+    const page = '<button style="color: red">Save</button>\n<script>alert(1)</script>'
+    for (const lang of ['html', 'HTML', 'Html']) {
+      expect(parseMarkdown(`\`\`\`${lang}\n${page}\n\`\`\``)).toEqual([{ kind: 'code', lang, text: page, open: false, preview: 'html' }])
+    }
+    expect(parseMarkdown(`\`\`\`html\n${page}`)).toEqual([{ kind: 'code', lang: 'html', text: page, open: true, preview: 'html' }])
+    for (const fence of ['```', '```xml', '```htm', '```mermaid', '```ts']) {
+      expect(parseMarkdown(`${fence}\n${page}\n\`\`\``), fence).toEqual([{ kind: 'code', lang: fence.slice(3) || null, text: page, open: false, preview: null }])
+    }
+  })
 })
