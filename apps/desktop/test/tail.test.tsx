@@ -9,7 +9,7 @@ import { Thread } from '../src/renderer/chat/Thread'
 const turn = (row: number, end: TurnView['end'] = { kind: 'done', words: 'Done' }): TurnView =>
   ({ key: `t${row}`, time: null, request: `Request ${row}`, handed: false, attachments: [], rowId: row, tokens: null, reactions: null, pages: [], nodes: [], end })
 const chat = (count: number, more: Partial<ThreadView> = {}): ThreadView =>
-  ({ state: 'ready', turns: Array.from({ length: count }, (_, index) => turn(index + 1)), pending: [], asks: [], earlier: 'none', changesAt: null, ...more })
+  ({ state: 'ready', turns: Array.from({ length: count }, (_, index) => turn(index + 1)), pending: [], asks: [], earlier: 'none', newestPages: new Map(), changesAt: null, ...more })
 const relay = (id: string, after: string | null): Relay =>
   ({ id: id as RelayId, to: 'rae' as BotId, name: 'Rae', tone: 'umber', text: `Relay ${id}`, after: after as TurnId | null, state: { s: 'waiting' } })
 const side = (id: string, after: string | null): SideRow =>

@@ -18,8 +18,11 @@ export { fieldId, findInThread, type Beside, type BesideRow, type Changing, type
 export { multiReply } from './multi'
 export { answeringWords, groupThread, namesInWords, type GroupItemView, type GroupThreadView, type GroupTurnView, type NameOf } from './group-thread'
 
-/** A page the bot made: an HTML file a finished step wrote. `title` is the `<title>` a diff of it shows, else the file's name. */
-export interface PageView { readonly path: string; readonly title: string }
+/**
+ * A page the bot made: an HTML file a finished step wrote. `title` is the `<title>` a diff of it shows, else the file's name.
+ * `version` is the node key of the turn's last finished step that wrote it.
+ */
+export interface PageView { readonly path: string; readonly title: string; readonly version: string }
 
 /** Text with literal parts. `code` is set in JetBrains Mono; nothing here is HTML. */
 export type Phrase = readonly { readonly t: 'text' | 'code'; readonly v: string }[]
@@ -32,6 +35,8 @@ export interface ThreadView {
   /** What Hermes waits on you for, oldest first, drawn after the turns. */
   readonly asks: readonly AskCard[]
   readonly earlier: Session['earlier']
+  /** Each page's path to the `version` of its last card in the thread. A card with another version is an older one. */
+  readonly newestPages: ReadonlyMap<string, string>
   /**
    * The earliest instant after the clock's `now` at which the same session would read differently
    * (an elapsed time ticks over, a time line appears or says a new day, a notice's time runs out), or
@@ -290,12 +295,14 @@ export function threadView(session: Session, clock: ViewClock): ThreadView {
     run.state === 'running' ? hidesAt(run.turn.items, clock.now) : null,
     ...(run.state === 'running' ? run.turn.items.map(item => (item.kind === 'prompt' && item.state.s === 'waiting' && item.deadline !== null ? leftChangesAt(item.deadline, clock.now) : null)) : [])
   ]
+  const drawn = [...settled.map(memo => memo.view), interlude, ...(open === null ? [] : [open])].filter(turn => !isEmptyInterlude(turn))
   return {
     state: VIEW_STATE[sync.state],
-    turns: [...settled.map(memo => memo.view), interlude, ...(open === null ? [] : [open])].filter(turn => !isEmptyInterlude(turn)),
+    turns: drawn,
     pending: [...session.queue.map(queuedRow), ...session.outbox.map(outboxRow)],
     asks: session.requests.map(request => askCard(request, sync.state === 'live', clock)),
     earlier: session.earlier,
+    newestPages: newestPagesOf(drawn),
     changesAt: earliest([changesAt(starts, lines, elapsing ? starts.at(-1) ?? null : null, clock), ...hides])
   }
 }
@@ -376,29 +383,35 @@ function turnView(turn: Pick<Turn, 'id' | 'request' | 'items'> & Partial<Pick<Se
     nodes, end: end(nodes),
     tokens: tokenWords(turn.tokens ?? null),
     reactions: turn.reply == null ? null : { turn: turn.id, given: turn.reply.reactions },
-    pages: pagesOf(turn.items)
+    pages: pagesOf(turn.items, at)
   }
 }
 
 const PAGE_FILE = /\.html?$/i
 const TITLE = /<title[^>]*>([^<]*)<\/title>/i
 const NO_PAGES: readonly PageView[] = []
+const NO_NEWEST: ReadonlyMap<string, string> = new Map()
 
-function pagesOf(items: readonly Item[]): readonly PageView[] {
-  const pages = new Map<string, string>()
-  for (const item of items) {
-    if (item.kind !== 'tool') continue
-    for (const diff of diffsOf(item)) {
-      if (!PAGE_FILE.test(diff.path)) continue
-      if (diff.deletesFile) {
-        pages.delete(diff.path)
+function pagesOf(items: readonly Item[], at: (index: number) => string): readonly PageView[] {
+  const pages = new Map<string, PageView>()
+  items.forEach((item, index) => {
+    if (item.kind !== 'tool') return
+    for (const { path, deletesFile, lines } of diffsOf(item)) {
+      if (!PAGE_FILE.test(path)) continue
+      if (deletesFile) {
+        pages.delete(path)
         continue
       }
-      const title = diff.lines.flatMap(line => (line.t === 'del' ? [] : [TITLE.exec(line.text)?.[1]?.trim() ?? ''])).find(Boolean)
-      pages.set(diff.path, title ?? pages.get(diff.path) ?? basename(diff.path) ?? diff.path)
+      const title = lines.flatMap(line => (line.t === 'del' ? [] : [TITLE.exec(line.text)?.[1]?.trim() ?? ''])).find(Boolean)
+      pages.set(path, { path, title: title ?? pages.get(path)?.title ?? basename(path) ?? path, version: at(index) })
     }
-  }
-  return pages.size === 0 ? NO_PAGES : [...pages].map(([path, title]) => ({ path, title }))
+  })
+  return pages.size === 0 ? NO_PAGES : [...pages.values()]
+}
+
+function newestPagesOf(turns: readonly TurnView[]): ReadonlyMap<string, string> {
+  const newest = new Map(turns.flatMap(turn => turn.pages.map(page => [page.path, page.version] as const)))
+  return newest.size === 0 ? NO_NEWEST : newest
 }
 
 const COUNT = new Intl.NumberFormat('en-US')
