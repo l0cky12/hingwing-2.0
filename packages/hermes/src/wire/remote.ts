@@ -1,7 +1,7 @@
 import { machineOf, type SshHost } from '../domain/reach'
-import { DialError, dialWith, type Clock, type Dialer, type Mint, type ReadHermes } from './link'
+import { DialError, dialWith, type Clock, type Dialer, type Mint, type ReadHermes, type WriteHermes } from './link'
 import { relay, sshExec } from './ssh'
-import { mintWith, readWith, transcribeWith, type RunHermes } from './tickets'
+import { mintWith, readWith, transcribeWith, writeWith, type RunHermes } from './tickets'
 import { TRANSCRIBE_MS, type Transcribe } from './transcribe'
 
 /** A way to reach one gateway, and the processes that way holds. */
@@ -11,6 +11,8 @@ export interface Route {
   readonly transcribe: Transcribe
   /** Reads the gateway's HTTP API as this route's user. */
   readonly read: ReadHermes
+  /** Writes to the gateway's HTTP API as this route's user. `dispose` cancels the writes still waiting for Hermes. */
+  readonly write: WriteHermes
   /** Ends every process and relay of this route, and refuses later dials. Call it after closing the `Hermes` that dials through it. */
   dispose(): void
 }
@@ -48,11 +50,14 @@ export function remoteRoute(host: SshHost, options: { readonly sshBin?: string; 
       return local
     }
   })
-  const read = readWith(run, async origin => {
+  /** `firstByteMs`: how long the gateway may take to answer the request this relay carries. */
+  const httpRelay = async (origin: string, firstByteMs?: number) => {
     const tunnel = tunnelOf(origin, 'http:')
     if (tunnel === null) throw new Error('Hermes named an HTTP address Highwing cannot forward.')
-    return `http://127.0.0.1:${await relay(host, tunnel.port, { ...options, signal })}`
-  })
+    return `http://127.0.0.1:${await relay(host, tunnel.port, { ...options, signal, ...(firstByteMs === undefined ? {} : { firstByteMs }) })}`
+  }
+  const read = readWith(run, origin => httpRelay(origin))
+  const write = writeWith(run, httpRelay, signal)
 
   /** A dial that a dispose cut short fails as `dropped`, whatever its killed ssh looked like. */
   const mint: Mint = async request => {
@@ -66,11 +71,7 @@ export function remoteRoute(host: SshHost, options: { readonly sshBin?: string; 
     }
   }
 
-  const transcribe = transcribeWith(run, async origin => {
-    const port = Number(URL.parse(origin)?.port)
-    if (!(port > 0)) throw new DialError('incompatible')
-    return `http://127.0.0.1:${await relay(host, port, { ...options, signal, firstByteMs: TRANSCRIBE_MS })}`
-  })
+  const transcribe = transcribeWith(run, origin => httpRelay(origin, TRANSCRIBE_MS))
 
-  return { dial: dialWith(mint), read, transcribe, dispose: () => life.abort() }
+  return { dial: dialWith(mint), read, write, transcribe, dispose: () => life.abort() }
 }

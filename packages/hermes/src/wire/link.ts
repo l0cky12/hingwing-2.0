@@ -85,6 +85,13 @@ export interface HttpAnswer { readonly status: number; readonly body: unknown }
  * answer rejects. Any answer resolves, 404 and 401 included, so the caller names what each status means.
  */
 export type ReadHermes = (path: string) => Promise<HttpAnswer>
+/**
+ * One write to the gateway's HTTP API: `path` is its path and query, `json` the body (none: no body), and `ms` how long Hermes
+ * may take to answer, since a write may do all its work before it does. A call that cannot get an answer rejects. Any answer
+ * resolves, 404 and 401 included, so the caller names what each status means.
+ */
+export interface HermesRequest { readonly method: 'POST' | 'PUT'; readonly path: string; readonly json?: unknown; readonly ms: number }
+export type WriteHermes = (request: HermesRequest) => Promise<HttpAnswer>
 
 export const GATEWAY_PROTOCOL = 'hermes-gateway-v1'
 /** Hermes's hermes_cli/gateway_client.py:16 */

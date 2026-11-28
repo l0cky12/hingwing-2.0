@@ -39,6 +39,7 @@ function ways(plans: ReadonlyMap<Target, Plan>, pick: PickMode = 'fastest', list
           return { reach: 'host', send: () => {}, close: () => { state.closed = true }, onText: null, onClose: null, name: name(target) } as WireSocket
         },
         read: async () => ({ status: 200, body: name(target) }),
+        write: async ({ method }) => ({ status: 200, body: `${method} ${name(target)}` }),
         transcribe: async () => ({ ok: true, value: name(target) }),
         dispose: () => void log.push(`dispose ${name(target)}`)
       }
@@ -197,11 +198,13 @@ describe('pickedRoute', () => {
     expect(picks).toEqual([{ using: TAILNET, times: [] }])
   })
 
-  it('reads and transcribes through the first way until one connects, then through the way in use', async () => {
+  it('reads, writes and transcribes through the first way until one connects, then through the way in use', async () => {
     const { route, dial } = ways(planned([[TAILNET, { ms: 120 }], [LAN, { ms: 15 }]]))
     expect(await route.read('/api/x')).toEqual({ status: 200, body: 'tailnet' })
+    expect(await route.write({ method: 'POST', path: '/api/x', ms: 1000 })).toEqual({ status: 200, body: 'POST tailnet' })
     await dial()
     expect(await route.read('/api/x')).toEqual({ status: 200, body: 'lan' })
+    expect(await route.write({ method: 'PUT', path: '/api/x', json: {}, ms: 1000 })).toEqual({ status: 200, body: 'PUT lan' })
     expect(await route.transcribe({ bytes: new Uint8Array(), type: 'audio/webm' } as never)).toEqual({ ok: true, value: 'lan' })
   })
 

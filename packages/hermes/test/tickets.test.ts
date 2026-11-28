@@ -4,8 +4,8 @@ import { describe, expect, it } from 'vitest'
 import { DialError, liveRoute } from '../src/hub'
 import type { ScenarioName } from '../src/testing/fake-host'
 import { ASK_NATIVE_HTTP, ATTACH, PROBE, SERVE, type HermesArgs, type SshRun } from '../src/wire/ssh'
-import { mintWith, readWith, transcribeWith, type MintOptions, type RunHermes } from '../src/wire/tickets'
-import { closing, errandGateway, host, listen } from './support/host'
+import { mintWith, readWith, transcribeWith, writeWith, type MintOptions, type RunHermes } from '../src/wire/tickets'
+import { closing, errandGateway, host, listen, until } from './support/host'
 
 const failureOf = (dial: Promise<unknown>) => dial.then(
   () => { throw new Error('the dial went through') },
@@ -150,6 +150,23 @@ describe('liveRoute, against the fake hermes of this computer', () => {
   })
 })
 
+/** A gateway's HTTP listener that answers every request with `status` and `body`, and keeps what each one carried. `hold`: it does not answer until this promise settles. */
+const listener = async (status: number, body: unknown, hold?: Promise<void>) => {
+  const asked: { readonly method: string | undefined; readonly url: string | undefined; readonly headers: IncomingHttpHeaders; readonly body: unknown }[] = []
+  const server = createServer((request, response) => {
+    const chunks: Buffer[] = []
+    request.on('data', (chunk: Buffer) => chunks.push(chunk))
+    request.on('end', () => {
+      const text = Buffer.concat(chunks).toString('utf8')
+      asked.push({ method: request.method, url: request.url, headers: request.headers, body: text === '' ? undefined : JSON.parse(text) })
+      void (hold ?? Promise.resolve()).then(() => response.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body)))
+    })
+  })
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  closing(server, held => held.close())
+  return { asked, origin: `http://127.0.0.1:${(server.address() as AddressInfo).port}` }
+}
+
 describe('readWith', () => {
   const HTTP_TICKET = out(`${JSON.stringify({ type: 'hello', protocol: 1, endpoint: { api_origin: 'http://127.0.0.1:4100', instance_id: 'i-1' } })}\n${JSON.stringify({ id: 1, ok: true, ticket: 'once', expires_in: 30 })}\n`)
 
@@ -204,22 +221,6 @@ describe('transcribeWith', () => {
   const RECORDING = { mime: 'audio/webm;codecs=opus', audio: new Uint8Array([1, 2, 3]) }
   const NATIVE = out(`${JSON.stringify({ type: 'hello', protocol: 1, endpoint: { api_origin: 'http://127.0.0.1:4100', instance_id: 'i-1' } })}\n${JSON.stringify({ id: 1, ok: true, ticket: 'speech' })}\n`)
 
-  /** A gateway's HTTP listener that answers every upload with `status` and `body`, and keeps what each request carried. */
-  const listener = async (status: number, body: unknown) => {
-    const asked: { readonly headers: IncomingHttpHeaders; readonly body: unknown }[] = []
-    const server = createServer((request, response) => {
-      const chunks: Buffer[] = []
-      request.on('data', (chunk: Buffer) => chunks.push(chunk))
-      request.on('end', () => {
-        asked.push({ headers: request.headers, body: JSON.parse(Buffer.concat(chunks).toString('utf8')) })
-        response.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body))
-      })
-    })
-    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
-    closing(server, held => held.close())
-    return { asked, origin: `http://127.0.0.1:${(server.address() as AddressInfo).port}` }
-  }
-
   const transcriber = (serve: SshRun, origin: string) => {
     const ran: (string | undefined)[] = []
     const reached: string[] = []
@@ -258,5 +259,81 @@ describe('transcribeWith', () => {
 
   it('answers that Hermes could not be reached when the post fails', async () => {
     expect(await transcriber(NATIVE, 'http://127.0.0.1:1').transcribe(RECORDING)).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
+  })
+})
+
+describe('writeWith', () => {
+  const NATIVE = out(`${JSON.stringify({ type: 'hello', protocol: 1, endpoint: { api_origin: 'http://127.0.0.1:4100', instance_id: 'i-1' } })}\n${JSON.stringify({ id: 1, ok: true, ticket: 'once' })}\n`)
+
+  function writing(serve: SshRun, origin: string, signal?: AbortSignal) {
+    const ran: (string | undefined)[] = []
+    const forwarded: [string, number][] = []
+    const write = writeWith(
+      async (args, { input }) => (ran.push(`${args.join(' ')} <- ${input?.trim()}`), serve),
+      async (from, ms) => (forwarded.push([from, ms]), origin),
+      signal
+    )
+    return { write, ran, forwarded }
+  }
+
+  it("sends the method, the path with its query and the JSON body, with a fresh native-http ticket and no Origin, and answers Hermes's status and body", async () => {
+    const gateway = await listener(200, { id: 'a1', schedule_display: '0 8 * * 1-5' })
+    const { write, ran, forwarded } = writing(NATIVE, gateway.origin)
+    expect(await write({ method: 'PUT', path: '/api/cron/jobs/a1?profile=rae', json: { updates: { schedule: '0 8 * * 1-5' } }, ms: 30_000 }))
+      .toEqual({ status: 200, body: { id: 'a1', schedule_display: '0 8 * * 1-5' } })
+    expect(ran).toEqual([`${SERVE_RAN} <- {"id":1,"purpose":"native-http"}`])
+    expect(forwarded, 'the relay is told how long Hermes may take').toEqual([['http://127.0.0.1:4100', 30_000]])
+    const [{ method, url, headers, body }] = gateway.asked as [(typeof gateway.asked)[number]]
+    expect([method, url]).toEqual(['PUT', '/api/cron/jobs/a1?profile=rae'])
+    expect(body).toEqual({ updates: { schedule: '0 8 * * 1-5' } })
+    expect(headers['x-hermes-gateway-ticket']).toBe('once')
+    expect(headers['content-type']).toBe('application/json')
+    expect(headers.origin, 'the gate refuses a ticket that comes with an Origin').toBeUndefined()
+  })
+
+  it('sends a POST with no body and no content type, and mints a new ticket for every write', async () => {
+    const gateway = await listener(409, { detail: 'Job is already running or was claimed by another scheduler' })
+    const { write, ran } = writing(NATIVE, gateway.origin)
+    const trigger = { method: 'POST', path: '/api/cron/jobs/a1/trigger?profile=rae', ms: 86_400_000 } as const
+    expect(await write(trigger)).toEqual({ status: 409, body: { detail: 'Job is already running or was claimed by another scheduler' } })
+    await write(trigger)
+    expect(ran).toHaveLength(2)
+    expect(gateway.asked.map(({ method, body }) => [method, body])).toEqual([['POST', undefined], ['POST', undefined]])
+    expect(gateway.asked[0]?.headers['content-type']).toBeUndefined()
+    expect(gateway.asked[0]?.headers['content-length']).toBe('0')
+  })
+
+  it('passes a 404 and a body that is not JSON through for the caller to read', async () => {
+    const server = createServer((_request, response) => response.writeHead(404).end('Not Found'))
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    closing(server, held => held.close())
+    const { write } = writing(NATIVE, `http://127.0.0.1:${(server.address() as AddressInfo).port}`)
+    expect(await write({ method: 'POST', path: '/x', ms: 1000 })).toEqual({ status: 404, body: null })
+  })
+
+  it('rejects when Hermes takes longer than the request allows', async () => {
+    const gateway = await listener(200, {}, new Promise(() => {}))
+    await expect(writing(NATIVE, gateway.origin).write({ method: 'POST', path: '/x', ms: 50 })).rejects.toThrow()
+  })
+
+  it('rejects the write that waits for Hermes when the route is disposed, and sends none after', async () => {
+    const gateway = await listener(200, {}, new Promise(() => {}))
+    const life = new AbortController()
+    const { write, ran } = writing(NATIVE, gateway.origin, life.signal)
+    const waiting = write({ method: 'POST', path: '/x', ms: 86_400_000 })
+    await until('Hermes to be asked', () => gateway.asked.length === 1)
+    life.abort()
+    await expect(waiting).rejects.toThrow()
+    await expect(write({ method: 'POST', path: '/x', ms: 1000 })).rejects.toThrow()
+    expect(ran, 'no ticket was minted for the write after').toHaveLength(1)
+  })
+
+  it.each<[string, SshRun]>([
+    ['a gateway that is absent', out({ type: 'error', error: { code: 'absent' } }, 5)],
+    ['a ssh that could not reach the machine', { ok: false, why: 'unreachable' }]
+  ])('rejects without a request on %s', async (_what, serve) => {
+    const gateway = await listener(200, {})
+    await expect(writing(serve, gateway.origin).write({ method: 'POST', path: '/x', ms: 1000 })).rejects.toThrow('Hermes minted no ticket for its HTTP API.')
+    expect(gateway.asked).toEqual([])
   })
 })

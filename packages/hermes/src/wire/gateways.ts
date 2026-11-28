@@ -11,7 +11,8 @@ import type { AddressInfo } from 'node:net'
 import { inspect } from 'node:util'
 import { gatewayHost, URL_FAILURES, type GatewayUrl, type UrlFailure } from '../domain/reach'
 import type { CheckOptions } from './check'
-import { DialError, dialWith, GATEWAY_PROTOCOL, HANDSHAKE_MS, sessionAuthorityOf, systemClock, TICKET_PREFIX, type Clock, type Endpoint, type Mint, type ReadHermes } from './link'
+import { requestOver } from './http'
+import { DialError, dialWith, GATEWAY_PROTOCOL, HANDSHAKE_MS, sessionAuthorityOf, systemClock, TICKET_PREFIX, type Clock, type Endpoint, type HttpAnswer, type Mint, type ReadHermes, type WriteHermes } from './link'
 import type { Route } from './remote'
 import { CANT_REACH, TRANSCRIBE_MS, TRANSCRIBE_PATH, transcribeBody, transcriptOf, type Transcribe } from './transcribe'
 
@@ -433,15 +434,18 @@ export function gatewaysByUrl(deps: GatewayDeps): Gateways {
           throw life.signal.aborted ? new DialError('dropped') : error
         }
       }
-      const read: ReadHermes = async path => {
+      /** One request with the address's sign-in. Hermes answers 401 when the sign-in was replaced, and then nothing was done, so it is sent once more with the new one. */
+      const signed = async (ask: (bearer: string) => Promise<HttpAnswer>): Promise<HttpAnswer> => {
         const held = loginOf(url)
         const bearer = await held.bearer()
-        const answer = await send('GET', `${url}${path}`, { bearer, signal: life.signal })
+        const answer = await ask(bearer)
         if (answer.status !== 401) return answer
         await held.replaceRefused(bearer)
-        return send('GET', `${url}${path}`, { bearer: await held.bearer(), signal: life.signal })
+        return ask(await held.bearer())
       }
-      return { dial: dialWith(minted), read, transcribe: transcribeAt(url), dispose: () => life.abort() }
+      const read: ReadHermes = path => signed(bearer => send('GET', `${url}${path}`, { bearer, signal: life.signal }))
+      const write: WriteHermes = request => signed(bearer => requestOver(new URL(`${url}${request.path}`), { authorization: `Bearer ${bearer}` }, request, life.signal))
+      return { dial: dialWith(minted), read, write, transcribe: transcribeAt(url), dispose: () => life.abort() }
     },
 
     keepOnly: async urls => {

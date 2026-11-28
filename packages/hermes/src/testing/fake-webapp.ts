@@ -161,6 +161,7 @@ export async function fakeWebapp(
   const pending = new Map<string, { readonly challenge: string; readonly redirect: string; readonly state: string; readonly expires: number }>()
   const codes = new Map<string, { readonly challenge: string; readonly expires: number }>()
   const signIns = new Map<string, string | null>()
+  const signedInBy = (bearer: string | null) => bearer !== null && [...signIns.values()].includes(bearer)
 
   const secret = (): string => {
     const made = randomBytes(32).toString('base64url')
@@ -234,6 +235,9 @@ export async function fakeWebapp(
       const audio = /^data:audio\/[^,]*;base64,(.+)$/.exec(String(body.data_url ?? ''))?.[1]
       return audio === undefined ? refused(400, 'Invalid audio payload') : { status: 200, json: { ok: true, transcript: `heard ${Buffer.from(audio, 'base64').byteLength} bytes`, provider: 'fake' } }
     },
+    /** A routine's write routes (hermes_cli/web_routers/cron.py). This Hermes answers what it was sent, so a test reads the request off the reply. */
+    'PUT /api/cron/jobs/a1': ({ bearer, query, body }) => (signedInBy(bearer) ? { status: 200, json: { id: 'a1', profile: query.get('profile'), received: body } } : refused(401, 'Unauthorized')),
+    'POST /api/cron/jobs/a1/trigger': ({ bearer, query }) => (signedInBy(bearer) ? { status: 200, json: { id: 'a1', profile: query.get('profile'), last_status: 'ok' } } : refused(401, 'Unauthorized')),
     [`GET ${BOARD_PATH}`]: ({ bearer }) =>
       bearer !== null && [...signIns.values()].includes(bearer)
         ? { status: 200, json: { columns: [{ name: 'todo', tasks: [] }] } }

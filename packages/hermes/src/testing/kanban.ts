@@ -1,5 +1,5 @@
 import { BOARD_PATH, parseTaskBoard, taskPath } from '../domain/tasks'
-import type { ReadHermes } from '../wire/link'
+import type { ReadHermes, WriteHermes } from '../wire/link'
 import type { CronScript } from './fixture'
 
 export interface Kanban {
@@ -38,4 +38,9 @@ export function fixtureRead({ kanban, cron }: { readonly kanban?: Kanban | undef
     const history = cron?.history
     return job !== null && history !== undefined && Object.hasOwn(history, job) ? { status: 200, body: history[job] } : MISSING
   }
+}
+
+/** The fixture's Hermes takes no write yet: every path is a 404, as it is on a Hermes without that route. */
+export function fixtureWrite(): WriteHermes {
+  return async () => MISSING
 }

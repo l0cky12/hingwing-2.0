@@ -311,6 +311,28 @@ describe('the route to a gateway address, against the fake Webapp', () => {
     expect(await route.read('/api/plugins/kanban/missing'), 'a status passes through for the caller to read').toEqual({ status: 404, body: { detail: 'Not Found' } })
   })
 
+  it("writes to the gateway's HTTP API with the sign-in's bearer: the method, the path and query, and the JSON body, and refreshes once when Hermes no longer takes it", async () => {
+    const web = await webapp('ok')
+    const route = routeOf(await signedIn(web), web.url)
+    const put = { method: 'PUT', path: '/api/cron/jobs/a1?profile=rae', json: { updates: { schedule: 'every 30m' } }, ms: 30_000 } as const
+    expect(await route.write(put)).toEqual({ status: 200, body: { id: 'a1', profile: 'rae', received: { updates: { schedule: 'every 30m' } } } })
+    expect(await route.write({ method: 'POST', path: '/api/cron/jobs/a1/trigger?profile=rae', ms: 86_400_000 })).toMatchObject({ status: 200, body: { last_status: 'ok' } })
+    expect(count(web, 'POST /auth/native/refresh')).toBe(0)
+
+    web.lapse()
+    expect(await route.write(put)).toMatchObject({ status: 200 })
+    expect(count(web, 'POST /auth/native/refresh')).toBe(1)
+    expect(await route.write({ method: 'POST', path: '/api/cron/jobs/zz/trigger', ms: 1000 }), 'a status passes through for the caller to read').toEqual({ status: 404, body: { detail: 'Not Found' } })
+  })
+
+  it('rejects a write for a sign-in Hermes ended, and one that the route disposal cuts short', async () => {
+    const web = await webapp('ok')
+    const route = routeOf(await signedIn(web), web.url)
+    web.signOut()
+    await expect(route.write({ method: 'POST', path: '/api/cron/jobs/a1/trigger', ms: 1000 })).rejects.toMatchObject({ kind: 'signed-out' })
+    expect(count(web, 'POST /api/cron/jobs/a1/trigger'), 'the refused bearer was tried once, and not again on a sign-in that is gone').toBe(1)
+  })
+
   it('rejects a read for a sign-in Hermes ended', async () => {
     const web = await webapp('ok')
     const route = routeOf(await signedIn(web), web.url)

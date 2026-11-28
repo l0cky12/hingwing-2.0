@@ -41,7 +41,7 @@ import { parseCatalog, parseEvent, parseServerRequest, type ParsedEvent } from '
 
 export type { Command, Outcome, Refusal, ResultOf } from './domain/command'
 export type { Upload } from './actor'
-export type { Clock, Dialer, HttpAnswer, ReadHermes, WireSocket } from './wire/link'
+export type { Clock, Dialer, HermesRequest, HttpAnswer, ReadHermes, WireSocket, WriteHermes } from './wire/link'
 export { checkTarget, type CheckOptions, type CheckResult } from './wire/check'
 export { gatewaysByUrl, memoryKeep, type GatewayDeps, type Gateways, type Keep, type UrlCheckResult } from './wire/gateways'
 export { DialError } from './wire/link'

@@ -4,10 +4,11 @@
  * one on another machine. Nothing here outlives a dial: the `--serve` run is sent one line and ends.
  */
 import { CHECK_FAILURES } from '../domain/reach'
-import { DialError, dialWith, EXIT_KINDS, GATEWAY_PROTOCOL, TICKET_PREFIX, type Clock, type Mint, type ReadHermes } from './link'
+import { requestWithTicket } from './http'
+import { DialError, dialWith, EXIT_KINDS, GATEWAY_PROTOCOL, TICKET_PREFIX, type Clock, type Mint, type ReadHermes, type WriteHermes } from './link'
 import type { Route } from './remote'
 import { ASK_INTERACTIVE, ASK_NATIVE_HTTP, ATTACH, attachedOf, httpTicketOf, NOT_FOUND, originOf, PROBE, probeOf, runTool, SERVE, servedOf, type HermesArgs, type ProbeFailure, type SshRun } from './ssh'
-import { CANT_REACH, CANT_TRANSCRIBE, postWithTicket, transcriptOf, type Transcribe } from './transcribe'
+import { CANT_REACH, CANT_TRANSCRIBE, TRANSCRIBE_MS, TRANSCRIBE_PATH, transcribeBody, transcriptOf, type Transcribe } from './transcribe'
 
 /** How a hermes command runs on the gateway's machine: `runTool` here, `sshExec` on another. */
 export type RunHermes = (args: HermesArgs, options: { readonly deadlineMs: number; readonly input?: string }) => Promise<SshRun>
@@ -106,7 +107,9 @@ export function transcribeWith(run: RunHermes, reach: (origin: string) => Promis
     const origin = originOf(result.stdout)
     if (served.is === 'failed' || origin === null) return CANT_REACH
     try {
-      const { status, body } = await postWithTicket(await reach(origin), served.ticket, recording, signal)
+      const { status, body } = await requestWithTicket(
+        await reach(origin), served.ticket, { method: 'POST', path: TRANSCRIBE_PATH, json: transcribeBody(recording), ms: TRANSCRIBE_MS }, signal
+      )
       return transcriptOf(status, body)
     } catch {
       return CANT_REACH
@@ -114,12 +117,18 @@ export function transcribeWith(run: RunHermes, reach: (origin: string) => Promis
   }
 }
 
+/** One `native-http` ticket from `--serve`, with the origin of the gateway's HTTP listener it is good for. */
+async function httpTicket(run: RunHermes): Promise<NonNullable<ReturnType<typeof httpTicketOf>>> {
+  const serve = await run(SERVE, { deadlineMs: SERVE_MS, input: ASK_NATIVE_HTTP })
+  const minted = serve.ok ? httpTicketOf(serve.code, serve.stdout) : null
+  if (minted === null) throw new Error('Hermes minted no ticket for its HTTP API.')
+  return minted
+}
+
 /** A fresh ticket per GET: Hermes's ticket is single use and lives 30 seconds (gateway-ssh-clients.md, client rule 3). */
 export function readWith(run: RunHermes, forward: (origin: string) => Promise<string>, fetcher: typeof fetch = fetch): ReadHermes {
   return async path => {
-    const serve = await run(SERVE, { deadlineMs: SERVE_MS, input: ASK_NATIVE_HTTP })
-    const minted = serve.ok ? httpTicketOf(serve.code, serve.stdout) : null
-    if (minted === null) throw new Error('Hermes minted no ticket for its HTTP API.')
+    const minted = await httpTicket(run)
     const response = await fetcher(`${await forward(minted.origin)}${path}`, {
       // Never followed, so the ticket goes only to the address the gateway named.
       redirect: 'manual',
@@ -130,14 +139,27 @@ export function readWith(run: RunHermes, forward: (origin: string) => Promise<st
   }
 }
 
+/**
+ * A fresh ticket per write, as for a read, sent over `node:http` (see `requestWithTicket`). `forward` gets the request's
+ * deadline, which a relay keeps its far side silent for. `signal` cancels the writes still waiting for Hermes.
+ */
+export function writeWith(run: RunHermes, forward: (origin: string, ms: number) => Promise<string>, signal?: AbortSignal): WriteHermes {
+  return async request => {
+    signal?.throwIfAborted()
+    const minted = await httpTicket(run)
+    return requestWithTicket(await forward(minted.origin, request.ms), minted.ticket, request, signal)
+  }
+}
+
 /** The gateway of the Hermes on this computer. */
 export function liveRoute(options: { readonly hermesBin?: string; readonly clock?: Clock } = {}): Route {
-  const { signal } = new AbortController()
+  const life = new AbortController()
+  const { signal } = life
   const run: RunHermes = async (args, asked) => {
     const tool = await runTool(options.hermesBin ?? 'hermes', args, { ...asked, signal, ...(options.clock === undefined ? {} : { clock: options.clock }) })
     if (tool.end === 'exit') return { ok: true, code: tool.code, stdout: tool.stdout }
     return { ok: true, code: EXIT_AS_LOCATOR[tool.end], stdout: '' }
   }
   const here = async (url: string) => url
-  return { dial: dialWith(mintWith(run, { machine: null, forward: here, unprobed: 'attach' })), read: readWith(run, here), transcribe: transcribeWith(run, here), dispose: () => {} }
+  return { dial: dialWith(mintWith(run, { machine: null, forward: here, unprobed: 'attach' })), read: readWith(run, here), write: writeWith(run, here, signal), transcribe: transcribeWith(run, here), dispose: () => life.abort() }
 }

@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { isDeepStrictEqual } from 'node:util'
-import type { Hermes, HttpAnswer, PickedRoute } from '@highwing/hermes'
+import type { Hermes, HermesRequest, HttpAnswer, PickedRoute } from '@highwing/hermes'
 import type { AttachmentId, BotActivities, Bots, CatalogPlugin, CommandOutcome, Exported, Groups, Link, OpenChat, Recording, RelayDesk, ServerId, Session, SessionId, Sidebar, SkillLibrary, SlashCatalog, SshHost } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -659,8 +659,10 @@ const switchable = (hermes: Hermes) => ownConnection({
 
 function harness(ownerOf?: (hermes: Hermes) => ConnectionOwner) {
   const reads: string[] = []
+  const writes: HermesRequest[] = []
   let answer: HttpAnswer = { status: 404, body: null }
   const read = async (path: string) => (reads.push(path), answer)
+  const write = async (request: HermesRequest) => (writes.push(request), answer)
   const listeners = new Map<string, (event: IpcEvent, ...args: unknown[]) => void>()
   const handlers = new Map<string, (event: IpcEvent, ...args: unknown[]) => unknown>()
   const ipc: IpcMainLike = {
@@ -773,7 +775,7 @@ function harness(ownerOf?: (hermes: Hermes) => ConnectionOwner) {
   const appearance = feed<Appearance>(DEFAULT_APPEARANCE)
   const sources: AttachSources = { pick: async () => ['/home/me/error.png', '/home/me/big.zip'], pasted: async () => ({ name: 'Pasted image 1.png', bytes: PNG }) }
   const served = serveWindows(
-    (ownerOf ?? (held => pinnedConnection(held, read, HEARD)))(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) },
+    (ownerOf ?? (held => pinnedConnection(held, read, write, HEARD)))(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) },
     { keep: draft => void kept.push(draft), load: async () => stored }, pane,
     { pick: async (bot, live) => (picked.push(bot), lives.push(live), { ok: true, value: 'cancelled' }), choose: async () => (picked.push('chosen'), { ok: true, value: PICTURE }) },
     { store, sources }, saver, { mode, theme, accent, sidebarWidth, sendKey, showWork, spellCheck, snoozes, notices, onClose, appearance },
@@ -798,7 +800,7 @@ function harness(ownerOf?: (hermes: Hermes) => ConnectionOwner) {
   }
   return {
     listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, loaded, kept, picked, lives, stored, previewed, toPane, staged, served,
-    reads, answers: (next: HttpAnswer) => void (answer = next), saves, exportsAs, setCatalog, setBots, setOpen, mode, theme, accent, sidebarWidth, sendKey, showWork, spellCheck, snoozes, notices, onClose, appearance, intro
+    reads, writes, answers: (next: HttpAnswer) => void (answer = next), saves, exportsAs, setCatalog, setBots, setOpen, mode, theme, accent, sidebarWidth, sendKey, showWork, spellCheck, snoozes, notices, onClose, appearance, intro
   }
 }
 
@@ -909,6 +911,7 @@ describe('serveWindows', () => {
       servers: feed(NO_SERVERS),
       hermes: null,
       read: async () => { throw new Error('the test never reads') },
+      write: async () => { throw new Error('the test never writes') },
       transcribe: HEARD,
       close: async () => {},
       run: async (command: { readonly do: string }) => {
