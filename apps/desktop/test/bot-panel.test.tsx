@@ -46,11 +46,11 @@ describe("a bot chat's top bar", () => {
     expect(bar()).toMatch(/<h1><span class="brand">Hermes<\/span> Bot Chat<\/h1>/)
   })
 
-  it('holds only New chat at its right end', () => {
+  it('holds only the New chat pencil at its right end', () => {
     const target: Target = { kind: 'remote', host: 'hermes-host.example-tailnet.ts.net' as SshHost }
     topics.values = { ...topics.values, screen: { bot: RAE, screen: { state: 'off' } } }
     const html = renderToStaticMarkup(<TopBar target={target} />)
-    expect(html.slice(html.indexOf('</h1>'))).toMatch(/^<\/h1><button type="button" aria-keyshortcuts="Control\+N">New chat<\/button><\/header>/)
+    expect(html.slice(html.indexOf('</h1>'))).toMatch(/^<\/h1><button type="button" class="pencil" aria-label="New chat" title="New chat \(Ctrl\+N\)" aria-keyshortcuts="Control\+N"><svg[^>]*>.*<\/svg><\/button><\/header>$/)
   })
 
   it('draws no bot button over a group chat', () => {

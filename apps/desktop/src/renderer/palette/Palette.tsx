@@ -1,5 +1,5 @@
 import { shownChat, type Target } from '@highwing/hermes/domain'
-import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type Dispatch, type KeyboardEvent, type MouseEvent, type SetStateAction } from 'react'
 import type { WindowCommand } from '../../ipc-contract'
 import { Avatar } from '../bots/Avatar'
 import { agoOf } from '../chats/chat-list'
@@ -67,8 +67,8 @@ export function Results({ view, active, listId, now, onPick }: ResultsProps) {
   )
 }
 
-/** A sheet to show: where focus was when Ctrl+K opened it, and the query it opens with. */
-interface Opened {
+/** A sheet to show: where focus was when Ctrl+K or Search opened it, and the query it opens with. */
+export interface Opened {
   readonly back: Element | null
   readonly query: string
   /** Why main refused the pick the sheet came back for. */
@@ -178,19 +178,27 @@ function Sheet({ opened, target, settingsOpen, onClose, onPick }: SheetProps) {
   )
 }
 
-export function Palette({ target, settingsOpen }: { readonly target: Target | null; readonly settingsOpen: boolean }) {
-  const [opened, setOpened] = useState<Opened | null>(null)
+export const paletteFrom = (back: Element | null): Opened => ({ back, query: '', note: null })
+
+interface PaletteProps {
+  readonly target: Target | null
+  readonly settingsOpen: boolean
+  readonly opened: Opened | null
+  readonly onOpened: Dispatch<SetStateAction<Opened | null>>
+}
+
+export function Palette({ target, settingsOpen, opened, onOpened: setOpened }: PaletteProps) {
   const shown = opened !== null
   useEffect(() => {
     if (shown) return
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
       if (!isShortcut(event, 'palette') || modalOpen()) return
       event.preventDefault()
-      if (!event.repeat) setOpened({ back: document.activeElement, query: '', note: null })
+      if (!event.repeat) setOpened(paletteFrom(document.activeElement))
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [shown])
+  }, [shown, setOpened])
   // The sheet goes before main answers: Hermes can take a while to open a bot, and while the sheet is modal the chat a pick opens cannot take focus.
   const pick = (back: Element | null, command: WindowCommand, query: string) => {
     setOpened(null)

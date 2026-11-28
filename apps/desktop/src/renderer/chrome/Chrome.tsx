@@ -9,7 +9,8 @@ import { botIn } from '../bots/roster-view'
 import { openChatName } from '../chats/chat-list'
 import { GroupMembers } from '../groups/GroupThread'
 import { faceOf } from '../groups/group-rows'
-import { newChatIn, newChatKeys } from '../new-chat'
+import { newChatIn } from '../new-chat'
+import { NewChatButton } from './SidebarHead'
 import { run, useTopic } from '../store'
 
 /**
@@ -27,7 +28,7 @@ export function Bar({ where, shown, children, ref }: { readonly where: string | 
   )
 }
 
-function useNewChat(bar: RefObject<HTMLElement | null>) {
+function useNewChatKey(bar: RefObject<HTMLElement | null>) {
   const open = useTopic('open')
   const start = useCallback(() => void run(newChatIn(open, crypto.randomUUID())), [open])
   useEffect(() => {
@@ -39,7 +40,6 @@ function useNewChat(bar: RefObject<HTMLElement | null>) {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [start, bar])
-  return start
 }
 
 function useOpenChat() {
@@ -73,7 +73,7 @@ function useOpenGroup() {
 
 export function TopBar({ target }: { readonly target: Target | null }) {
   const bar = useRef<HTMLElement>(null)
-  const startChat = useNewChat(bar)
+  useNewChatKey(bar)
   const { bot, name, title } = useOpenChat()
   const group = useOpenGroup()
   const { panel, open, close } = useBotPanel()
@@ -97,9 +97,7 @@ export function TopBar({ target }: { readonly target: Target | null }) {
   return (
     <>
       <Bar ref={bar} where={where === '' ? null : where} shown={shown}>
-        {group === null
-          ? <button type="button" aria-keyshortcuts={newChatKeys(MAC).aria} onClick={startChat}>New chat</button>
-          : <GroupMembers faces={group.faces} />}
+        {group === null ? <NewChatButton /> : <GroupMembers faces={group.faces} />}
       </Bar>
       <BotPanel panel={panel} current={bot} onClose={close} />
     </>
