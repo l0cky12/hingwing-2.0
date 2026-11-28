@@ -26,7 +26,8 @@ export const ACTIONS: readonly ActionRow[] = [
   {
     id: 'stop', label: 'Stop', keys: null,
     offer: ({ open, openSession: session }) => {
-      const sessionId = shownChat(open)?.sessionId ?? null
+      const shown = shownChat(open)
+      const sessionId = shown?.kind === 'run' ? null : shown?.sessionId ?? null
       return sessionId !== null && session?.run.state === 'running' && session.sync.state === 'live' ? { do: 'stop', sessionId } : null
     }
   },

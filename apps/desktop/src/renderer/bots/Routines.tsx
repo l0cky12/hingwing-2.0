@@ -14,7 +14,7 @@ export interface RoutinesProps {
   readonly onControl: (bot: BotId, routine: RoutineId, action: RoutineAction) => Promise<CommandOutcome<Routine | null>>
   /** Asks Hermes for a routine's newest runs. */
   readonly onRuns: (bot: BotId, routine: RoutineId) => Promise<CommandOutcome<readonly RoutineRun[]>>
-  /** Opens the chat of a run, read-only. */
+  /** Opens the chat of a run, read-only, in the bot whose profile holds it. */
   readonly onOpenRun: (bot: BotId, sessionId: SessionId) => void
 }
 
@@ -44,7 +44,7 @@ export function Routines({ bot, name, revision, onList, onControl, onRuns, onOpe
     })
   }
 
-  const history = useMemo((): RunHistory => ({ read: routine => onRuns(bot, routine), onOpen: sessionId => onOpenRun(bot, sessionId) }), [bot, onRuns, onOpenRun])
+  const history = useMemo((): RunHistory => ({ bot, revision, read: routine => onRuns(bot, routine), onOpen: onOpenRun }), [bot, revision, onRuns, onOpenRun])
   const shown = listed?.bot === bot ? listed : null
   return (
     <>
@@ -64,10 +64,13 @@ export function Routines({ bot, name, revision, onList, onControl, onRuns, onOpe
 }
 
 export interface RunHistory {
+  readonly bot: BotId
+  /** The `routines` topic. An open list is asked for again whenever it changes, so a run that ends there shows how it went. */
+  readonly revision: number | undefined
   /** Hermes's newest runs of the routine. */
   readonly read: (routine: RoutineId) => Promise<CommandOutcome<readonly RoutineRun[]>>
   /** Opens the chat of a run. */
-  readonly onOpen: (sessionId: SessionId) => void
+  readonly onOpen: (bot: BotId, sessionId: SessionId) => void
 }
 
 export interface RoutinesListProps {
@@ -121,8 +124,8 @@ function PastRuns({ id, routine, name, history }: { readonly id: string; readonl
     let current = true
     void read.current(routine).then(outcome => { if (current) setListed(outcome) })
     return () => { current = false }
-  }, [routine])
-  return <RunsList id={id} name={name} view={runsViewOf(listed, { now: Date.now(), timeZone: TIME_ZONE })} onOpen={history.onOpen} />
+  }, [routine, history.revision])
+  return <RunsList id={id} name={name} view={runsViewOf(listed, { now: Date.now(), timeZone: TIME_ZONE }, history.bot)} onOpen={history.onOpen} />
 }
 
 export function RunsList({ id, name, view, onOpen }: { readonly id: string; readonly name: string; readonly view: RunsView; readonly onOpen: RunHistory['onOpen'] }) {
@@ -146,7 +149,7 @@ function RunItem({ run, onOpen }: { readonly run: RunRow; readonly onOpen: RunHi
     <li className={`run run-${run.outcome}`}>
       <span className="run-state">{run.state}</span>
       <span className="run-when">{run.took === null ? run.when : `${run.when} · ${run.took}`}</span>
-      {chat !== null && <button type="button" aria-label={`Open run from ${run.when}`} onClick={() => onOpen(chat)}>Open run</button>}
+      {chat !== null && <button type="button" aria-label={`Open run from ${run.when}`} onClick={() => onOpen(chat.bot, chat.sessionId)}>Open run</button>}
       {run.why !== null && <span className="run-why">{run.why}</span>}
     </li>
   )

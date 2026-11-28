@@ -21,7 +21,7 @@ describe('readRoutineRuns', () => {
   it('answers the runs Hermes sent, as the list draws them', async () => {
     expect(await readRoutineRuns(answering({ status: 200, body: RUNS }), BOT, ROUTINE)).toEqual({
       ok: true,
-      value: [{ key: 'local-s1', outcome: { is: 'succeeded' }, at: 1_000_000, seconds: 42, chat: 'local-s1' }]
+      value: [{ key: 'local-s1', outcome: { is: 'succeeded' }, at: 1_000_000, seconds: 42, chat: 'local-s1', owner: null }]
     })
   })
 

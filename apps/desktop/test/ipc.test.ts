@@ -1415,7 +1415,7 @@ describe("the routine runs call", () => {
     const rig = harness()
     rig.answers({ status: 200, body: RUNS })
     await expect(rig.handlers.get(CHANNEL.routineRuns)!(rig.event(), 'rae', 'a1')).resolves.toEqual({
-      ok: true, value: [{ key: 'local-s1', outcome: { is: 'succeeded' }, at: 1_000_000, seconds: 42, chat: 'local-s1' }]
+      ok: true, value: [{ key: 'local-s1', outcome: { is: 'succeeded' }, at: 1_000_000, seconds: 42, chat: 'local-s1', owner: null }]
     })
     expect(rig.reads).toEqual(['/api/cron/jobs/a1/runs?profile=rae&limit=20'])
   })

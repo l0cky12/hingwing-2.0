@@ -116,6 +116,8 @@ describe('the actions', () => {
     expect(offered('stop', sceneOf([], { openSession: running('offline') })), 'offline').toBeNull()
     expect(offered('stop', sceneOf([], { openSession: idle })), 'idle').toBeNull()
     expect(offered('stop', sceneOf([], { openSession: running('live'), open: showing(null) })), 'no chat made yet').toBeNull()
+    const run: OpenChat = { shown: { kind: 'run', bot: RESEARCH, sessionId: OPEN }, opening: null, missing: null }
+    expect(offered('stop', sceneOf([], { openSession: running('live'), open: run })), 'a routine\'s run, shown to read').toBeNull()
   })
 
   it('offers no Stop and a new chat with the bot behind a group chat while one is open, and leaves no chat out as the open one', () => {

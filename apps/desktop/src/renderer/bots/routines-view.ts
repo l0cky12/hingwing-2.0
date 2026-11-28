@@ -1,4 +1,4 @@
-import type { CommandOutcome, Routine, RoutineId, RoutineRun, RunOutcome, SessionId } from '@highwing/hermes/domain'
+import type { BotId, CommandOutcome, Routine, RoutineId, RoutineRun, RunOutcome, SessionId } from '@highwing/hermes/domain'
 import { whenWords, type ViewClock } from '@highwing/thread'
 
 export interface RoutineRow { readonly id: RoutineId; readonly name: string; readonly when: string; readonly paused: boolean }
@@ -124,8 +124,8 @@ export interface RunRow {
   readonly when: string
   readonly took: string | null
   readonly why: string | null
-  /** The chat that opens it. null: Hermes kept none. */
-  readonly chat: SessionId | null
+  /** The chat that opens it, and the bot whose profile holds it. null: Hermes kept none. */
+  readonly chat: { readonly sessionId: SessionId; readonly bot: BotId } | null
 }
 
 export type RunsView =
@@ -134,7 +134,8 @@ export type RunsView =
   | { readonly state: 'empty'; readonly hint: string }
   | { readonly state: 'listed'; readonly rows: readonly RunRow[] }
 
-export function runsViewOf(listed: CommandOutcome<readonly RoutineRun[]> | null, clock: ViewClock): RunsView {
+/** `bot`: the routine's bot, whose profile holds a run's chat when Hermes doesn't name another. */
+export function runsViewOf(listed: CommandOutcome<readonly RoutineRun[]> | null, clock: ViewClock, bot: BotId): RunsView {
   if (listed === null) return { state: 'loading' }
   if (!listed.ok) return { state: 'refused', message: listed.refusal.message }
   if (listed.value.length === 0) return { state: 'empty', hint: NO_RUNS }
@@ -142,7 +143,7 @@ export function runsViewOf(listed: CommandOutcome<readonly RoutineRun[]> | null,
     state: 'listed',
     rows: listed.value.map(run => ({
       key: run.key, outcome: run.outcome.is, state: OUTCOME_WORDS[run.outcome.is], when: whenWords(run.at, clock),
-      took: run.seconds === null ? null : tookWords(run.seconds), why: reasonOf(run.outcome), chat: run.chat
+      took: run.seconds === null ? null : tookWords(run.seconds), why: reasonOf(run.outcome), chat: run.chat === null ? null : { sessionId: run.chat, bot: run.owner ?? bot }
     }))
   }
 }

@@ -20,13 +20,25 @@ describe('runsPath', () => {
 
 describe('parseRoutineRuns', () => {
   it('reads a session that finished with its final reply as a succeeded run of its length, opening its chat', () => {
-    expect(parseRoutineRuns(runs(session('cron_a1_1')))).toEqual([{ key: 'cron_a1_1', outcome: { is: 'succeeded' }, at: 1_000_000, seconds: 42, chat: 'cron_a1_1' }])
+    expect(parseRoutineRuns(runs(session('cron_a1_1')))).toEqual([{ key: 'cron_a1_1', outcome: { is: 'succeeded' }, at: 1_000_000, seconds: 42, chat: 'cron_a1_1', owner: null }])
   })
 
   it('reads a session that is still active as running, with no length yet', () => {
     expect(parseRoutineRuns(runs(session('s', { ended_at: null, end_reason: null, is_active: true })))).toEqual([
-      { key: 's', outcome: { is: 'running' }, at: 1_000_000, seconds: null, chat: 's' }
+      { key: 's', outcome: { is: 'running' }, at: 1_000_000, seconds: null, chat: 's', owner: null }
     ])
+  })
+
+  it.each<[string, object, string]>([
+    ['the scheduler still holds, though quiet for over five minutes', { scheduler_owned: true, is_active: false }, 'running'],
+    ['the scheduler no longer holds, though active a moment ago', { scheduler_owned: false, is_active: true }, 'unknown'],
+    ['an older Hermes calls active and names no owner', { is_active: true }, 'running']
+  ])('reads an open session %s by Hermes\'s scheduler first', (_what, extra, is) => {
+    expect(parseRoutineRuns(runs(session('s', { ended_at: null, end_reason: null, ...extra })))?.[0]?.outcome).toEqual({ is })
+  })
+
+  it('names the profile Hermes says holds the run, and none for a row without a chat', () => {
+    expect(parseRoutineRuns(runs(session('s', { profile: 'default' }), session('t', { profile: '' }), output('x', 'OK', 2000, { profile: 'default' })))?.map(run => run.owner)).toEqual(['default', null, null])
   })
 
   it('reads a session that ended without a final reply as failed, and says why', () => {
@@ -56,6 +68,7 @@ describe('parseRoutineRuns', () => {
     ['FAILED with its error', 'FAILED · Provider returned 429: rate limited', { is: 'failed', why: 'Provider returned 429: rate limited' }],
     ['ERROR with its error', 'ERROR · boom', { is: 'failed', why: 'boom' }],
     ['FAILED with nothing after it', 'FAILED', { is: 'failed', why: NO_REASON }],
+    ['FAILED with Hermes\'s stand-in title', 'FAILED · Script-only run', { is: 'failed', why: NO_REASON }],
     ['CANCELLED with its reason', 'CANCELLED · job removed while running', { is: 'cancelled', why: 'job removed while running' }],
     ['CANCELLED with nothing after it', 'CANCELLED', { is: 'cancelled', why: null }],
     ['MISSED with its reason', 'MISSED · missed ×3', { is: 'missed', why: 'missed ×3' }],
@@ -63,7 +76,7 @@ describe('parseRoutineRuns', () => {
     ['a preview that only starts like a label', 'OKAY · fine', { is: 'unknown' }],
     ['a label in lower case', 'failed · nope', { is: 'unknown' }]
   ])('reads an output doc titled with %s', (_what, title, outcome) => {
-    expect(parseRoutineRuns(runs(output('x', title)))).toEqual([{ key: 'cron_output:a1:x', outcome, at: 2_000_000, seconds: null, chat: null }])
+    expect(parseRoutineRuns(runs(output('x', title)))).toEqual([{ key: 'cron_output:a1:x', outcome, at: 2_000_000, seconds: null, chat: null, owner: null }])
   })
 
   it('gives a script-only row no length even when Hermes stamps start and end alike, and no chat', () => {
@@ -105,6 +118,6 @@ describe('parseRoutineRuns', () => {
     const parsed = parseRoutineRuns(runs(session('s', sensitive), output('x', 'FAILED · rate limited', 2000, sensitive)))
     const text = JSON.stringify(parsed)
     for (const secret of ['chat-secret-1', 'user-secret-2', 'origin-secret-3', 'prompt-secret-4', 'config-secret-5', 'preview-secret-6']) expect(text).not.toContain(secret)
-    expect(parsed?.map(run => Object.keys(run).sort())).toEqual([['at', 'chat', 'key', 'outcome', 'seconds'], ['at', 'chat', 'key', 'outcome', 'seconds']])
+    expect(parsed?.map(run => Object.keys(run).sort())).toEqual([['at', 'chat', 'key', 'outcome', 'owner', 'seconds'], ['at', 'chat', 'key', 'outcome', 'owner', 'seconds']])
   })
 })

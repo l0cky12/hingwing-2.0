@@ -27,6 +27,8 @@ export interface RoutineRun {
   readonly seconds: number | null
   /** The run's chat. null: Hermes kept no session for it. */
   readonly chat: SessionId | null
+  /** The profile Hermes says holds the run's chat, which an older Hermes may put outside the routine's bot. null: it doesn't say. */
+  readonly owner: BotId | null
 }
 
 export const RUNS_SHOWN = 20
@@ -36,18 +38,22 @@ export const runsPath = (routine: RoutineId, bot: BotId): string =>
 
 export const NO_REASON = 'Hermes gave no reason.'
 
+/** The title Hermes puts after a status when a script-only run left neither an error nor an output (`_execution_status_title`). */
+const NO_OUTPUT_TITLE = 'Script-only run'
+
 const RUNNING: RunOutcome = { is: 'running' }
 const SUCCEEDED: RunOutcome = { is: 'succeeded' }
 const UNKNOWN: RunOutcome = { is: 'unknown' }
 
-const reasonOrNull = (rest: string): string | null => (rest === '' ? null : rest)
+const reasonOrNull = (rest: string): string | null => (rest === '' || rest === NO_OUTPUT_TITLE ? null : rest)
+const failure = (rest: string): RunOutcome => ({ is: 'failed', why: reasonOrNull(rest) ?? NO_REASON })
 
 /** The status words Hermes puts before ` · ` in a row's title (`_execution_status_title`, `_cron_output_status_label`). */
 const LABELLED: ReadonlyMap<string, (rest: string) => RunOutcome> = new Map<string, (rest: string) => RunOutcome>([
   ['COMPLETED', () => SUCCEEDED],
   ['OK', () => SUCCEEDED],
-  ['FAILED', rest => ({ is: 'failed', why: rest === '' ? NO_REASON : rest })],
-  ['ERROR', rest => ({ is: 'failed', why: rest === '' ? NO_REASON : rest })],
+  ['FAILED', failure],
+  ['ERROR', failure],
   ['CANCELLED', rest => ({ is: 'cancelled', why: reasonOrNull(rest) })],
   ['MISSED', rest => ({ is: 'missed', why: reasonOrNull(rest) })]
 ])
@@ -70,16 +76,23 @@ type Obj = Readonly<Record<string, unknown>>
 const isObject = (value: unknown): value is Obj => value !== null && typeof value === 'object' && !Array.isArray(value)
 const seconds = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0
 
+/**
+ * Whether a session's run is still going. `scheduler_owned` is Hermes's own answer, from the execution the scheduler
+ * holds. A Hermes that predates it says only `is_active`, which is recent activity within five minutes.
+ */
+const running = (row: Obj): boolean => (typeof row.scheduler_owned === 'boolean' ? row.scheduler_owned : row.is_active === true)
+
 function sessionRow(key: string, row: Obj, started: number): RoutineRun {
   const title = typeof row.title === 'string' ? row.title : ''
   const ended = seconds(row.ended_at) && row.ended_at >= started ? row.ended_at : null
-  const cancelled = title.startsWith('CANCELLED' + SEPARATOR) ? outcomeOfTitle(title) : null
-  const outcome = cancelled ?? (row.is_active === true ? RUNNING : typeof row.end_reason === 'string' ? ENDED.get(row.end_reason) ?? UNKNOWN : UNKNOWN)
-  return { key, outcome, at: started * 1000, seconds: ended === null ? null : ended - started, chat: key as SessionId }
+  const verdict = typeof row.end_reason === 'string' ? ENDED.get(row.end_reason) : undefined
+  const outcome = title.startsWith('CANCELLED' + SEPARATOR) ? outcomeOfTitle(title) : verdict ?? (running(row) ? RUNNING : UNKNOWN)
+  const owner = typeof row.profile === 'string' && row.profile !== '' ? row.profile as BotId : null
+  return { key, outcome, at: started * 1000, seconds: ended === null ? null : ended - started, chat: key as SessionId, owner }
 }
 
 function outputRow(key: string, row: Obj, started: number): RoutineRun {
-  return { key, outcome: outcomeOfTitle(typeof row.title === 'string' ? row.title : ''), at: started * 1000, seconds: null, chat: null }
+  return { key, outcome: outcomeOfTitle(typeof row.title === 'string' ? row.title : ''), at: started * 1000, seconds: null, chat: null, owner: null }
 }
 
 const FAMILIES: ReadonlyMap<string, (key: string, row: Obj, started: number) => RoutineRun> = new Map<string, (key: string, row: Obj, started: number) => RoutineRun>([

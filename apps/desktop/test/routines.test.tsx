@@ -1,11 +1,11 @@
-import type { Routine, RoutineId, RoutineRun, SessionId } from '@highwing/hermes/domain'
+import type { BotId, Routine, RoutineId, RoutineRun, SessionId } from '@highwing/hermes/domain'
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { RoutinesList, RunsList } from '../src/renderer/bots/Routines'
 import { afterControl, NO_RUNS, routinesViewOf, runsViewOf, scheduleWords, tookWords } from '../src/renderer/bots/routines-view'
 
-const NONE = { busy: null, history: { read: async () => ({ ok: true, value: [] }) as const, onOpen: () => {} }, onToggle: () => {}, onDelete: () => {} }
+const NONE = { busy: null, history: { bot: 'rae' as BotId, revision: 1, read: async () => ({ ok: true, value: [] }) as const, onOpen: () => {} }, onToggle: () => {}, onDelete: () => {} }
 const routine = (id: string, name: string, schedule: string, paused = false): Routine => ({ id: id as RoutineId, name, schedule, paused, nextRunAt: null })
 
 describe('scheduleWords', () => {
@@ -106,8 +106,9 @@ describe('a control of a routine', () => {
   })
 })
 
+const RAE = 'rae' as BotId
 const CLOCK = { now: Date.UTC(2026, 10, 27, 12, 0), timeZone: 'UTC' }
-const run = (key: string, outcome: RoutineRun['outcome'], at: number, seconds: number | null, chat: string | null): RoutineRun => ({ key, outcome, at, seconds, chat: chat as SessionId | null })
+const run = (key: string, outcome: RoutineRun['outcome'], at: number, seconds: number | null, chat: string | null): RoutineRun => ({ key, outcome, at, seconds, chat: chat as SessionId | null, owner: null })
 const HOUR = 3_600_000
 
 describe('tookWords', () => {
@@ -140,7 +141,7 @@ describe('the past runs of a routine', () => {
   ]
 
   it('says each run in words: its state, its time, how long it took, and why it failed', () => {
-    const view = runsViewOf({ ok: true, value: RUNS }, CLOCK)
+    const view = runsViewOf({ ok: true, value: RUNS }, CLOCK, RAE)
     expect(view.state === 'listed' && view.rows.map(({ state, when, took, why }) => [state, when, took, why])).toEqual([
       ['Running', 'Today 11:55', null, null],
       ['Succeeded', 'Today 11:00', 'took 42 s', null],
@@ -152,8 +153,14 @@ describe('the past runs of a routine', () => {
     ])
   })
 
+  it('opens a run in the profile Hermes names for it, else in the routine\'s bot', () => {
+    const elsewhere = { ...run('s1', { is: 'succeeded' }, 0, 1, 's1'), owner: 'default' as BotId }
+    const view = runsViewOf({ ok: true, value: [elsewhere, run('s2', { is: 'succeeded' }, 0, 1, 's2'), run('o', { is: 'succeeded' }, 0, null, null)] }, CLOCK, RAE)
+    expect(view.state === 'listed' && view.rows.map(row => row.chat)).toEqual([{ sessionId: 's1', bot: 'default' }, { sessionId: 's2', bot: 'rae' }, null])
+  })
+
   it('draws a list named for the routine, with an Open run button only on a run that has a chat', () => {
-    const html = renderToStaticMarkup(<RunsList id="runs" name="Morning digest" view={runsViewOf({ ok: true, value: RUNS }, CLOCK)} onOpen={() => {}} />)
+    const html = renderToStaticMarkup(<RunsList id="runs" name="Morning digest" view={runsViewOf({ ok: true, value: RUNS }, CLOCK, RAE)} onOpen={() => {}} />)
     expect(html).toContain('<ul aria-label="Past runs of Morning digest">')
     expect([...html.matchAll(/aria-label="(Open run from [^"]*)"/g)].map(([, label]) => label)).toEqual([
       'Open run from Today 11:55', 'Open run from Today 11:00', 'Open run from Yesterday 11:00', 'Open run from Wed 25 Nov 10:00'
@@ -163,7 +170,7 @@ describe('the past runs of a routine', () => {
   })
 
   it('says it is loading, says there are none, and shows what Hermes refused with as an alert', () => {
-    const draw = (listed: Parameters<typeof runsViewOf>[0]) => renderToStaticMarkup(<RunsList id="runs" name="Morning digest" view={runsViewOf(listed, CLOCK)} onOpen={() => {}} />)
+    const draw = (listed: Parameters<typeof runsViewOf>[0]) => renderToStaticMarkup(<RunsList id="runs" name="Morning digest" view={runsViewOf(listed, CLOCK, RAE)} onOpen={() => {}} />)
     expect(draw(null)).toContain('aria-busy="true">Loading runs…</p>')
     expect(draw({ ok: true, value: [] })).toContain(`<p class="routines-note">${NO_RUNS}</p>`)
     expect(NO_RUNS).toBe('No runs yet.')
