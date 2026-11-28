@@ -1,6 +1,9 @@
 /** `@highwing/hermes/domain`: what the renderer and `@highwing/thread` may import. Types, pure selectors, and the tables that name a target and its failures. */
 export type * from './session'
 export { RECOMMENDED, STANDING_WORDS, betterAccount, standingOf, standingOfTarget, type AppAccount, type AppEntry, type AppSignIn, type AppStanding, type AppsBoard } from './apps'
+export {
+  APPROVAL_WORDS, asksOf, auditPrompt, BOT_TEMPLATES, personaStart, scheduleWords, TEMPLATE_TOOLSETS, timeWords, toolWords, TOOLSET_WORDS, type BotTemplate, type BotTemplateId, type TemplateAsk, type TemplateToolset
+} from './bot-templates'
 export { CONNECTOR_FILTERS, connectorsView, type ConnectorCard, type ConnectorFilter, type ConnectorShelf, type ConnectorsQuery, type ConnectorsSection, type ConnectorsView } from './connectors'
 export { APPROVAL_MODES, EFFORTS, PLAIN_CONTROLS, reissues } from './session'
 export {
