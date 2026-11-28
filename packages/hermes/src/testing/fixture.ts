@@ -5,10 +5,12 @@ import { readFileSync } from 'node:fs'
 import { APPROVAL_MODES, type ApprovalMode, type SessionId } from '../domain/session'
 import { systemClock, type Reach } from '../wire/link'
 import { transcriptOf, type Transcribe } from '../wire/transcribe'
+import { isRestScript, type CronRest } from './cron-rest'
 import { isKanban, type Kanban } from './kanban'
 
 export { play, playToEnd, type Moment } from './play'
-export { fixtureRead, fixtureWrite } from './kanban'
+export { fixtureWrite } from './cron-rest'
+export { fixtureRead } from './kanban'
 export { maskedFrame, recordingDialer } from './record'
 export { fixtureLatency, scriptedDialer, type ScriptedDialer, type ScriptOptions } from './script'
 
@@ -360,6 +362,9 @@ export type RelayScript = { readonly reply: string; readonly delay_ms?: number }
  * `runs`: each one rewrites a home job's `last_run_at`, `last_status` and `last_error` `after_ms` after the gateway's first list,
  * and pushes `cron.changed` to every socket, as Hermes's watcher does when the scheduler writes cron/jobs.json (tui_gateway/change_watcher.py:468).
  * `history`: each job's reply to `GET /api/cron/jobs/<job_id>/runs`, body as Hermes sends it. A job with no entry answers 404, as a Hermes without the route does.
+ * `rest`: each job's answers to the routes that run it now and change its schedule (`CronRest`). A job with no entry answers a POST or a PUT
+ * 404, as a Hermes without the routes does. The app finds the routes by the job's run list, so give the job a `history` as well.
+ * Nothing an answer says changes what `cron.manage` lists.
  */
 export interface CronScript {
   readonly jobs: readonly CronRow[]
@@ -367,6 +372,7 @@ export interface CronScript {
   readonly unscoped?: boolean
   readonly runs?: readonly CronRun[]
   readonly history?: { readonly [job_id: string]: unknown }
+  readonly rest?: { readonly [job_id: string]: CronRest }
 }
 export interface CronRow { readonly job_id: string; readonly [key: string]: unknown }
 export interface CronRun { readonly after_ms: number; readonly job_id: string; readonly last_run_at: string; readonly last_status: string; readonly last_error?: string }
@@ -567,6 +573,7 @@ const isCronScript = (value: unknown): value is CronScript =>
   && (value.unscoped === undefined || typeof value.unscoped === 'boolean')
   && (value.runs === undefined || (Array.isArray(value.runs) && value.runs.every(run => isCronRun(run) && (value.jobs as { job_id: string }[]).some(job => job.job_id === run.job_id))))
   && (value.history === undefined || (isObject(value.history) && Object.keys(value.history).every(id => cronJobIds(value).has(id))))
+  && (value.rest === undefined || (isRestScript(value.rest) && Object.keys(value.rest).every(id => cronJobIds(value).has(id))))
 
 const MEMORY_FILES = new Set(['MEMORY.md', 'USER.md'])
 const isCharLimit = (value: unknown) => value === undefined || (Number.isSafeInteger(value) && (value as number) > 0)
@@ -792,7 +799,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   }
   const { cron } = value
   if (cron !== undefined && !isCronScript(cron)) {
-    return '"cron" must be { jobs, profiles?, unscoped?, runs?, history? }: each job with a "job_id", "profiles" mapping a profile to such jobs, each run { after_ms, job_id, last_run_at, last_status, last_error? } of a listed home job, and "history" mapping a listed job_id to its runs reply'
+    return '"cron" must be { jobs, profiles?, unscoped?, runs?, history?, rest? }: each job with a "job_id", "profiles" mapping a profile to such jobs, each run { after_ms, job_id, last_run_at, last_status, last_error? } of a listed home job, "history" mapping a listed job_id to its runs reply, and "rest" mapping a listed job_id to { trigger?: { status, body }, trigger_ms?, reschedule?: { <schedule text>: { status, body } } }'
   }
   const { turnMs, activeList } = value
   if (turnMs !== undefined && !(isObject(turnMs) && Object.values(turnMs).every(ms => Number.isSafeInteger(ms) && (ms as number) >= 0))) {

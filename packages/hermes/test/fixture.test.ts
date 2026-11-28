@@ -5,11 +5,13 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { BotId } from '../src/domain/bots'
 import type { RoutineId } from '../src/domain/routines'
+import { jobPath, triggerPath } from '../src/domain/routine-edits'
 import { parseRoutineRuns, runsPath } from '../src/domain/runs'
 import { BOARD_PATH, taskPath } from '../src/domain/tasks'
-import { type FixtureStep, fixtureRead, loadFixture } from '../src/testing/fixture'
+import { type FixtureStep, fixtureRead, fixtureWrite, loadFixture } from '../src/testing/fixture'
 import { checkParams } from '../src/testing/params'
 import { GATEWAY_EVENT_TYPES } from '../src/wire/contract.generated'
+import { parseCronJob } from '../src/wire/parse'
 
 const ERRAND = fileURLToPath(new URL('../../../fixtures/errand.jsonl', import.meta.url))
 
@@ -288,7 +290,7 @@ describe('loadFixture', () => {
       expect(loadFixture(write([{ ...header, cron }])).header.cron).toEqual(cron)
       for (const history of [{ zz: {} }, [], 'x']) {
         const path = write([{ ...header, cron: { ...cron, history } }])
-        expect(() => loadFixture(path)).toThrow(`${path}:1: "cron" must be { jobs, profiles?, unscoped?, runs?, history? }`)
+        expect(() => loadFixture(path)).toThrow(`${path}:1: "cron" must be { jobs, profiles?, unscoped?, runs?, history?, rest? }`)
       }
     })
 
@@ -325,6 +327,88 @@ describe('loadFixture', () => {
       const answer = await fixtureRead({ cron: loaded })(runsPath('4f1c2a9e0b7d' as RoutineId, 'rae' as BotId))
       const chats = (fixtureFile('profiles/rae-runs.json').chats as { rae: { id: string }[] }).rae.map(chat => chat.id)
       expect(parseRoutineRuns(answer.body)?.flatMap(run => (run.chat === null ? [] : [run.chat]))).toEqual(chats)
+    })
+  })
+
+  describe("a routine's REST routes", () => {
+    const fixtureFile = (name: string) => JSON.parse(readFileSync(fileURLToPath(new URL(`../../../fixtures/${name}`, import.meta.url)), 'utf8')) as Record<string, unknown>
+    const A1 = 'a1' as RoutineId
+    const RAE = 'rae' as BotId
+    const JOB = { id: 'a1', name: 'Digest', schedule_display: 'every 30m', state: 'scheduled', enabled: true }
+    const cron = {
+      jobs: [], profiles: { rae: [{ job_id: 'a1' }, { job_id: 'b2' }] },
+      rest: {
+        a1: {
+          trigger: { status: 200, body: JOB }, trigger_ms: 30,
+          reschedule: { 'every 30m': { status: 200, body: JOB }, 'every banana': { status: 400, body: { detail: "Invalid duration: 'banana'." } } }
+        }
+      }
+    }
+
+    it('reads the answers of a listed job, and refuses one of a job no store lists or an answer that is no status and body', () => {
+      expect(loadFixture(write([{ ...header, cron }])).header.cron).toEqual(cron)
+      const bad = [
+        { zz: {} }, [], 'x', { a1: 'x' }, { a1: { trigger: { status: 200 } } }, { a1: { trigger: { status: 99, body: {} } } }, { a1: { trigger_ms: -1 } },
+        { a1: { reschedule: { 'every 30m': 'x' } } }, { a1: { reschedule: [] } }
+      ]
+      for (const rest of bad) {
+        const path = write([{ ...header, cron: { ...cron, rest } }])
+        expect(() => loadFixture(path), JSON.stringify(rest)).toThrow(`${path}:1: "cron" must be { jobs, profiles?, unscoped?, runs?, history?, rest? }`)
+      }
+    })
+
+    it("answers a POST of the trigger route with the job's answer once its delay has passed", async () => {
+      const write = fixtureWrite({ cron })
+      const began = Date.now()
+      expect(await write({ method: 'POST', path: triggerPath(A1, RAE), ms: 1000 })).toEqual({ status: 200, body: JOB })
+      expect(Date.now() - began).toBeGreaterThanOrEqual(25)
+    })
+
+    it('answers a PUT with the answer for the exact schedule text sent, and a 400 with the detail Hermes gives for any other text', async () => {
+      const write = fixtureWrite({ cron })
+      const put = (schedule: string) => write({ method: 'PUT', path: jobPath(A1, RAE), json: { updates: { schedule } }, ms: 1000 })
+      expect(await put('every 30m')).toEqual({ status: 200, body: JOB })
+      expect(await put('every banana')).toEqual({ status: 400, body: { detail: "Invalid duration: 'banana'." } })
+      expect(await put('every 30m ')).toMatchObject({ status: 400, body: { detail: expect.stringContaining("Invalid schedule 'every 30m '.") } })
+      expect(await put('constructor')).toMatchObject({ status: 400 })
+    })
+
+    it('answers 404 Not Found to every write its script holds no answer for', async () => {
+      const write = fixtureWrite({ cron: { ...cron, rest: { a1: { trigger: { status: 200, body: JOB } }, b2: { reschedule: { x: { status: 200, body: JOB } } } } } })
+      const missing = { status: 404, body: { detail: 'Not Found' } }
+      expect(await write({ method: 'PUT', path: jobPath(A1, RAE), json: { updates: { schedule: 'x' } }, ms: 1 }), 'a job with no reschedule answers').toEqual(missing)
+      expect(await write({ method: 'POST', path: triggerPath('b2' as RoutineId, RAE), ms: 1 }), 'a job with no trigger answer').toEqual(missing)
+      expect(await write({ method: 'POST', path: triggerPath('zz' as RoutineId, RAE), ms: 1 }), 'a job with no entry').toEqual(missing)
+      expect(await write({ method: 'POST', path: '/api/status', ms: 1 })).toEqual(missing)
+      expect(await write({ method: 'PUT', path: triggerPath(A1, RAE), json: {}, ms: 1 }), 'the wrong method').toEqual(missing)
+      expect(await fixtureWrite({})({ method: 'POST', path: triggerPath(A1, RAE), ms: 1 })).toEqual(missing)
+    })
+
+    it('answers 422, as FastAPI does, to a PUT whose body is not an update', async () => {
+      expect(await fixtureWrite({ cron })({ method: 'PUT', path: jobPath(A1, RAE), json: { schedule: 'every 30m' }, ms: 1 })).toMatchObject({ status: 422 })
+    })
+
+    it('keeps fixtures/cron/edits.json readable: the two jobs of two-jobs.json with an empty run list each, each answer a job the parser reads, and a paused job staying paused', async () => {
+      const edits = fixtureFile('cron/edits.json')
+      const { rest, ...stores } = edits
+      const { history, ...jobs } = stores
+      expect(jobs).toEqual(fixtureFile('cron/two-jobs.json'))
+      expect(Object.keys(history as object)).toEqual(['4f1c2a9e0b7d', '9a3e6d21c4f8'])
+      const loaded = loadFixture(write([{ ...header, cron: edits }])).header.cron!
+      const digest = '4f1c2a9e0b7d' as RoutineId
+      const backup = '9a3e6d21c4f8' as RoutineId
+      expect(Object.keys(rest as object)).toEqual([digest, backup])
+      expect(loaded.rest?.[digest]?.trigger_ms, 'Run now waits a moment, as Hermes does while the job runs').toBeGreaterThanOrEqual(2000)
+      const quick = { ...loaded, rest: { ...loaded.rest, [digest]: { ...loaded.rest?.[digest], trigger_ms: 0 } } }
+      expect(await fixtureRead({ cron: quick })(runsPath(digest, RAE, 1)), 'the app finds the routes by the run list').toEqual({ status: 200, body: { runs: [], limit: 20 } })
+      const write_ = fixtureWrite({ cron: quick })
+      const ran = await write_({ method: 'POST', path: triggerPath(digest, RAE), ms: 10_000 })
+      expect([ran.status, parseCronJob(ran.body)]).toEqual([200, { id: digest, name: 'Morning digest', schedule: '0 9 * * 1-5', paused: false, nextRunAt: '2026-11-30T09:00:00+00:00' }])
+      const put = (id: RoutineId, schedule: string) => write_({ method: 'PUT', path: jobPath(id, RAE), json: { updates: { schedule } }, ms: 10_000 })
+      expect(parseCronJob((await put(digest, '0 8 * * 1-5')).body)).toEqual({ id: digest, name: 'Morning digest', schedule: '0 8 * * 1-5', paused: false, nextRunAt: '2026-11-30T08:00:00+00:00' })
+      expect(parseCronJob((await put(backup, 'every 30m')).body)).toEqual({ id: backup, name: 'Backup check', schedule: 'every 30m', paused: true, nextRunAt: null })
+      expect(await put(digest, 'every banana')).toMatchObject({ status: 400 })
+      expect(await write_({ method: 'POST', path: triggerPath(backup, RAE), ms: 1 }), 'a paused job has no run now to answer').toMatchObject({ status: 404 })
     })
   })
 

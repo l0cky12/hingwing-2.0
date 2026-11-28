@@ -1,5 +1,6 @@
 import { BOARD_PATH, parseTaskBoard, taskPath } from '../domain/tasks'
-import type { ReadHermes, WriteHermes } from '../wire/link'
+import type { ReadHermes } from '../wire/link'
+import { NOT_FOUND } from './cron-rest'
 import type { CronScript } from './fixture'
 
 export interface Kanban {
@@ -11,8 +12,6 @@ export const isKanban = (value: unknown): value is Kanban => {
   const held = value as { readonly board?: unknown; readonly tasks?: unknown } | null
   return typeof held === 'object' && held !== null && parseTaskBoard(held.board) !== null && typeof held.tasks === 'object' && held.tasks !== null && !Array.isArray(held.tasks)
 }
-
-const MISSING = { status: 404, body: { detail: 'Not Found' } } as const
 
 const RUNS_PATH = /^\/api\/cron\/jobs\/([^/?]+)\/runs(?:\?|$)/
 
@@ -36,11 +35,7 @@ export function fixtureRead({ kanban, cron }: { readonly kanban?: Kanban | undef
     }
     const job = runsJobOf(path)
     const history = cron?.history
-    return job !== null && history !== undefined && Object.hasOwn(history, job) ? { status: 200, body: history[job] } : MISSING
+    if (job !== null && history !== undefined && Object.hasOwn(history, job)) return { status: 200, body: history[job] }
+    return NOT_FOUND
   }
-}
-
-/** The fixture's Hermes takes no write yet: every path is a 404, as it is on a Hermes without that route. */
-export function fixtureWrite(): WriteHermes {
-  return async () => MISSING
 }
