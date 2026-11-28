@@ -1,7 +1,8 @@
 import {
-  APPROVAL_WORDS, BOT_TEMPLATES, CONNECTOR_FILTERS, connectorsView, pluginsView, scheduleWords, toolWords, shownBot, shownChat, STANDING_WORDS, type BotTemplate, type CatalogPlugin, type CommandOutcome, type AppEntry, type AppsBoard, type BotId, type ConnectorFilter, type ConnectorShelf, type ConnectorsQuery, type ConnectorsView, type ServerSetup, type Toolset, type ToolServer
+  APPROVAL_WORDS, BOT_TEMPLATES, CONNECTOR_FILTERS, connectorsView, pluginsView, scheduleWords, shownBot, shownChat, STANDING_WORDS, TOOLSET_WORDS, type BotTemplate, type BotTemplateId, type CatalogPlugin, type CommandOutcome, type AppEntry, type AppsBoard, type BotId, type ConnectorFilter, type ConnectorShelf, type ConnectorsQuery, type ConnectorsView, type ServerSetup, type Toolset, type ToolServer
 } from '@highwing/hermes/domain'
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { Fragment, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { ICON } from '../chrome/PopupMenu'
 import { connectorsKeys } from '../keys'
 import { line } from '../setup/ConnectionCard'
 import { nameOf, useSkillSwitches } from '../setup/Skills'
@@ -211,26 +212,27 @@ interface CardProps {
   readonly detail: string
   readonly mono?: boolean
   readonly toolNames?: string
-  readonly lines?: readonly string[]
+  readonly lines?: readonly ReactNode[]
+  readonly tile?: ReactNode
   readonly state?: { readonly standing: string; readonly words: string }
   readonly later?: boolean
   readonly below?: ReactNode
   readonly children?: ReactNode
 }
 
-function Card({ name, kind, logo = null, detail, mono = false, toolNames = '', lines = [], state, later = false, below, children }: CardProps) {
+function Card({ name, kind, logo = null, tile, detail, mono = false, toolNames = '', lines = [], state, later = false, below, children }: CardProps) {
   const [broken, setBroken] = useState<string | null>(null)
   return (
     <li className="hub-card">
       <span className="hub-tile" aria-hidden="true">
-        {logo !== null && broken !== logo ? <img alt="" src={logo} onError={() => setBroken(logo)} /> : name.slice(0, 1).toUpperCase()}
+        {tile ?? (logo !== null && broken !== logo ? <img alt="" src={logo} onError={() => setBroken(logo)} /> : name.slice(0, 1).toUpperCase())}
       </span>
       <div className="hub-copy">
         <p className="hub-name">{name}{kind !== undefined && <span className="hub-kind">{kind}</span>}</p>
         {detail !== '' && <p className="hub-detail" data-mono={mono || undefined} data-wrap={lines.length > 0 || undefined} title={detail}>{detail}</p>}
         {toolNames !== '' && <p className="hub-detail" data-mono title={toolNames}>{toolNames}</p>}
         {later && <p className="hub-later">Takes effect when Hermes restarts.</p>}
-        {lines.map(words => <p key={words} className="hub-detail" data-wrap>{words}</p>)}
+        {lines.map((words, at) => <p key={at} className="hub-detail" data-wrap>{words}</p>)}
         {below}
       </div>
       <div className="hub-side">
@@ -478,6 +480,18 @@ function ToolsPanel({ read }: { readonly read: Listed<Toolset> }) {
   )
 }
 
+const TILE = { ...ICON, width: 18, height: 18 } as const
+
+const TEMPLATE_TILES: { readonly [T in BotTemplateId]: ReactNode } = {
+  'bot-builder': <svg {...TILE}><rect x="4" y="8" width="16" height="12" rx="2" /><path d="M12 8V5M9 13v2M15 13v2" /><circle cx="12" cy="4" r="1" /></svg>,
+  'deep-researcher': <svg {...TILE}><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>,
+  'nightly-repo-auditor': <svg {...TILE}><path d="M12 3 5 6v6c0 4 3 7 7 9 4-2 7-5 7-9V6z" /><path d="m9 12 2 2 4-4" /></svg>
+}
+
+const turnsOn = (template: BotTemplate) => (
+  <>Turns on: {template.toolsets.map((toolset, at) => <Fragment key={toolset}>{at > 0 && ', '}<span className="hub-whole">{TOOLSET_WORDS[toolset]}</span></Fragment>)}</>
+)
+
 function TemplatesPanel() {
   const [chosen, setChosen] = useState<BotTemplate | null>(null)
   const opener = useRef<HTMLElement | null>(null)
@@ -491,8 +505,8 @@ function TemplatesPanel() {
       <ul className="hub-grid">
         {BOT_TEMPLATES.map(template => (
           <Card
-            key={template.id} name={template.name} kind="Template" detail={template.summary}
-            lines={[`Turns on: ${toolWords(template.toolsets)}`, `Approval: ${APPROVAL_WORDS[template.approval].label}`, ...(template.schedule === null ? [] : [scheduleWords(template.schedule.defaultTime)])]}
+            key={template.id} name={template.name} kind="Template" detail={template.summary} tile={TEMPLATE_TILES[template.id]}
+            lines={[turnsOn(template), `Approval: ${APPROVAL_WORDS[template.approval].label}`, ...(template.schedule === null ? [] : [scheduleWords(template.schedule.defaultTime)])]}
           >
             <div className="hub-actions">
               <button type="button" aria-label={`Use template ${template.name}`} onClick={event => { opener.current = event.currentTarget; setChosen(template) }}>Use template</button>
@@ -566,7 +580,7 @@ export function Connectors({ onClose }: { readonly onClose: () => void }) {
             </button>
           ))}
         </div>
-        <p className="hub-for">Configuring: <span>{name}</span></p>
+        {tab !== 'templates' && <p className="hub-for">Configuring: <span>{name}</span></p>}
         <button type="button" className="hub-close" aria-label="Close" onClick={onClose}><Cross /></button>
       </header>
       <main>
