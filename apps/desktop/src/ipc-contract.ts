@@ -650,6 +650,10 @@ export const validators: Validators = {
     const bot = raw.bot === null ? null : botIdOf(raw.bot)
     return raw.bot !== null && bot === null ? null : { do: 'plugins', bot }
   },
+  setPlugin: raw => {
+    const bot = raw.bot === null ? null : botIdOf(raw.bot)
+    return (raw.bot === null || bot !== null) && filled(raw.key) && typeof raw.enabled === 'boolean' ? { do: 'setPlugin', bot, key: raw.key, enabled: raw.enabled } : null
+  },
   tools: raw => {
     const sessionId = sessionIdOf(raw)
     return raw.sessionId !== null && sessionId === null ? null : { do: 'tools', sessionId }

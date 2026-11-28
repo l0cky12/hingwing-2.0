@@ -4,7 +4,7 @@ import { activityDesk, busyOf, type Attached } from './activity'
 import { appSignIn, connectApp, listApps, removeApp } from './apps'
 import {
   addToolServer, botModels, botPicture, canGeneratePicture, createBot, denyRules, describeBot, editBot, generatePicture, listPets, markBot, passwordManagers, petPicture, readSkills, removeToolServer,
-  listPlugins, listToolsets, setBotPicture, setSkill, skillText, toolServers
+  listPlugins, listToolsets, setBotPicture, setPlugin, setSkill, skillText, toolServers
 } from './bot-admin'
 import type { BotActivities, UnreadChat } from './domain/activity'
 import { listMemory, removeMemory, saveMemory } from './memory'
@@ -663,6 +663,7 @@ export function openHermes(options: HermesOptions): Hermes {
     if (command.do === 'addToolServer') return addToolServer(conn, command.bot, command.setup)
     if (command.do === 'removeToolServer') return removeToolServer(conn, command.bot, command.name)
     if (command.do === 'plugins') return listPlugins(conn, command.bot)
+    if (command.do === 'setPlugin') return setPlugin(conn, command.bot, command.key, command.enabled)
     if (command.do === 'tools') return listToolsets(conn, command.sessionId)
     if (command.do === 'listRoutines') return listRoutines(conn, command.bot)
     if (command.do === 'controlRoutine') return controlRoutine(conn, command.bot, command.routine, command.action)

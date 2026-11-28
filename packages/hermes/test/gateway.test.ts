@@ -1584,12 +1584,36 @@ describe('the plugins list', () => {
     expect(await call('plugins.manage', { action: 'list' })).toMatchObject({ error: { code: -32601, data: { reason: 'unknown_method' } } })
   })
 
-  it('lists the fixture’s plugins with Hermes’s counts, and plays no other action', async () => {
+  it('lists the fixture’s plugins with Hermes’s counts, and plays no action but list and toggle', async () => {
     const { call } = await rawSocket({}, { ...ERRAND, header: { ...ERRAND.header, plugins } })
     expect(await call('plugins.manage', { action: 'list', profile: 'default' })).toMatchObject({
-      result: { plugins: [{ name: 'kanban', status: 'enabled', source: 'bundled' }, { name: 'browser-tools', status: 'not enabled', source: 'user' }], user_count: 1, bundled_count: 1 }
+      result: { plugins: [{ name: 'kanban', key: 'kanban', status: 'enabled', source: 'bundled' }, { name: 'browser-tools', status: 'not enabled', source: 'user' }], user_count: 1, bundled_count: 1 }
     })
-    expect(await call('plugins.manage', { action: 'toggle', name: 'kanban', enable: false })).toMatchObject({ error: { code: 4019 } })
+    expect((await call('plugins.manage', { action: 'list' })).result).not.toHaveProperty('plugins.0.restart_required')
+    expect(await call('plugins.manage', { action: 'install', identifier: 'x' })).toMatchObject({ error: { code: 4019 } })
+  })
+
+  it('turns a plugin on and off by key or name, says when a change waits for a restart, and lists it so after', async () => {
+    const { call } = await rawSocket({}, { ...ERRAND, header: { ...ERRAND.header, plugins } })
+    expect(await call('plugins.manage', { action: 'toggle', key: 'kanban', enable: false, profile: 'default' })).toMatchObject({
+      result: { ok: true, unchanged: false, restart_required: true, name: 'kanban', plugin: { name: 'kanban', status: 'disabled' } }
+    })
+    expect(await call('plugins.manage', { action: 'toggle', name: 'browser-tools', enable: true })).toMatchObject({ result: { ok: true, unchanged: false, restart_required: false, name: 'browser-tools' } })
+    expect(await call('plugins.manage', { action: 'toggle', key: 'browser-tools', enable: true })).toMatchObject({ result: { unchanged: true, restart_required: false } })
+    expect(await call('plugins.manage', { action: 'list' })).toMatchObject({ result: { plugins: [{ name: 'kanban', status: 'disabled' }, { name: 'browser-tools', status: 'enabled' }] } })
+    expect(await call('plugins.manage', { action: 'toggle', key: 'browser-tools', enable: false })).toMatchObject({ result: { unchanged: false, restart_required: true } })
+  })
+
+  it('refuses a toggle that names no plugin it has, as Hermes does', async () => {
+    const { call } = await rawSocket({}, { ...ERRAND, header: { ...ERRAND.header, plugins } })
+    expect(await call('plugins.manage', { action: 'toggle', key: ' ', enable: true })).toMatchObject({ error: { code: 4019 } })
+    expect(await call('plugins.manage', { action: 'toggle', key: 'nope', enable: true })).toMatchObject({ error: { code: 5026, message: "Plugin 'nope' is not installed or bundled." } })
+  })
+
+  it('answers a toggle as an unknown action when it plays a Hermes that only lists', async () => {
+    const { call } = await rawSocket({}, { ...ERRAND, header: { ...ERRAND.header, plugins, listOnly: true } })
+    expect(await call('plugins.manage', { action: 'toggle', key: 'kanban', enable: false })).toMatchObject({ error: { code: 4017, message: 'unknown plugins action: toggle' } })
+    expect(await call('plugins.manage', { action: 'list' })).toMatchObject({ result: { plugins: [{ name: 'kanban', status: 'enabled' }, {}] } })
   })
 })
 

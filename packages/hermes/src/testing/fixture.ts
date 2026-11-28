@@ -144,10 +144,15 @@ export interface Fixture {
     readonly vault?: VaultScript
     /** What `mcp.servers.*` answer. Absent: the gateway refuses every one as an unknown method, as a Hermes without them does, and so does a socket bound to one profile. */
     readonly mcp?: McpScript
-    /** The plugins `plugins.manage` lists for every profile. Absent: the gateway refuses the call as an unknown method, as a Hermes without it does, and so does a socket bound to one profile. */
+    /**
+     * The plugins `plugins.manage` lists for every profile, which its `toggle` turns on and off for all of them. Absent: the gateway refuses
+     * the call as an unknown method, as a Hermes without it does, and so does a socket bound to one profile.
+     */
     readonly plugins?: readonly PluginSeed[]
     /** The toolsets `tools.list` answers for any chat or none. Absent: the gateway refuses the call as an unknown method, as a Hermes without it does, and so does a socket bound to one profile. */
     readonly tools?: readonly ToolsetSeed[]
+    /** true: play an older Hermes that lists plugins and toolsets but can't turn them on or off. Default false. */
+    readonly listOnly?: boolean
     /** `'profile'`: play a Hermes with no `interactive` ticket, whose every socket is bound to the home profile. Default `'host'`. */
     readonly reach?: Reach
     /** false: the home bot has no Bot Chat, and the story session is only a chat of the home profile. Default true. */
@@ -307,13 +312,18 @@ export interface McpScript {
   readonly probes?: { readonly [name: string]: McpProbe }
 }
 
-/** One row of `plugins.manage` `list`, with `status` as `_plugin_status` words it (hermes_cli/plugins_cmd.py:933-946). */
+/**
+ * One row of `plugins.manage` `list`, with `status` as `_plugin_status` words it (hermes_cli/plugins_cmd.py:933-946). `key` defaults to
+ * `name`. `restart_required`: turning it on waits for Hermes to restart. Turning it off always does, as in Hermes.
+ */
 export interface PluginSeed {
   readonly name: string
+  readonly key?: string
   readonly version: string
   readonly description: string
   readonly source: 'bundled' | 'user' | 'entrypoint'
   readonly status: 'enabled' | 'disabled' | 'not enabled'
+  readonly restart_required?: boolean
 }
 
 /** One row of `tools.list`. Its `tool_count` is the number of `tools`. */
@@ -565,8 +575,9 @@ const PLUGIN_SOURCES: readonly unknown[] = ['bundled', 'user', 'entrypoint']
 const PLUGIN_STATUSES: readonly unknown[] = ['enabled', 'disabled', 'not enabled']
 
 const isPluginSeed = (value: unknown): value is PluginSeed =>
-  isObject(value) && Object.keys(value).every(key => ['name', 'version', 'description', 'source', 'status'].includes(key)) && typeof value.name === 'string' && value.name !== ''
-  && typeof value.version === 'string' && typeof value.description === 'string' && PLUGIN_SOURCES.includes(value.source) && PLUGIN_STATUSES.includes(value.status)
+  isObject(value) && Object.keys(value).every(key => ['name', 'key', 'version', 'description', 'source', 'status', 'restart_required'].includes(key)) && typeof value.name === 'string' && value.name !== ''
+  && (value.key === undefined || (typeof value.key === 'string' && value.key !== '')) && typeof value.version === 'string' && typeof value.description === 'string'
+  && PLUGIN_SOURCES.includes(value.source) && PLUGIN_STATUSES.includes(value.status) && (value.restart_required === undefined || typeof value.restart_required === 'boolean')
 
 const isToolsetSeed = (value: unknown): value is ToolsetSeed =>
   isObject(value) && Object.keys(value).every(key => ['name', 'description', 'enabled', 'tools'].includes(key)) && typeof value.name === 'string' && value.name !== ''
@@ -708,10 +719,12 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   }
   const { plugins } = value
   if (plugins !== undefined && !(Array.isArray(plugins) && plugins.every(isPluginSeed))) {
-    return '"plugins" must be a list of { name, version, description, source, status }, with "source" bundled, user or entrypoint and "status" enabled, disabled or "not enabled"'
+    return '"plugins" must be a list of { name, key?, version, description, source, status, restart_required? }, with "source" bundled, user or entrypoint and "status" enabled, disabled or "not enabled"'
   }
   const { tools } = value
   if (tools !== undefined && !(Array.isArray(tools) && tools.every(isToolsetSeed))) return '"tools" must be a list of { name, description, enabled, tools }, with "tools" the names of its tools'
+  const { listOnly } = value
+  if (listOnly !== undefined && typeof listOnly !== 'boolean') return '"listOnly" must be true or false'
   const { reach, homeBotChat } = value
   if (reach !== undefined && reach !== 'host' && reach !== 'profile') return '"reach" must be "host" or "profile"'
   if (homeBotChat !== undefined && typeof homeBotChat !== 'boolean') return '"homeBotChat" must be true or false'
@@ -793,6 +806,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(mcp === undefined ? {} : { mcp }),
     ...(plugins === undefined ? {} : { plugins: plugins as readonly PluginSeed[] }),
     ...(tools === undefined ? {} : { tools: tools as readonly ToolsetSeed[] }),
+    ...(listOnly === undefined ? {} : { listOnly }),
     ...(reach === undefined ? {} : { reach }), ...(homeBotChat === undefined ? {} : { homeBotChat }),
     ...(kanban === undefined ? {} : { kanban }),
     ...(media === undefined ? {} : { media: media as Record<string, string> }), ...(transcribe === undefined ? {} : { transcribe }),

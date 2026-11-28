@@ -1,11 +1,12 @@
 import {
-  CONNECTOR_FILTERS, connectorsView, shownBot, shownChat, STANDING_WORDS, type CommandOutcome, type AppEntry, type AppsBoard, type BotId, type ConnectorFilter, type ConnectorShelf, type ConnectorsQuery, type ConnectorsView, type Plugin, type ServerSetup, type Toolset, type ToolServer
+  CONNECTOR_FILTERS, connectorsView, shownBot, shownChat, STANDING_WORDS, type CommandOutcome, type AppEntry, type AppsBoard, type BotId, type ConnectorFilter, type ConnectorShelf, type ConnectorsQuery, type ConnectorsView, type ServerSetup, type Toolset, type ToolServer
 } from '@highwing/hermes/domain'
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { connectorsKeys } from '../keys'
 import { line } from '../setup/ConnectionCard'
 import { nameOf, useSkillSwitches } from '../setup/Skills'
 import { run, useTopic } from '../store'
+import { useSwitches } from '../switches'
 import { ToolServerForm, useToolServers } from './ToolServers'
 import { namedTools, STATES, toolCount } from './tool-servers-view'
 
@@ -138,7 +139,7 @@ function useApps(bot: BotId | null) {
 
 type Listed<T> = { readonly at: 'reading' } | { readonly at: 'read'; readonly items: readonly T[] } | { readonly at: 'refused'; readonly words: string }
 
-function useListed<T>(ask: () => Promise<CommandOutcome<readonly T[]>>, key: string | null): Listed<T> {
+function useListed<T>(ask: () => Promise<CommandOutcome<readonly T[]>>, key: string | null) {
   const [read, setRead] = useState<Listed<T>>({ at: 'reading' })
   useEffect(() => {
     let stopped = false
@@ -148,7 +149,21 @@ function useListed<T>(ask: () => Promise<CommandOutcome<readonly T[]>>, key: str
     })
     return () => { stopped = true }
   }, [key])
-  return read
+  return [read, (items: readonly T[]) => setRead({ at: 'read', items })] as const
+}
+
+function usePlugins(bot: BotId | null) {
+  const [read, setRead] = useListed(() => run({ do: 'plugins', bot }), bot)
+  const [restart, setRestart] = useState<ReadonlySet<string>>(new Set())
+  const switches = useSwitches(bot, read.at === 'read' ? read.items : null, plugin => plugin.key, async (plugin, enabled) => {
+    const done = await run({ do: 'setPlugin', bot, key: plugin.key, enabled })
+    if (done.ok) {
+      setRead(done.value.plugins)
+      setRestart(keys => new Set(done.value.restart ? [...keys, plugin.key] : [...keys].filter(key => key !== plugin.key)))
+    }
+    return done
+  })
+  return { read, restart, ...switches }
 }
 
 interface CardProps {
@@ -158,10 +173,11 @@ interface CardProps {
   readonly mono?: boolean
   readonly toolNames?: string
   readonly state?: { readonly standing: string; readonly words: string }
+  readonly later?: boolean
   readonly children?: ReactNode
 }
 
-function Card({ name, kind, detail, mono = false, toolNames = '', state, children }: CardProps) {
+function Card({ name, kind, detail, mono = false, toolNames = '', state, later = false, children }: CardProps) {
   return (
     <li className="hub-card">
       <span className="hub-tile" aria-hidden="true">{name.slice(0, 1).toUpperCase()}</span>
@@ -169,6 +185,7 @@ function Card({ name, kind, detail, mono = false, toolNames = '', state, childre
         <p className="hub-name">{name}{kind !== undefined && <span className="hub-kind">{kind}</span>}</p>
         {detail !== '' && <p className="hub-detail" data-mono={mono || undefined} title={detail}>{detail}</p>}
         {toolNames !== '' && <p className="hub-detail" data-mono title={toolNames}>{toolNames}</p>}
+        {later && <p className="hub-later">Takes effect when Hermes restarts.</p>}
       </div>
       <div className="hub-side">
         {state !== undefined && <p className="hub-state" data-standing={state.standing}>{state.words}</p>}
@@ -270,7 +287,7 @@ function ConnectorsPanel({ apps, servers, view, reading, query: { text, filter }
 }
 
 function SkillsPanel({ name, switches }: { readonly name: string; readonly switches: ReturnType<typeof useSkillSwitches> }) {
-  const { library, pending, problem, toggle } = switches
+  const { library, problem, of } = switches
   return (
     <>
       <p className="hub-lead">A skill turned off stays installed, and {name} won’t use it until you turn it on.</p>
@@ -281,10 +298,7 @@ function SkillsPanel({ name, switches }: { readonly name: string; readonly switc
         <ul className="hub-grid">
           {library.skills.map(skill => (
             <Card key={skill.name} name={skill.name} detail={skill.description}>
-              <input
-                type="checkbox" role="switch" className="hub-switch" aria-label={`Use ${skill.name}`}
-                checked={pending.get(skill.name) ?? skill.enabled} disabled={pending.has(skill.name)} onChange={() => void toggle(skill)}
-              />
+              <input type="checkbox" role="switch" className="hub-switch" aria-label={`Use ${skill.name}`} {...of(skill)} />
             </Card>
           ))}
         </ul>
@@ -296,7 +310,7 @@ function SkillsPanel({ name, switches }: { readonly name: string; readonly switc
 
 const sourceWords = (source: string) => source.charAt(0).toUpperCase() + source.slice(1)
 
-function PluginsPanel({ name, read }: { readonly name: string; readonly read: Listed<Plugin> }) {
+function PluginsPanel({ name, plugins: { read, restart, problem, of } }: { readonly name: string; readonly plugins: ReturnType<typeof usePlugins> }) {
   return (
     <>
       {read.at === 'reading' && <p className="hub-note" role="status">Asking Hermes…</p>}
@@ -306,12 +320,15 @@ function PluginsPanel({ name, read }: { readonly name: string; readonly read: Li
         <ul className="hub-grid">
           {read.items.map(plugin => (
             <Card
-              key={plugin.name} name={plugin.name} kind={[plugin.version === '' ? null : `v${plugin.version}`, sourceWords(plugin.source)].filter(Boolean).join(' · ')}
-              detail={plugin.description} state={plugin.enabled ? { standing: 'on', words: 'On' } : { standing: 'off', words: 'Off' }}
-            />
+              key={plugin.key} name={plugin.name} kind={[plugin.version === '' ? null : `v${plugin.version}`, sourceWords(plugin.source)].filter(Boolean).join(' · ')}
+              detail={plugin.description} later={restart.has(plugin.key)}
+            >
+              <input type="checkbox" role="switch" className="hub-switch" aria-label={`Use ${plugin.name}`} {...of(plugin)} />
+            </Card>
           ))}
         </ul>
       )}
+      {problem !== null && <p className="hub-note" role="alert">{problem}</p>}
     </>
   )
 }
@@ -345,8 +362,8 @@ export function Connectors({ onClose }: { readonly onClose: () => void }) {
   const tabs = useRef(new Map<Tab, HTMLButtonElement>())
   const switches = useSkillSwitches()
   const sessionId = shownChat(open)?.sessionId ?? null
-  const plugins = useListed(() => run({ do: 'plugins', bot }), bot)
-  const toolsets = useListed(() => run({ do: 'tools', sessionId }), sessionId)
+  const plugins = usePlugins(bot)
+  const [toolsets] = useListed(() => run({ do: 'tools', sessionId }), sessionId)
   const apps = useApps(bot)
   const servers = useToolServers(bot)
   const [query, setQuery] = useState<ConnectorsQuery>({ text: '', filter: 'all' })
@@ -354,7 +371,7 @@ export function Connectors({ onClose }: { readonly onClose: () => void }) {
   const reading = (apps.board === null && apps.problem === null) || servers.read.at === 'reading'
   const counts: { readonly [T in Tab]: number | null } = {
     skills: switches.library?.state === 'listed' ? switches.library.skills.length : null,
-    plugins: plugins.at === 'read' ? plugins.items.length : null,
+    plugins: plugins.read.at === 'read' ? plugins.read.items.length : null,
     connectors: reading ? null : view.total,
     tools: toolsets.at === 'read' ? toolsets.items.length : null
   }
@@ -403,7 +420,7 @@ export function Connectors({ onClose }: { readonly onClose: () => void }) {
       <main>
         <div className="hub-page">
           <div role="tabpanel" id={`${ids}-skills-panel`} aria-labelledby={`${ids}-skills`} hidden={tab !== 'skills'}><SkillsPanel name={name} switches={switches} /></div>
-          <div role="tabpanel" id={`${ids}-plugins-panel`} aria-labelledby={`${ids}-plugins`} hidden={tab !== 'plugins'}><PluginsPanel name={name} read={plugins} /></div>
+          <div role="tabpanel" id={`${ids}-plugins-panel`} aria-labelledby={`${ids}-plugins`} hidden={tab !== 'plugins'}><PluginsPanel name={name} plugins={plugins} /></div>
           <div role="tabpanel" id={`${ids}-connectors-panel`} aria-labelledby={`${ids}-connectors`} hidden={tab !== 'connectors'}><ConnectorsPanel apps={apps} servers={servers} view={view} reading={reading} query={query} onQuery={setQuery} /></div>
           <div role="tabpanel" id={`${ids}-tools-panel`} aria-labelledby={`${ids}-tools`} hidden={tab !== 'tools'}><ToolsPanel read={toolsets} /></div>
         </div>

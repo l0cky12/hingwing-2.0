@@ -2,7 +2,7 @@ import { refusalOf } from './actor'
 import { GENERATED_MAX_BYTES, MARK_SETS, PICTURE_RULE, type BotCreated, type BotDetails, type BotDraft, type BotEdit, type BotId, type BotMark, type PetChoice } from './domain/bots'
 import type { Command, ModelMenu, Outcome, Refusal } from './domain/command'
 import type { BotManagers } from './domain/passwords'
-import type { Plugin } from './domain/plugins'
+import type { Plugin, PluginSwitched } from './domain/plugins'
 import type { Toolset } from './domain/toolsets'
 import type { SessionId } from './domain/session'
 import type { Skill } from './domain/skills'
@@ -11,7 +11,7 @@ import { NOT_CONNECTED } from './open'
 import { METHOD_NOT_FOUND, Offline, RpcRefusal, type Connection } from './wire/link'
 import {
   descriptionOf, parseBotAt, parseBotManagers, parseBotRecord, parseCatalog, parseConfigured, parseCreated, parseDenyRules, parseDetails, parseGenerated, parseImageProbe, parseModelMenu, parsePetPicture, parsePets,
-  parsePicture, parsePlugins, parseSkillStates, parseSkillText, parseTested, parseToolsets, parseToolServers, type Configured
+  parsePicture, parsePlugins, parseRestartNeeded, parseSkillStates, parseSkillText, parseTested, parseToolsets, parseToolServers, type Configured
 } from './wire/parse'
 
 export type Wire = Pick<Connection, 'call' | 'as'>
@@ -344,6 +344,21 @@ const PLUGIN_REASONS: Reasons = { [METHOD_NOT_FOUND]: () => ({ kind: 'unsupporte
 
 export const listPlugins = (conn: Wire, bot: BotId | null): Promise<Outcome<readonly Plugin[]>> =>
   guarded(PLUGIN_REASONS, async () => ({ ok: true, value: parsePlugins(await scoped(conn, bot).call('plugins.manage', { action: 'list' })) }))
+
+const NO_PLUGIN_SWITCH: Refusal = { kind: 'unsupported', message: "This Hermes can't turn plugins on or off." }
+const PLUGIN_SWITCH_REASONS: Reasons = {
+  [METHOD_NOT_FOUND]: () => NO_PLUGIN_SWITCH,
+  // An older Hermes lists plugins and answers any other action as unknown (tui_gateway/methods_tools.py:1415-1421).
+  4017: () => NO_PLUGIN_SWITCH,
+  5026: message => ({ kind: 'rejected', message })
+}
+
+export const setPlugin = (conn: Wire, bot: BotId | null, key: string, enabled: boolean): Promise<Outcome<PluginSwitched>> =>
+  guarded(PLUGIN_SWITCH_REASONS, async () => {
+    const hermes = scoped(conn, bot)
+    const restart = parseRestartNeeded(await hermes.call('plugins.manage', { action: 'toggle', key, enable: enabled }))
+    return { ok: true, value: { plugins: parsePlugins(await hermes.call('plugins.manage', { action: 'list' })), restart } }
+  })
 
 const TOOLSET_REASONS: Reasons = { [METHOD_NOT_FOUND]: () => ({ kind: 'unsupported', message: "This Hermes can't list its tools." }) }
 
