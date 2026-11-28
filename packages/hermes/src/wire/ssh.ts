@@ -23,8 +23,11 @@ export const SERVE = ['gateway', 'tickets', '--serve', '--json'] as const
 export type HermesArgs = typeof PROBE | typeof SERVE | (typeof ATTACH)[keyof typeof ATTACH]
 /** The only line Highwing writes to a `--serve` channel. A literal too, and it names no profile: an interactive ticket takes none. */
 export const ASK_INTERACTIVE = '{"id":1,"purpose":"interactive"}\n'
-/** The line that asks `--serve` for a one-use ticket to the gateway's HTTP routes, such as its speech upload and its kanban board. */
-export const ASK_NATIVE_HTTP = '{"id":1,"purpose":"native-http"}\n'
+/**
+ * The line that asks `--serve` for a one-use ticket to the gateway's HTTP routes, such as its speech upload and its kanban board.
+ * With a profile the ticket is bound to it, which Hermes requires of a route that takes `?profile=` other than the gateway's own.
+ */
+export const askNativeHttp = (profile?: string): string => `${JSON.stringify({ id: 1, purpose: 'native-http', ...(profile === undefined ? {} : { profile }) })}\n`
 
 /** The installer's command locations (Hermes's scripts/install.sh): per-user, root, and the legacy venv. */
 export const HERMES_PATHS = ['$HOME/.local/bin/hermes', '/usr/local/bin/hermes', '$HOME/.hermes/hermes-agent/venv/bin/hermes'] as const
@@ -227,7 +230,7 @@ export function originOf(stdout: string): string | null {
   return typeof origin === 'string' && URL.canParse(origin) ? origin : null
 }
 
-/** Reads a run of `--serve` that was sent `ASK_NATIVE_HTTP`: the hello's `api_origin` and the reply's ticket. null: no gateway to ask, or no ticket came. */
+/** Reads a run of `--serve` that was sent `askNativeHttp`: the hello's `api_origin` and the reply's ticket. null: no gateway to ask, or no ticket came. */
 export function httpTicketOf(code: number, stdout: string): { readonly origin: string; readonly ticket: string } | null {
   const hello = jsonObjectAt(stdout, 0)
   const reply = jsonObjectAt(stdout, 1)

@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net'
 import { describe, expect, it } from 'vitest'
 import { DialError, liveRoute } from '../src/hub'
 import type { ScenarioName } from '../src/testing/fake-host'
-import { ASK_NATIVE_HTTP, ATTACH, PROBE, SERVE, type HermesArgs, type SshRun } from '../src/wire/ssh'
+import { askNativeHttp, ATTACH, PROBE, SERVE, type HermesArgs, type SshRun } from '../src/wire/ssh'
 import { mintWith, readWith, transcribeWith, type MintOptions, type RunHermes } from '../src/wire/tickets'
 import { closing, errandGateway, host, listen } from './support/host'
 
@@ -163,10 +163,25 @@ describe('readWith', () => {
     return { read, ran, sent, forwarded }
   }
 
+  it('mints a ticket for the profile a path names, and keeps the plain line for a path that names none', async () => {
+    const far = reading(HTTP_TICKET)
+    await far.read('/api/learning/graph?profile=rae')
+    await far.read('/api/config?profile=a%20b&x=1')
+    await far.read('/api/plugins/kanban/board')
+    expect(far.ran.map(call => call.input)).toEqual([
+      '{"id":1,"purpose":"native-http","profile":"rae"}\n',
+      '{"id":1,"purpose":"native-http","profile":"a b"}\n',
+      '{"id":1,"purpose":"native-http"}\n'
+    ])
+    expect(far.sent.map(call => call.url)).toEqual([
+      'http://127.0.0.1:5200/api/learning/graph?profile=rae', 'http://127.0.0.1:5200/api/config?profile=a%20b&x=1', 'http://127.0.0.1:5200/api/plugins/kanban/board'
+    ])
+  })
+
   it('asks --serve for a native-http ticket, and sends it as the one header of one request to the forwarded origin', async () => {
     const far = reading(HTTP_TICKET)
     expect(await far.read('/api/plugins/kanban/board')).toEqual({ status: 200, body: { columns: [] } })
-    expect(far.ran).toEqual([{ args: SERVE.join(' '), input: ASK_NATIVE_HTTP }])
+    expect(far.ran).toEqual([{ args: SERVE.join(' '), input: askNativeHttp() }])
     expect(far.forwarded).toEqual(['http://127.0.0.1:4100'])
     expect(far.sent).toHaveLength(1)
     expect(far.sent[0]?.url).toBe('http://127.0.0.1:5200/api/plugins/kanban/board')
