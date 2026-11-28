@@ -1,9 +1,9 @@
 import {
-  APPROVAL_MODES, BOT_MARKS, BOT_TEMPLATES, BOT_TONES, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isManagerName, isPetSlug, onThisComputer, PICK_MODES, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, ROUTINE_ACTIONS, targetOf,
+  APPROVAL_MODES, BOT_MARKS, BOT_TEMPLATES, BOT_TONES, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isManagerName, isPetSlug, onThisComputer, PICK_MODES, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, ROUTINE_ACTIONS, SCHEDULE_MAX, targetOf,
   type About, type AdmissionId, type AvatarTone, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type Bots, type BranchId, type BusyMode, type ChatRef,
   type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupChat, type GroupDraft, type GroupId, type Groups, type Header, type HelperId, type Item, type Link, type ModelOption,
   type BotActivities, type CatalogPlugin, type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type Quote, type Recording, type RelayDesk, type RequestId, type RequestReply,
-  type PickMode, type RestoreScope, type ResultOf, type RoutineId, type ScreenView, type Server, type ServerId, type ServerSetup, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SkillLibrary, type SlashCatalog, type RoutineRun, type Target, type TaskBoard, type TaskChat, type Timed, type TurnId, type Unstarted
+  type PickMode, type RestoreScope, type ResultOf, type Routine, type RoutineEdit, type RoutineId, type ScreenView, type Server, type ServerId, type ServerSetup, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SkillLibrary, type SlashCatalog, type RoutineRun, type Target, type TaskBoard, type TaskChat, type Timed, type TurnId, type Unstarted
 } from '@highwing/hermes/domain'
 import { isAppearance, type Appearance } from './appearance'
 import type { Intro } from './intro'
@@ -287,6 +287,13 @@ export interface Bridge {
   taskChat(id: string): Promise<CommandOutcome<TaskChat | null>>
   /** The newest runs of a routine, read afresh from Hermes. */
   routineRuns(bot: BotId, routine: RoutineId): Promise<CommandOutcome<readonly RoutineRun[]>>
+  /** Whether the connected Hermes serves the routes that run a routine and change its schedule. `routine` is any routine of the bot, which the probe asks about. */
+  routineEditsOffered(bot: BotId, routine: RoutineId): Promise<boolean>
+  /**
+   * Asks Hermes to run the routine now, or to change its schedule, and answers the routine as Hermes then holds it. A run answers
+   * only when the job has run. `epoch` is as for `run`: main refuses a routine of an older connection.
+   */
+  editRoutine(bot: BotId, routine: RoutineId, edit: RoutineEdit, epoch: number): Promise<CommandOutcome<Routine>>
   /** Opens the file dialog and holds each file picked, in the order picked. Nothing picked: an empty list. */
   attachPick(): Promise<readonly StageResult[]>
   /** Holds the image on the clipboard. No image there: an empty list. */
@@ -313,7 +320,7 @@ export type ScreenFrame = 'open' | ArrayBuffer | { readonly closed: number }
 export const CHANNEL = {
   watch: 'highwing:watch', unwatch: 'highwing:unwatch', push: 'highwing:push', run: 'highwing:run', file: 'highwing:file', image: 'highwing:image',
   drafts: 'highwing:drafts', keepDraft: 'highwing:keep-draft', pickPicture: 'highwing:pick-picture', choosePicture: 'highwing:choose-picture', attachPick: 'highwing:attach-pick',
-  attachPaste: 'highwing:attach-paste', attachDrop: 'highwing:attach-drop', screen: 'highwing:screen', taskBoard: 'highwing:task-board', taskChat: 'highwing:task-chat', routineRuns: 'highwing:routine-runs', transcribe: 'highwing:transcribe'
+  attachPaste: 'highwing:attach-paste', attachDrop: 'highwing:attach-drop', screen: 'highwing:screen', taskBoard: 'highwing:task-board', taskChat: 'highwing:task-chat', routineRuns: 'highwing:routine-runs', routineEditsOffered: 'highwing:routine-edits-offered', editRoutine: 'highwing:edit-routine', transcribe: 'highwing:transcribe'
 } as const
 
 const WEB_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:'])
@@ -869,6 +876,13 @@ export function parseCommand(raw: unknown): WindowCommand | null {
 
 export const parseBotId = botIdOf
 export const parseRoutineId = (raw: unknown): RoutineId | null => (filled(raw) ? (raw as RoutineId) : null)
+
+/** A run now, or a new schedule with its text trimmed. A blank or over-long schedule is refused here, and what it says is left to Hermes. */
+export function parseRoutineEdit(raw: unknown): RoutineEdit | null {
+  if (!isObject(raw)) return null
+  if (raw.do === 'run') return { do: 'run' }
+  return raw.do === 'reschedule' && filled(raw.schedule) && raw.schedule.trim().length <= SCHEDULE_MAX ? { do: 'reschedule', schedule: raw.schedule.trim() } : null
+}
 
 export function parseFileRequest(raw: unknown): FileRequest | null {
   if (!isObject(raw) || (raw.action !== 'open' && raw.action !== 'show' && raw.action !== 'preview' && raw.action !== 'page')) return null

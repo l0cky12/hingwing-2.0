@@ -1,7 +1,7 @@
 import type { Hermes } from '@highwing/hermes'
 import { isTaskId, type BotId, type CommandOutcome, type Session, type SessionId } from '@highwing/hermes/domain'
 import {
-  CHANNEL, epochOf, isAppTopic, isLocal, OTHER_CONNECTION, isPreviewCommand, isSetupCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseRecording, parseRoutineId, parseTopic,
+  CHANNEL, epochOf, isAppTopic, isLocal, OTHER_CONNECTION, isPreviewCommand, isSetupCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseRecording, parseRoutineEdit, parseRoutineId, parseTopic,
   type Accent, type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type ImageType, type Mode, type Notices, type OnClose, type PictureChoice, type PictureFile, type Push, type SessionPatch, type StageResult,
   type SendKey, type ShowWork, type SidebarWidth, type Snoozes, type Tail, type Theme, type Topic
 } from '../ipc-contract'
@@ -17,6 +17,7 @@ import type { ImageLoader } from './images'
 import { snoozed, type PreferenceStore } from './preferences'
 import type { PreviewPane } from './preview'
 import type { Saver } from './saves'
+import { editRoutine, routineEditsOffered } from './routine-edits'
 import { readRoutineRuns } from './routine-runs'
 import { readTaskBoard, readTaskChat } from './tasks'
 
@@ -314,6 +315,19 @@ export function serveWindows(
     return trusted(event) && named !== null && id !== null ? readRoutineRuns(owner.read, named, id) : REFUSED
   })
 
+  ipc.handle(CHANNEL.routineEditsOffered, async (event, bot, routine) => {
+    const named = parseBotId(bot)
+    const id = parseRoutineId(routine)
+    return trusted(event) && named !== null && id !== null && routineEditsOffered(owner.read, named, id)
+  })
+  ipc.handle(CHANNEL.editRoutine, async (event, bot, routine, raw, epoch) => {
+    const named = parseBotId(bot)
+    const id = parseRoutineId(routine)
+    const edit = parseRoutineEdit(raw)
+    if (!trusted(event) || named === null || id === null || edit === null) return REFUSED
+    return epoch === epochOf(owner.setup.get()) ? editRoutine(owner.write, named, id, edit) : OTHER_CONNECTION
+  })
+
   ipc.handle(CHANNEL.drafts, async event => (trusted(event) ? drafts.load() : []))
   ipc.on(CHANNEL.keepDraft, (event, raw) => {
     const draft = parseDraft(raw)
@@ -366,6 +380,8 @@ export function serveWindows(
       ipc.removeHandler(CHANNEL.taskBoard)
       ipc.removeHandler(CHANNEL.taskChat)
       ipc.removeHandler(CHANNEL.routineRuns)
+      ipc.removeHandler(CHANNEL.routineEditsOffered)
+      ipc.removeHandler(CHANNEL.editRoutine)
       ipc.removeHandler(CHANNEL.drafts)
       ipc.removeAllListeners(CHANNEL.keepDraft)
       ipc.removeHandler(CHANNEL.pickPicture)

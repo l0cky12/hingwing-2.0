@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { isDeepStrictEqual } from 'node:util'
 import type { Hermes, HermesRequest, HttpAnswer, PickedRoute } from '@highwing/hermes'
+import { SCHEDULE_MAX } from '@highwing/hermes/domain'
 import type { AttachmentId, BotActivities, Bots, CatalogPlugin, CommandOutcome, Exported, Groups, Link, OpenChat, Recording, RelayDesk, ServerId, Session, SessionId, Sidebar, SkillLibrary, SlashCatalog, SshHost } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -651,7 +652,7 @@ const switchable = (hermes: Hermes) => ownConnection({
   loaded: savedAt({ kind: 'remote', host: 'box' as SshHost }),
   save: async () => {},
   check: async () => ({ ok: true }),
-  routeFor: () => ({ dial: async () => { throw new Error('the test never dials') }, transcribe: HEARD, dispose: () => {} }) as unknown as PickedRoute,
+  routeFor: () => ({ dial: async () => { throw new Error('the test never dials') }, transcribe: HEARD, write: async () => ({ status: 200, body: { id: 'a1', name: 'Digest', schedule_display: 'every 30m', state: 'scheduled' } }), dispose: () => {} }) as unknown as PickedRoute,
   newId: () => 'server-2' as ServerId,
   open: () => ({ ...hermes, close: async () => {} }),
   armIntro: async () => {}
@@ -1439,6 +1440,69 @@ describe("the routine runs call", () => {
     const { handlers, served } = harness()
     served.dispose()
     expect(handlers.has(CHANNEL.routineRuns)).toBe(false)
+  })
+})
+
+describe('the routine edit calls', () => {
+  const JOB = { id: 'a1', name: 'Morning digest', schedule_display: '0 8 * * 1-5', enabled: true, state: 'scheduled', next_run_at: '2026-11-30T08:00:00+00:00' }
+  const NOW = { id: 'a1', name: 'Morning digest', schedule: '0 8 * * 1-5', paused: false, nextRunAt: '2026-11-30T08:00:00+00:00' }
+
+  it("asks for one run of the routine in the named bot's profile with a GET, and says whether this Hermes serves the edits", async () => {
+    const rig = harness()
+    const probe = rig.handlers.get(CHANNEL.routineEditsOffered)!
+    rig.answers({ status: 200, body: { runs: [], limit: 1 } })
+    await expect(probe(rig.event(), 'rae', 'a1')).resolves.toBe(true)
+    expect(rig.reads).toEqual(['/api/cron/jobs/a1/runs?profile=rae&limit=1'])
+    rig.answers({ status: 404, body: { detail: 'No such API endpoint: /api/cron/jobs/a1/runs' } })
+    await expect(probe(rig.event(), 'rae', 'a1')).resolves.toBe(false)
+  })
+
+  it('runs the routine with a POST of the trigger route, and answers the routine Hermes holds', async () => {
+    const rig = harness()
+    rig.answers({ status: 200, body: JOB })
+    await expect(rig.handlers.get(CHANNEL.editRoutine)!(rig.event(), 'rae', 'a1', { do: 'run' }, 0)).resolves.toEqual({ ok: true, value: NOW })
+    expect(rig.writes).toEqual([{ method: 'POST', path: '/api/cron/jobs/a1/trigger?profile=rae', ms: 86_400_000 }])
+  })
+
+  it('changes the schedule with a PUT of the trimmed text alone, dropping any other key of the edit', async () => {
+    const rig = harness()
+    rig.answers({ status: 200, body: JOB })
+    await rig.handlers.get(CHANNEL.editRoutine)!(rig.event(), 'rae', 'a1', { do: 'reschedule', schedule: '  0 8 * * 1-5 ', prompt: 'steal the show', updates: { prompt: 'x' } }, 0)
+    expect(rig.writes).toEqual([{ method: 'PUT', path: '/api/cron/jobs/a1?profile=rae', json: { updates: { schedule: '0 8 * * 1-5' } }, ms: 30_000 }])
+  })
+
+  it('refuses a foreign frame, a bot or routine that is not a name, and an edit that is not one, without sending anything', async () => {
+    const rig = harness()
+    const edit = rig.handlers.get(CHANNEL.editRoutine)!
+    const probe = rig.handlers.get(CHANNEL.routineEditsOffered)!
+    const calls = [
+      [rig.event('https://example.com/'), 'rae', 'a1', { do: 'run' }], [rig.event(), '', 'a1', { do: 'run' }], [rig.event(), 'rae', ' ', { do: 'run' }], [rig.event(), 7, 'a1', { do: 'run' }],
+      [rig.event(), 'rae', 'a1', null], [rig.event(), 'rae', 'a1', { do: 'delete' }], [rig.event(), 'rae', 'a1', { do: 'reschedule' }], [rig.event(), 'rae', 'a1', { do: 'reschedule', schedule: '   ' }],
+      [rig.event(), 'rae', 'a1', { do: 'reschedule', schedule: 5 }], [rig.event(), 'rae', 'a1', { do: 'reschedule', schedule: 'x'.repeat(SCHEDULE_MAX + 1) }]
+    ] as const
+    for (const [event, bot, routine, raw] of calls) await expect(edit(event, bot, routine, raw, 0)).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    await expect(probe(rig.event('https://example.com/'), 'rae', 'a1')).resolves.toBe(false)
+    await expect(probe(rig.event(), '', 'a1')).resolves.toBe(false)
+    expect(rig.writes).toEqual([])
+    expect(rig.reads).toEqual([])
+  })
+
+  it('refuses an edit made for a connection that is no longer live, and sends it to the live one', async () => {
+    const rig = harness(switchable)
+    const run = rig.handlers.get(CHANNEL.run)!
+    const edit = rig.handlers.get(CHANNEL.editRoutine)!
+    await run(rig.event(), { do: 'editTarget' }, 1)
+    await run(rig.event(), { do: 'checkTarget', target: { kind: 'local' }, into: 'replace' }, 1)
+    await new Promise(resolve => setImmediate(resolve))
+    await expect(edit(rig.event(), 'rae', 'a1', { do: 'run' }, 1)).resolves.toMatchObject({ ok: false, refusal: { kind: 'stale' } })
+    await expect(edit(rig.event(), 'rae', 'a1', { do: 'run' }, 2)).resolves.toMatchObject({ ok: true })
+  })
+
+  it('stops answering once disposed', () => {
+    const { handlers, served } = harness()
+    served.dispose()
+    expect(handlers.has(CHANNEL.routineEditsOffered)).toBe(false)
+    expect(handlers.has(CHANNEL.editRoutine)).toBe(false)
   })
 })
 
