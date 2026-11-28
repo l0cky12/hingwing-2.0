@@ -281,11 +281,15 @@ const END_CLASS = {
 /** The bot of the open chat, which draws the end of a turn whose reply has not started. null where the chat has no listed bot. */
 export const ChatBotContext = createContext<Bot | null>(null)
 
-function End({ turnKey, end, started }: { readonly turnKey: string; readonly end: ThreadEnd; readonly started: boolean }) {
+const STAND_IN = { name: 'Hermes', tone: 'slate' } as const satisfies Pick<Bot, 'name' | 'tone'>
+
+function End({ turnKey, end, started, showWork }: { readonly turnKey: string; readonly end: ThreadEnd; readonly started: boolean; readonly showWork: ShowWork }) {
   const bot = useContext(ChatBotContext)
   if (end.kind === 'at' || end.kind === 'none') return null
   const words = end.kind === 'tip' ? <><span><PhraseText words={end.words} /></span><Elapsed elapsed={end.elapsed} /></> : end.kind === 'done' ? <span className="sr">{end.words}</span> : <span data-find={fieldId(turnKey, 'end')}>{end.words}</span>
-  return <div className={`tip ${END_CLASS[end.kind]}`} role="status" data-end={end.kind}>{end.kind === 'tip' && !started && bot !== null ? <BotFace bot={bot} mood="working" size={22} /> : <span className="glyph" />}{words}</div>
+  const pet = end.kind === 'tip' && showWork === 'replies'
+  const face = pet ? bot ?? STAND_IN : end.kind === 'tip' && !started ? bot : null
+  return <div className={cx('tip', END_CLASS[end.kind], pet && 'pet')} role="status" data-end={end.kind}>{face !== null ? <BotFace bot={face} mood="working" size={22} /> : <span className="glyph" />}{words}</div>
 }
 
 /** Acts on a sent message by its stored row and text: `onEdit` puts it in the composer, `onRegenerate` asks again for its reply. */
@@ -321,13 +325,14 @@ interface TurnProps {
   readonly canReact: boolean
   readonly onReact: ReactOn
   readonly helpers: HelperControls | null
+  readonly showWork: ShowWork
 }
 
 const RUNNING_ENDS: ReadonlySet<ThreadEnd['kind']> = new Set(['at', 'tip', 'paused'])
 
 const HANDED = 'Handed over'
 
-export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, onAskAgain, canEdit, showsRegenerate, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, onNewChat, versions, onVersion, canReact, onReact, helpers }: TurnProps) {
+export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, onAskAgain, canEdit, showsRegenerate, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, onNewChat, versions, onVersion, canReact, onReact, helpers, showWork }: TurnProps) {
   const { end, rowId, request, reactions } = turn
   const regenerates = showsRegenerate && rowId !== null && request !== null
   const movesToNewChat = end.kind === 'failed' && end.remedy === 'newChat' && request !== null
@@ -363,7 +368,7 @@ export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, onAskAg
         {turn.nodes.map(node => (
           <Node key={node.key} node={node} endTone={end.kind === 'at' && end.nodeKey === node.key ? end.tone : null} elapsed={end.kind === 'at' && end.tone === 'live' && end.nodeKey === node.key ? end.elapsed : null} open={open} onToggle={onToggle} onAnswer={onAnswer} onAskAgain={onAskAgain} helpers={helpers} />
         ))}
-        <End turnKey={turn.key} end={end} started={turn.nodes.length > 0} />
+        <End turnKey={turn.key} end={end} started={turn.nodes.length > 0} showWork={showWork} />
       </div>
       <Pages pages={turn.pages} />
       {turn.tokens !== null && <p className="used">{turn.tokens}</p>}
@@ -471,7 +476,6 @@ interface ThreadProps {
   readonly canReact: boolean
   readonly onReact: ReactOn
   readonly helpers: HelperControls | null
-  /** How much of the bot's work to draw. Find searches only what is drawn. */
   readonly showWork: ShowWork
 }
 
@@ -623,7 +627,7 @@ export function Thread({ view, relays, sides, onAnswer, onAskAgain, onAnswerRequ
               turn={turn} open={open} onToggle={onToggle} onAnswer={onAnswer} onAskAgain={onAskAgain}
               canEdit={canEdit} showsRegenerate={turn.key === regenerateTurnKey} canRegenerate={canRegenerate} canBranch={canBranch}
               onEdit={onEdit} onRegenerate={onRegenerate} onBranch={onBranch} onNewChat={onNewChat} versions={groupsAt(turn.rowId)} onVersion={onVersion}
-              canReact={canReact} onReact={onReact} helpers={helpers}
+              canReact={canReact} onReact={onReact} helpers={helpers} showWork={showWork}
             />
             {beside(relayed.after.get(turn.key), answered.after.get(turn.key))}
           </Fragment>

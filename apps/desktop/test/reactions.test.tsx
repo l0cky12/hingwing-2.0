@@ -14,7 +14,7 @@ const turn = (reactions: TurnView['reactions']): TurnView => ({ key: TURN, time:
 const draw = (more: Partial<Props>) => renderToStaticMarkup((
   <Turn
     turn={turn({ turn: TURN, given: [] })} open={NONE_OPEN} onToggle={() => {}} onAnswer={async () => undefined} onAskAgain={async () => false} canEdit canBranch showsRegenerate={false} canRegenerate={false}
-    onEdit={() => {}} onRegenerate={() => {}} onBranch={() => {}} onNewChat={() => {}} versions={[]} onVersion={() => {}} canReact onReact={() => {}} helpers={null} {...more}
+    onEdit={() => {}} onRegenerate={() => {}} onBranch={() => {}} onNewChat={() => {}} versions={[]} onVersion={() => {}} canReact onReact={() => {}} helpers={null} showWork="all" {...more}
   />
 ))
 const BOTH: readonly Reaction[] = [{ emoji: '👍', by: 'user' }, { emoji: '❓', by: 'agent' }]

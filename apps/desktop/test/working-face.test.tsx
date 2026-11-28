@@ -41,3 +41,24 @@ describe('the end of a turn that has not started its reply', () => {
     expect(markup).not.toContain('data-mood')
   })
 })
+
+describe('the end of a running turn under Replies only', () => {
+  it("shows the bot's face hopping after the reply has started", () => {
+    const markup = drawn(turn([NODE]), BOT, 'replies')
+    expect(markup).toContain('class="tip working pet"')
+    expect(markup).toContain('data-mood="working"')
+    expect(markup).not.toContain('class="glyph"')
+  })
+
+  it('shows a stand-in face when the chat has no bot', () => {
+    const markup = drawn(turn([]), null, 'replies')
+    expect(markup).toContain('class="tip working pet"')
+    expect(markup).toContain('data-mood="working"')
+  })
+
+  it('leaves a finished turn its glyph', () => {
+    const markup = drawn({ ...turn([NODE]), end: { kind: 'done', words: 'Done' } }, BOT, 'replies')
+    expect(markup).toContain('class="glyph"')
+    expect(markup).not.toContain('pet')
+  })
+})

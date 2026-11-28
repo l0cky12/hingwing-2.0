@@ -17,7 +17,7 @@ const turn = (nodes: readonly ThreadNode[]): TurnView => ({
 const props = (more: Partial<Props>): Props => ({
   turn: turn([prose('p1', 'The folder holds two files.'), prose('p2', 'Both are notes.')]), open: NONE_OPEN, onToggle: () => {}, onAnswer: async () => undefined, onAskAgain: async () => false,
   canEdit: true, canBranch: true, showsRegenerate: true, canRegenerate: true, onEdit: () => {}, onRegenerate: () => {}, onBranch: () => {}, onNewChat: () => {},
-  versions: [], onVersion: () => {}, canReact: true, onReact: () => {}, helpers: null, ...more
+  versions: [], onVersion: () => {}, canReact: true, onReact: () => {}, helpers: null, showWork: 'all', ...more
 })
 const draw = (more: Partial<Props>) => renderToStaticMarkup(<Turn {...props(more)} />)
 
