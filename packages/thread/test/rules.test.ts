@@ -130,7 +130,7 @@ describe('pages', () => {
       tool('write_file', { path: '/w/notes.md' }, { diffs: [written('/w/notes.md', ['# Notes'])] }),
       tool('write_file', { path: '/w/board.HTM' }, { diffs: [written('/w/board.HTM', ['<body>'])] }),
       tool('patch', { path: '/w/site/index.html' }, { diffs: [diff('/w/site/index.html', 1, 1)] })
-    ])).toEqual([{ path: '/w/site/index.html', title: 'Q3 report' }, { path: '/w/board.HTM', title: 'board.HTM' }])
+    ])).toEqual([{ path: '/w/site/index.html', title: 'Q3 report', version: 't1/0 t1/3' }, { path: '/w/board.HTM', title: 'board.HTM', version: 't1/2' }])
   })
 
   it('takes a newer title, and drops a page a later step deleted', () => {
@@ -139,12 +139,45 @@ describe('pages', () => {
       tool('patch', { path: '/w/a.html' }, { diffs: [{ ...diff('/w/a.html', 1, 1), lines: [{ t: 'del', text: '<title>Draft</title>' }, { t: 'add', text: '<title>Final</title>' }] }] }),
       tool('write_file', { path: '/w/b.html' }, { diffs: [written('/w/b.html', ['<p>'])] }),
       tool('terminal', { command: 'rm /w/b.html' }, { diffs: [{ ...diff('/w/b.html', 0, 1), deletesFile: true }] })
-    ])).toEqual([{ path: '/w/a.html', title: 'Final' }])
+    ])).toEqual([{ path: '/w/a.html', title: 'Final', version: 't1/0 t1/1' }])
   })
 
   it('lists nothing for a step still running, and keeps one empty list for a turn with no page', () => {
     expect(threadView(running([runningTool('write_file', { path: '/w/a.html' })]), CLOCK).turns[0]?.pages).toEqual([])
     expect(pagesOf([text('Done.')])).toBe(pagesOf([text('Done again.')]))
+  })
+
+  const writes = (path: string, title: string) => tool('write_file', { path, title }, { diffs: [written(path, [`<title>${title}</title>`])] })
+
+  it('gives a page two turns wrote a card in each, and names the second as the newest', () => {
+    const view = threadView(session({ history: [settled([writes('/w/a.html', 'Draft'), writes('/w/b.html', 'Board')], COMPLETE, 't1'), settled([text('Again.'), writes('/w/a.html', 'Final')], COMPLETE, 't2')] }), CLOCK)
+    expect(view.turns.map(turn => turn.pages)).toEqual([
+      [{ path: '/w/a.html', title: 'Draft', version: 't1/0' }, { path: '/w/b.html', title: 'Board', version: 't1/1' }],
+      [{ path: '/w/a.html', title: 'Final', version: 't2/1' }]
+    ])
+    expect(view.newestPages).toEqual(new Map([['/w/a.html', 't2/1'], ['/w/b.html', 't1/1']]))
+  })
+
+  it('gives a page one turn wrote twice one card, whose version holds both writes', () => {
+    const view = threadView(session({ history: [settled([writes('/w/a.html', 'Draft'), text('Fixing.'), writes('/w/a.html', 'Final')])] }), CLOCK)
+    expect(view.turns[0]?.pages).toEqual([{ path: '/w/a.html', title: 'Final', version: 't1/0 t1/2' }])
+    expect(view.newestPages).toEqual(new Map([['/w/a.html', 't1/0 t1/2']]))
+  })
+
+  it('gives a new version when an earlier-started write of the page finishes after a later one', () => {
+    const later = threadView(running([runningTool('write_file', { path: '/w/a.html' }), writes('/w/a.html', 'Final')]), CLOCK)
+    const both = threadView(running([writes('/w/a.html', 'Draft'), writes('/w/a.html', 'Final')]), CLOCK)
+    expect(later.newestPages.get('/w/a.html')).toBe('t9/1')
+    expect(both.newestPages.get('/w/a.html')).toBe('t9/0 t9/1')
+  })
+
+  it('counts a page the running turn rewrote as newer than a settled one', () => {
+    const view = threadView({ ...running([writes('/w/a.html', 'Final')]), history: [settled([writes('/w/a.html', 'Draft')])] }, CLOCK)
+    expect(view.newestPages).toEqual(new Map([['/w/a.html', 't9/0']]))
+  })
+
+  it('keeps one empty map for a thread with no page', () => {
+    expect(threadView(session({ history: [settled([text('Done.')])] }), CLOCK).newestPages).toBe(threadView(session(), CLOCK).newestPages)
   })
 })
 
@@ -276,7 +309,7 @@ describe('checkThread', () => {
   it('reports each broken invariant', () => {
     const step: StepView = { key: 't1/0', title: [], state: 'done', stat: null, duration: null, record: null, image: null }
     const view: ThreadView = {
-      state: 'ready', pending: [], asks: [], earlier: 'none', changesAt: null,
+      state: 'ready', pending: [], asks: [], earlier: 'none', newestPages: new Map(), changesAt: null,
       turns: [
         {
           key: 't1', time: null, request: null, handed: false, attachments: [], rowId: null, end: { kind: 'at', nodeKey: 't1/7', tone: 'live', elapsed: null }, tokens: '9 in, 1 out', reactions: null, pages: [],
@@ -585,7 +618,7 @@ describe('the live end while a hidden tool runs', () => {
 
 describe('checkThread on helpers, plans and reasoning', () => {
   const turn = (nodes: ThreadNode[], end: ThreadView['turns'][number]['end']): ThreadView => ({
-    state: 'ready', pending: [], asks: [], earlier: 'none', changesAt: null, turns: [{ key: 't1', time: null, request: null, handed: false, attachments: [], rowId: null, tokens: null, reactions: null, pages: [], nodes, end }]
+    state: 'ready', pending: [], asks: [], earlier: 'none', newestPages: new Map(), changesAt: null, turns: [{ key: 't1', time: null, request: null, handed: false, attachments: [], rowId: null, tokens: null, reactions: null, pages: [], nodes, end }]
   })
   const planNode = (key: string): ThreadNode => ({ kind: 'plan', key, plan: { done: 0, total: 1, cancelled: 0, openByDefault: true, entries: [{ key: `${key}/e1`, text: 'x', state: 'todo', depth: 0 }] } })
   const reasoningNode = (key: string, streaming: boolean): ThreadNode => ({ kind: 'reasoning', key, text: 'x', streaming, duration: null })

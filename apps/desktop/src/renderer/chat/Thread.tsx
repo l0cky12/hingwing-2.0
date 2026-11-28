@@ -13,7 +13,7 @@ import { FIND_OPEN, FindBar, reveal, useFindMarks, type FindState } from './Find
 import { isOpen, NONE_OPEN, toggled, type OpenState } from './open'
 import { hasActs, MessageActions, type MessageActs } from './MessageActions'
 import { Given } from './Reactions'
-import { Pages } from './Pages'
+import { NewestPagesContext, Pages } from './Pages'
 import { placeByTurn } from './relays'
 import { shownWork } from './show-work'
 import { SideTurn } from './Sides'
@@ -633,7 +633,7 @@ export function Thread({ view, relays, sides, onAnswer, onAskAgain, onAnswerRequ
   }, [finding])
 
   return (
-    <>
+    <NewestPagesContext value={view.newestPages}>
       {find !== null && (
         <FindBar
           query={find.query} total={matches.length} current={current} earlier={view.earlier} inputRef={findInput}
@@ -663,6 +663,6 @@ export function Thread({ view, relays, sides, onAnswer, onAskAgain, onAnswerRequ
         ))}
         {view.pending.map(row => <Pending key={row.key} row={row} queue={queue} />)}
       </div>
-    </>
+    </NewestPagesContext>
   )
 }

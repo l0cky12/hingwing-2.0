@@ -18,7 +18,7 @@ const turn = (nodes: TurnView['nodes']): TurnView =>
 const drawn = (view: TurnView, bot: Bot | null, showWork: ShowWork = 'all') => renderToStaticMarkup(
   <ChatBotContext value={bot}>
     <Thread
-      view={{ state: 'ready', turns: [view], pending: [], asks: [], earlier: 'none', changesAt: null } as ThreadView} relays={[]} sides={[]} onAnswer={async () => undefined} onAskAgain={async () => false} onAnswerRequest={async () => false}
+      view={{ state: 'ready', turns: [view], pending: [], asks: [], earlier: 'none', newestPages: new Map(), changesAt: null } as ThreadView} relays={[]} sides={[]} onAnswer={async () => undefined} onAskAgain={async () => false} onAnswerRequest={async () => false}
       onLoadEarlier={() => {}} onFindClosed={() => {}} onFindScrolled={() => {}} canEdit canRegenerate={false} regenerateTurnKey={null} canBranch onEdit={() => {}} onRegenerate={() => {}} onReply={() => {}}
       onBranch={() => {}} onNewChat={() => {}} versions={[]} onVersion={() => {}} queue={{ canAct: true, pressed: new Map(), onAct: () => {} }} canReact onReact={() => {}} helpers={null} showWork={showWork}
     />

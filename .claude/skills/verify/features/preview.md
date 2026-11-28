@@ -19,18 +19,21 @@ A page opens in a pane beside the chat, so the user reads the reply and sees the
 - `page-card` shows each HTML file a turn's finished steps wrote as a card under the reply, titled by the `<title>` its diff shows, else by its name, with **Open**.
 - `page-open` fills the window with the page from the card's **Open**, with the chat in a 400 px panel at its side and no sidebar. **Close page** gives the window back to the chat.
 - `page-remote` reads the page over ssh when Hermes runs on an ssh machine, so the pane has no **Open** for a file on this computer.
+- `page-update` reloads the open page when a later step of the chat writes the same file, so the pane shows the newest version.
+- `page-newer` gives an older card of a page that a later turn wrote again **Newer version below**, which scrolls to the newest card and focuses its **Open**.
 
 ## How to get to it (user POV)
 
 - Ask Hermes to build a page and show it. The pane opens beside the chat.
 - Press a web link in a reply and pick **Preview**.
+- Open a page from its card, then ask Hermes to change the page.
 
 ## Driving it with highwing-verify
 
 Preconditions:
 
 - `$H doctor` prints only `ok` lines and the build is current.
-- Every recipe passes `--fixture fixtures/preview.jsonl --serve fixtures/preview`, so the fixture's `http://localhost:5173/` is the test page served for the run. `PRE` is `wait live type "Message Hermes" @request click button Send`.
+- Every recipe up to the page versions passes `--fixture fixtures/preview.jsonl --serve fixtures/preview`, so the fixture's `http://localhost:5173/` is the test page served for the run. `PRE` is `wait live type "Message Hermes" @request click button Send`.
 
 - **Hermes opens it.** Run `$H run --fixture fixtures/preview.jsonl --serve fixtures/preview --run preview PRE wait preview see demo previewing http://localhost:5173/ shot pane`. `pane.aria.txt` holds `region "Preview"` with `heading "demo"`, `button "Reload"`, `button "Open in browser"` and `button "Close preview"`. `pane.png` shows the heading "Preview works" in the pane.
 - **A link, then Preview.** Run `$H run ... --run preview-link PRE wait settled click button "Close preview" gone region Preview click link "the demo" click button Preview wait preview previewing http://localhost:5173/ nothing-opened shot link-preview`. The pane's heading is the page's own title, "Demo page".
@@ -50,11 +53,16 @@ Preconditions:
 - **A page card.** Run `$H run ... --run page-card PRE wait settled click button "Close preview" gone region Preview see "Demo page" shot card click button "Open Demo page" wait preview page-says "Preview works" shot page click button "Close page" gone region Preview`. `card.aria.txt` holds `region "Demo page"` with `heading "Demo page"` and `button "Open Demo page"`. `page.png` shows the page on the left and the chat on the right, with no sidebar.
 - **A page on an ssh machine.** Run `$H run --fake-host ok --saved remote --fixture fixtures/preview.jsonl --run page-remote PRE wait settled click button "Close preview" gone region Preview click button "Open Demo page" wait preview page-says "Preview works" shot remote`. The fake machine's ssh reads the file from this computer's disk, so the same gotcha applies. `remote.aria.txt` holds the pane with `button "Reload"` and `button "Close page"` and no `button "Open"`.
 
+- **The page versions** play `fixtures/page-versions.jsonl`, written by `python3 fixtures/make_page_versions_fixture.py`, with no `--serve`. Its first turn writes `fixtures/preview/index.html`, titled "Demo page" and saying "Preview works", to `/tmp/hermes-proto-work/site/index.html`. It then waits for the next message, and its second turn writes `fixtures/page-versions/index.html`, titled "Demo page, updated" and saying "Version 2", to the same path, as the step "Wrote index.html +7 −2". `VPRE` is `wait live type "Message Hermes" @request click button Send wait settled`. `VNEXT` is `type "Message Hermes" "Add this week's numbers to the page." click button Send said "The page now shows this week's numbers."`. `VNEXT` waits on the reply, not `wait settled`, because the first turn's Done already shows.
+- **A page updated in place.** Run `$H run --fixture fixtures/page-versions.jsonl --run page-update put fixtures/preview/index.html /tmp/hermes-proto-work/site/index.html VPRE click button "Open Demo page" wait preview page-says "Preview works" put fixtures/page-versions/index.html /tmp/hermes-proto-work/site/index.html pause 1000 page-says "Preview works" VNEXT page-says "Version 2" shot page-updated put fixtures/preview/index.html /tmp/hermes-proto-work/site/index.html quiet`. The second `put` writes the file as the second turn's step would, before its frames arrive. The page still says "Preview works" a second later, so a changed file alone reloads nothing. It says "Version 2" once the step finishes, with no click on **Reload**. `page-updated.png` shows "Version 2" and "This week" in the page. The last `put` brings version 1 back.
+- **An older card.** Run `$H run --fixture fixtures/page-versions.jsonl --size 1180x600 --run page-newer VPRE VNEXT count button "Newer version below" 1 inside button "Newer version below" region "Demo page" wheel region "Demo page" -3000 click button "Newer version below" shot newer focused button "Open Demo page, updated" inview region "Demo page, updated" quiet`. At 600 px tall, the thread scrolled to its top leaves the newest card out of view (on the build before **Newer version below**, at y 730 of a thread 530 px tall), so `inview` after the click proves the jump. The `shot` lets the smooth scroll land first. `newer.aria.txt` holds `region "Demo page"` with `button "Newer version below"` and `button "Open Demo page"`, then `region "Demo page, updated"` with `button "Open Demo page, updated"` alone.
+
 ## Gotchas
 
 - A page open full window shares its layout with the other views. Ctrl+Shift+T draws the task board in the chat's side panel, the bot's screen (the computer view) takes the pane back beside the chat with the sidebar, and Settings hides the pane. Leaving the screen or Settings brings the full-window page back.
 - The page is not in the renderer, so `see` and the ARIA snapshot never find its text. Use `page-says`, and `shot`, which draws the page onto the PNG.
 - A fixture run is a local connection. The words for a remote Hermes's localhost and files come from `apps/desktop/test/preview-page.test.ts`, not a run.
+- A replay plays a step's frames but writes no file, so **A page updated in place** puts the page file itself, version 1 before the first message and version 2 before the second. Its last step puts version 1 back, so **An HTML file**, **A page card** and **A page on an ssh machine** still find "Demo page" saying "Preview works". A run that fails before then leaves version 2 there, so copy `fixtures/preview/index.html` back. Every page recipe reads that one path, so run **A page updated in place** alone, never beside another page recipe.
 - **An HTML file** and **The page card** read the file from this machine's disk. The fixture's recording leaves it at `/tmp/hermes-proto-work/site/index.html`. Without it the pane says "This file isn't there any more." Copy `fixtures/preview/index.html` there to bring it back.
 - **The file recipes** read `/tmp/hermes-proto-work/reports`, which `fixtures/make_fixture.py preview-files` writes. Every story of that script deletes `/tmp/hermes-proto-work` first, so run it again, with Hermes's interpreter, after recording any other story.
 - The rows of a CSV are in the window, not the page view, so `see`, `inview` and the ARIA snapshot find them. The PDF viewer is in the view and only `shot` sees it.

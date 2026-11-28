@@ -8,7 +8,7 @@ const node = (kind: ThreadNode['kind']) => ({ kind, key: `n-${kind}` }) as unkno
 const DONE: ThreadEnd = { kind: 'done', words: 'Done' }
 const turn = (key: string, kinds: readonly ThreadNode['kind'][], end: ThreadEnd = DONE): TurnView =>
   ({ key, time: null, request: 'Hello', handed: false, attachments: [], rowId: 1, tokens: null, reactions: null, pages: [], nodes: kinds.map(node), end })
-const view = (...turns: TurnView[]): ThreadView => ({ state: 'ready', turns, pending: [], asks: [], earlier: 'none', changesAt: null })
+const view = (...turns: TurnView[]): ThreadView => ({ state: 'ready', turns, pending: [], asks: [], earlier: 'none', newestPages: new Map(), changesAt: null })
 const kindsOf = (shown: ThreadView) => shown.turns.flatMap(({ nodes }) => nodes.map(({ kind }) => kind))
 const live = (nodeKey: string): ThreadEnd => ({ kind: 'at', nodeKey, tone: 'live', elapsed: '3 min' })
 const said = (markdown: string) => ({ kind: 'prose', key: markdown, markdown, streaming: false }) as ThreadNode
