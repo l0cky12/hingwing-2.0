@@ -84,7 +84,8 @@ const STATES = {
   preview: page => page.getByRole('region', { name: 'Preview', exact: true }),
   'group-thinking': page => page.locator('#transcript .tip.thinking').filter({ hasText: / (?:is|are) thinking$/ }),
   'group-replied': page => page.locator('#transcript:has(.said-by):not(:has(.tip))'),
-  pet: page => page.locator('#transcript .tip.pet .face[data-mood="working"]')
+  pet: page => page.locator('#transcript .tip.pet .face[data-mood="working"]'),
+  'pet-picture': page => page.locator('#transcript .tip.pet img.pet-picture')
 }
 
 const rendered = page => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
@@ -604,6 +605,29 @@ const STEPS = {
       const held = await poll(ctx, read, found => found === drawn)
       log(ctx, `  the avatar of "${name}" draws ${held}`)
       if (held !== drawn) throw new Error(`the avatar of "${name}" draws ${held}, not a ${drawn}`)
+    }
+  },
+  'working-mark': {
+    arity: 2,
+    run: async (ctx, drawn, motion) => {
+      if (drawn !== 'picture' && drawn !== 'face') throw new Error(`working-mark takes "picture" or "face", not "${drawn}"`)
+      if (motion !== 'hopping' && motion !== 'still') throw new Error(`working-mark takes "hopping" or "still", not "${motion}"`)
+      const mark = ctx.page.locator('#transcript .tip.pet .face').last()
+      const read = () => mark.evaluate(element => {
+        const loaded = element instanceof HTMLImageElement && element.complete && element.naturalWidth > 0
+        const running = element.getAnimations().filter(animation => animation.playState === 'running' && Number(animation.effect?.getTiming().duration) > 0)
+        const words = [...element.closest('.tip').children].filter(child => child !== element && !child.matches('.sr')).map(child => child.textContent).join(' ').trim()
+        return {
+          drawn: element instanceof HTMLImageElement ? (loaded ? 'picture' : 'unloaded picture') : 'face',
+          motion: running.length > 0 ? 'hopping' : 'still',
+          size: Math.round(element.getBoundingClientRect().width),
+          animations: running.map(animation => `${animation.animationName} ${animation.effect.getTiming().duration} ms`).join(', ') || 'none',
+          words
+        }
+      }, undefined, { timeout: ctx.timeout })
+      const held = await poll(ctx, read, found => found.drawn === drawn && found.motion === motion)
+      log(ctx, `  the working mark is a ${held.size} px ${held.drawn}, ${held.motion} (${held.animations}), beside "${held.words}"`)
+      if (held.drawn !== drawn || held.motion !== motion) throw new Error(`the working mark is a ${held.drawn}, ${held.motion}, not a ${drawn}, ${motion}`)
     }
   },
   tile: {
