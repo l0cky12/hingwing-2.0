@@ -95,15 +95,32 @@ export function usePicture(bot: BotId | null): string | null {
 }
 
 const claims = new Map<string, number>()
+const writes = new Map<string, Promise<unknown>>()
 
-/** Starts a change to a bot's picture. The check it returns turns false once a later change starts, so a slow pet never overwrites a newer picture. */
-export function useClaimPicture(): (bot: BotId) => () => boolean {
+export interface PictureWrites {
+  /** Starts a change to the bot's picture. The check it returns turns false once a later change starts, so a slow pet never overwrites a newer picture. */
+  readonly claim: (bot: BotId) => () => boolean
+  /** Sends a write once the bot's last one is answered: Hermes runs `profiles.set_asset` on a worker pool, so the order writes arrive in is not the order they land in. */
+  readonly write: <T>(bot: BotId, send: () => Promise<T>) => Promise<T>
+}
+
+export function usePictureWrites(): PictureWrites {
   const epoch = useContext(Epoch)
-  return bot => {
-    const key = `${epoch} ${bot}`
-    const mine = (claims.get(key) ?? 0) + 1
-    claims.set(key, mine)
-    return () => claims.get(key) === mine
+  return {
+    claim: bot => {
+      const key = `${epoch} ${bot}`
+      const mine = (claims.get(key) ?? 0) + 1
+      claims.set(key, mine)
+      return () => claims.get(key) === mine
+    },
+    write: (bot, send) => {
+      const key = `${epoch} ${bot}`
+      const done = (writes.get(key) ?? Promise.resolve()).then(send)
+      const settled = done.catch(() => {})
+      writes.set(key, settled)
+      void settled.then(() => { if (writes.get(key) === settled) writes.delete(key) })
+      return done
+    }
   }
 }
 

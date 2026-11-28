@@ -4,12 +4,6 @@ import { faceOf, faceSvg, type FaceMood } from './look'
 import { usePicture } from './pictures'
 import { initialOf } from './roster-view'
 
-export function useBotPicture(bot: Pick<Bot, 'id' | 'picture'> | null): { readonly url: string | null; readonly onDecodeError: () => void } {
-  const read = usePicture(bot?.picture ? bot.id : null)
-  const [broken, setBroken] = useState<string | null>(null)
-  return { url: read !== broken ? read : null, onDecodeError: () => setBroken(read) }
-}
-
 /** The bot's picture once the whole of it has decoded, so a caller keeps its stand-in drawn until then. A cut-off PNG never passes. */
 export function useDecodedPicture(bot: Pick<Bot, 'id' | 'picture'> | null): string | null {
   const read = usePicture(bot?.picture ? bot.id : null)
@@ -29,8 +23,11 @@ export function useDecodedPicture(bot: Pick<Bot, 'id' | 'picture'> | null): stri
 }
 
 export function Avatar({ bot, size }: { readonly bot: Bot | Pick<Bot, 'name' | 'tone'>; readonly size: number }) {
-  const { url, onDecodeError } = useBotPicture('picture' in bot ? bot : null)
-  if (url !== null) return <img className="avatar avatar-picture" src={url} alt="" width={size} height={size} onError={onDecodeError} />
+  const picture = usePicture('picture' in bot && bot.picture ? bot.id : null)
+  const [broken, setBroken] = useState<string | null>(null)
+  if (picture !== null && picture !== broken) {
+    return <img className="avatar avatar-picture" src={picture} alt="" width={size} height={size} onError={() => setBroken(picture)} />
+  }
   return <span className={`avatar tone-${bot.tone}`} style={{ width: size, height: size, fontSize: size * 0.42 }} aria-hidden>{initialOf(bot.name)}</span>
 }
 

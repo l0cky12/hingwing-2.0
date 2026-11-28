@@ -5,7 +5,7 @@ import { Avatar } from './Avatar'
 import { BotForm } from './BotForm'
 import { draftOf, saveEdit, type EditCalls, type Submitted } from './bot-form'
 import { usePetPicture, type PetCalls } from './pet-picture'
-import { useClaimPicture, useForgetPicture } from './pictures'
+import { useForgetPicture, usePictureWrites } from './pictures'
 
 export interface BotEditorProps extends EditCalls {
   readonly bot: Bot
@@ -22,7 +22,7 @@ export function BotEditor({ bot, details: loaded, onDescribe, onEdit, onPickPict
   const [details, setDetails] = useState(loaded)
   const [picturing, setPicturing] = useState<{ readonly doing: 'file' | 'pet' | null; readonly words: string | null }>({ doing: null, words: null })
   const forget = useForgetPicture()
-  const claim = useClaimPicture()
+  const { claim, write } = usePictureWrites()
   const drawPet = usePetPicture(pet)
 
   const save = async (draft: BotDraft): Promise<Submitted> => {
@@ -33,7 +33,7 @@ export function BotEditor({ bot, details: loaded, onDescribe, onEdit, onPickPict
   const picture = async (change: () => Promise<CommandOutcome<PictureChoice | void>>, doing: 'file' | 'pet' = 'file') => {
     setPicturing({ doing, words: null })
     if (doing === 'file') claim(bot.id)
-    const outcome = await change()
+    const outcome = await (doing === 'file' ? write(bot.id, change) : change())
     if (outcome.ok && outcome.value !== 'cancelled' && doing === 'file') forget(bot.id)
     setPicturing({ doing: null, words: outcome.ok ? null : outcome.refusal.message })
   }

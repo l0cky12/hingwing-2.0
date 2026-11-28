@@ -6,7 +6,7 @@ const redraw = vi.hoisted(() => ({ calls: [] as unknown[][], result: (): Promise
 
 vi.mock('../src/renderer/bots/look', () => ({ pictureOf: (...args: unknown[]) => (redraw.calls.push(args), redraw.result()) }))
 vi.mock('../src/renderer/store', () => ({ Epoch: {}, runAt: vi.fn() }))
-vi.mock('../src/renderer/bots/pictures', () => ({ useClaimPicture: vi.fn(), useForgetPicture: vi.fn() }))
+vi.mock('../src/renderer/bots/pictures', () => ({ useForgetPicture: vi.fn(), usePictureWrites: vi.fn() }))
 
 const BOT = 'rae' as BotId
 const EPOCH = 7
@@ -37,7 +37,7 @@ describe('the prompt for a pet picture', () => {
 describe('giving a bot a pet picture', () => {
   it('asks once for a picture, redraws it, and saves the redrawn one', async () => {
     const made = calls(async () => ({ ok: true, value: 'data:image/png;base64,R0VO' }))
-    expect(await givePet(made, BOT, ABOUT, EPOCH, () => true)).toEqual({ ok: true, value: undefined })
+    expect(await givePet(made, BOT, ABOUT, EPOCH, save => save())).toEqual({ ok: true, value: undefined })
     expect(made.generate).toHaveBeenCalledOnce()
     expect(made.generate, 'in the epoch it was asked in').toHaveBeenCalledWith(petPrompt(ABOUT), EPOCH)
     expect(redraw.calls).toEqual([[{ from: 'generate', picture: 'data:image/png;base64,R0VO' }, ' Rae ']])
@@ -50,27 +50,28 @@ describe('giving a bot a pet picture', () => {
     ['a Hermes with no image model', refused('rejected', 'No image generation backend configured. Set one up first.')]
   ])('returns the refusal of %s and saves nothing', async (_, refusal) => {
     const made = calls(async () => refusal)
-    expect(await givePet(made, BOT, ABOUT, EPOCH, () => true)).toEqual(refusal)
+    expect(await givePet(made, BOT, ABOUT, EPOCH, save => save())).toEqual(refusal)
     expect(made.save).not.toHaveBeenCalled()
   })
 
   it('says it could not draw the picture when the redraw fails, and saves nothing', async () => {
     redraw.result = () => Promise.reject(new Error('bad image'))
     const made = calls(async () => ({ ok: true, value: 'data:image/png;base64,R0VO' }))
-    expect(await givePet(made, BOT, ABOUT, EPOCH, () => true)).toEqual(refused('rejected', "Highwing couldn't draw that picture."))
+    expect(await givePet(made, BOT, ABOUT, EPOCH, save => save())).toEqual(refused('rejected', "Highwing couldn't draw that picture."))
     expect(made.save).not.toHaveBeenCalled()
   })
 
-  it('saves nothing once a newer change to the picture has started', async () => {
+  it('hands its save to the commit, which can drop it once a newer change to the picture has started', async () => {
     const made = calls(async () => ({ ok: true, value: 'data:image/png;base64,R0VO' }))
-    expect(await givePet(made, BOT, ABOUT, EPOCH, () => false)).toEqual({ ok: true, value: undefined })
+    const dropped = { ok: true, value: undefined } as const
+    expect(await givePet(made, BOT, ABOUT, EPOCH, async () => dropped)).toBe(dropped)
     expect(made.save).not.toHaveBeenCalled()
   })
 
   it('returns the refusal when saving fails', async () => {
     const refusal = refused('rejected', 'Hermes would not keep it.')
     const made = calls(async () => ({ ok: true, value: 'data:image/png;base64,R0VO' }), async () => refusal)
-    expect(await givePet(made, BOT, ABOUT, EPOCH, () => true)).toEqual(refusal)
+    expect(await givePet(made, BOT, ABOUT, EPOCH, save => save())).toEqual(refusal)
   })
 })
 

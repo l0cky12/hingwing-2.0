@@ -28,7 +28,7 @@ vi.mock('../src/renderer/store', () => ({
   }
 }))
 
-const { retryOfflinePictures, useClaimPicture, usePicture } = await import('../src/renderer/bots/pictures')
+const { retryOfflinePictures, usePicture, usePictureWrites } = await import('../src/renderer/bots/pictures')
 
 const PNG = `data:image/png;base64,${Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).toString('base64')}`
 const settle = () => new Promise(resolve => setTimeout(resolve, 0))
@@ -68,7 +68,7 @@ describe("a bot's picture", () => {
 
 describe("a change to a bot's picture", () => {
   it('stays current until a later change to the same bot starts', () => {
-    const claim = useClaimPicture()
+    const { claim } = usePictureWrites()
     const pet = claim('claimed-bot' as BotId)
     const other = claim('other-bot' as BotId)
     expect(pet(), 'nothing started since').toBe(true)
@@ -76,5 +76,26 @@ describe("a change to a bot's picture", () => {
     expect(pet(), 'an upload started after it').toBe(false)
     expect(upload()).toBe(true)
     expect(other(), 'another bot is untouched').toBe(true)
+  })
+})
+
+describe("writes to a bot's picture", () => {
+  it('go one at a time per bot, each after the last one was answered, even when it failed', async () => {
+    const { write } = usePictureWrites()
+    const order: string[] = []
+    let answer = (): void => {}
+    const first = write('queued-bot' as BotId, () => new Promise<void>((resolve, reject) => {
+      order.push('pet sent')
+      answer = () => reject(new Error('refused'))
+    }))
+    const second = write('queued-bot' as BotId, async () => { order.push('upload sent') })
+    const elsewhere = write('other-queued-bot' as BotId, async () => { order.push('other bot sent') })
+    await settle()
+    expect(order, 'the upload waits for the pet, another bot does not').toEqual(['pet sent', 'other bot sent'])
+    answer()
+    await expect(first).rejects.toThrow('refused')
+    await second
+    await elsewhere
+    expect(order).toEqual(['pet sent', 'other bot sent', 'upload sent'])
   })
 })
