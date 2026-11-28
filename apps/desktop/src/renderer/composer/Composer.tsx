@@ -1,4 +1,4 @@
-import { shownChat, slashLineOf, type Attachment, type AttachmentId, type CommandOutcome, type PathMatch, type SendPlan, type SessionId, type SlashCatalog } from '@highwing/hermes/domain'
+import { quoteOf, shownChat, slashLineOf, withQuote, type Attachment, type AttachmentId, type CommandOutcome, type PathMatch, type SendPlan, type SessionId, type SlashCatalog } from '@highwing/hermes/domain'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { MAX_ATTACHMENTS, type StageResult } from '../../ipc-contract'
 import { Avatar } from '../bots/Avatar'
@@ -13,7 +13,6 @@ import { EDITING_WORDS, removalWords, type Editing } from './edit'
 import { RemoveDialog } from './RemoveDialog'
 import { mentionable, mentionWord, menuOf, picked, type Mention, type Menu, type MenuItem } from './menu'
 import { usePathFiles } from './paths'
-import { quoteOf, withQuote } from './quote'
 
 export interface ComposerGroup {
   readonly name: string

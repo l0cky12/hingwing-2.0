@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Quote } from '../src/ipc-contract'
-import { quoteOf, withQuote } from '../src/renderer/composer/quote'
+import { quoteOf, withQuote, type Quote } from '../src/domain/quote'
 
 /** Hermes's compactor (agent/context_compressor.py `_GATEWAY_REPLY_POINTER_RE`), which strips a reply's quote so it never reads as the request. */
 const HERMES_STRIPS = /^(?:\[Triggering message id: [^\n]*\]\n\n)?\[Replying to(?: your previous message| an earlier scheduled cron delivery \([^)\n]*\))?: ".*?"\]\n\n/s

@@ -1390,6 +1390,15 @@ describe('mentioning another bot', () => {
     expect(submits(opened)).toEqual([])
   })
 
+  it('asks its own bot when only the quoted message names another bot', async () => {
+    const opened = open(TEAM)
+    const text = `[Replying to: "${ASK}"]\n\nWhy did you suggest that?`
+    expect(await send(opened, text)).toEqual({ ok: true, value: null })
+    expect(relays(opened)).toEqual([])
+    expect(delivers(opened)).toEqual([])
+    expect(submits(opened)).toMatchObject([{ params: { text } }])
+  })
+
   it('hands one message to every bot it names, in the order it names them', async () => {
     const opened = open(TEAM)
     await send(opened, 'Ask @Sam and @Rae, then @sam again.')

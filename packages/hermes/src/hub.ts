@@ -14,6 +14,7 @@ import type { Command, Outcome, ResultOf } from './domain/command'
 import type { GroupChat, Groups } from './domain/groups'
 import type { Job } from './domain/jobs'
 import { mentionedBots } from './domain/mention'
+import { quoteOf } from './domain/quote'
 import { shownBot, shownChat, shownGroup, type OpenChat } from './domain/open'
 import type { PaneAsk } from './domain/pane'
 import type { BridgeRequest, ServerRequest } from './domain/reduce'
@@ -399,7 +400,7 @@ export function openHermes(options: HermesOptions): Hermes {
     const listed = bots.get()
     if (!relay.get().supported || listed.state !== 'listed') return []
     const own = desk.botOf(sessionId)
-    return mentionedBots(text, botsIn(listed.roster).filter(bot => bot.id !== own))
+    return mentionedBots(quoteOf(text).body, botsIn(listed.roster).filter(bot => bot.id !== own))
   }
 
   const publishSidebar = () => {

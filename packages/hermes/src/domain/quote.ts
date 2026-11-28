@@ -1,4 +1,6 @@
-import type { Quote } from '../../ipc-contract'
+/** Whose message a quote is from. Hermes words a reply to its own message differently. */
+export type QuoteFrom = 'hermes' | 'you'
+export interface Quote { readonly from: QuoteFrom; readonly text: string }
 
 /**
  * Hermes's own gateway frames a platform reply this way (gateway/inbound_reply_context.py), and its

@@ -2,7 +2,7 @@ import {
   APPROVAL_MODES, BOT_MARKS, BOT_TEMPLATES, BOT_TONES, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isManagerName, isPetSlug, onThisComputer, PICK_MODES, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, ROUTINE_ACTIONS, targetOf,
   type About, type AdmissionId, type AvatarTone, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type Bots, type BranchId, type BusyMode, type ChatRef,
   type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupChat, type GroupDraft, type GroupId, type Groups, type Header, type HelperId, type Item, type Link, type ModelOption,
-  type BotActivities, type CatalogPlugin, type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type Recording, type RelayDesk, type RequestId, type RequestReply,
+  type BotActivities, type CatalogPlugin, type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type Quote, type Recording, type RelayDesk, type RequestId, type RequestReply,
   type PickMode, type RestoreScope, type ResultOf, type RoutineId, type ScreenView, type Server, type ServerId, type ServerSetup, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SkillLibrary, type SlashCatalog, type Target, type TaskBoard, type TaskChat, type Timed, type TurnId, type Unstarted
 } from '@highwing/hermes/domain'
 import type { Intro } from './intro'
@@ -248,8 +248,6 @@ export type ImageOutcome = { readonly ok: true; readonly type: ImageType; readon
  * new-chat view, or a group chat.
  */
 export type DraftKey = `chat:${SessionId}` | `bot:${BotId}` | 'new' | `group:${GroupId}`
-export type QuoteFrom = 'hermes' | 'you'
-export interface Quote { readonly from: QuoteFrom; readonly text: string }
 /** `bot` is the bot of the chat the draft was typed in, so it can be matched to that bot's list. Empty `text`, no attachments and no quote: no draft. */
 export interface Draft { readonly key: DraftKey; readonly bot: BotId | null; readonly text: string; readonly attachments: readonly Attachment[]; readonly quote: Quote | null }
 

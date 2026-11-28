@@ -1,7 +1,6 @@
-import { type Attachment, type AttachmentId, type BotId, type SessionId, type Shown, type ShownGroup, type Sidebar } from '@highwing/hermes/domain'
+import { quoteOf, type Attachment, type AttachmentId, type BotId, type Quote, type SessionId, type Shown, type ShownGroup, type Sidebar } from '@highwing/hermes/domain'
 import { useSyncExternalStore } from 'react'
-import { isEmptyDraft, type Draft, type DraftKey, type Quote } from '../../ipc-contract'
-import { quoteOf } from './quote'
+import { isEmptyDraft, type Draft, type DraftKey } from '../../ipc-contract'
 
 export type DraftSlot = Pick<Draft, 'key' | 'bot'> | null
 type Held = Pick<Draft, 'text' | 'attachments' | 'quote'>

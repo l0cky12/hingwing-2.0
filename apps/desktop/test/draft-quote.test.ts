@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import type { Bridge, Draft, DraftKey, Quote } from '../src/ipc-contract'
+import type { Quote } from '@highwing/hermes/domain'
+import type { Bridge, Draft, DraftKey } from '../src/ipc-contract'
 
 const saved: Draft[] = []
 beforeAll(() => {
