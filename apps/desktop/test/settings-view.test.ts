@@ -7,7 +7,7 @@ const KEYED = SHORTCUTS.filter(({ mod }) => mod !== 'alt').map(({ id }) => `key:
 describe('settingsViewOf with no search', () => {
   it.each([
     ['connection', 'Connection', 'The Hermes this app talks to, and how it reaches it.', ['connection']],
-    ['appearance', 'Appearance', 'How Highwing looks and what its sidebar shows.', ['theme', 'accent', 'sidebar']],
+    ['appearance', 'Appearance', 'How Highwing looks and what its sidebar shows.', ['theme', 'accent', 'show-work', 'sidebar']],
     ['composer', 'Composer', 'How the message box sends and checks what you write.', ['send-key', 'spell-check']],
     ['window', 'Window', 'What closing Highwing’s window does.', ['on-close']],
     ['notifications', 'Notifications', 'Which desktop notifications Highwing shows.', ['notice-asks', 'notice-replies', 'notice-jobs']],
@@ -104,7 +104,7 @@ describe('settingsViewOf with a search', () => {
     ['approvals.deny', ['denied']],
     ['yolo', ['permissions', 'denied']],
     ['skill.md', ['skills']],
-    ['show all', ['shortcuts']],
+    ['show all', ['show-work', 'shortcuts']],
     ['version', ['about-app', 'about-hermes']]
   ] as const)('finds %j by each of its words, wherever they sit in a row', (query, rows) => {
     expect([...settingsViewOf('appearance', query, 'idle').rows]).toEqual(rows)

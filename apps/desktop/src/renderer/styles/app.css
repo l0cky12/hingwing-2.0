@@ -83,6 +83,7 @@
   --duration-blink: 1s;
   --duration-pulse: 1.6s;
   --duration-dots: 1.2s;
+  --duration-hop: 1s;
   --thread-x: 9px;
   --col: var(--space-8);
   --gap: 6px;
@@ -469,6 +470,7 @@ button.file-open:hover { color: var(--signal); text-decoration: underline; text-
 .tip.thinking .glyph, .tip.streaming .glyph, .tip.working .glyph { animation: halo var(--duration-pulse) ease-out infinite; }
 .tip .face { position: absolute; z-index: 1; left: calc(var(--thread-x) - var(--col) - 10.25px); width: 22px; height: 22px; }
 .tip .face svg { display: block; }
+.tip.pet .face { animation: hop var(--duration-hop) ease-in-out infinite; transform-origin: 50% 100%; }
 .face-dot { transform-box: fill-box; transform-origin: center; }
 .face[data-mood="working"] .face-dot { animation: dot var(--duration-dots) ease-in-out infinite; }
 .face[data-mood="working"] .face-dot:nth-child(2) { animation-delay: var(--duration-fast); }
@@ -538,6 +540,7 @@ button.reaction:hover:not(:disabled) { border-color: var(--signal); }
 @keyframes dot { 50% { transform: translateY(-10px); opacity: .45; } }
 @keyframes blink { 50% { opacity: 0; } }
 @keyframes working-dot { 0%, 70%, 100% { opacity: .35; } 35% { opacity: 1; } }
+@keyframes hop { 0%, 100% { transform: translateY(0) scaleY(.9); } 15% { transform: translateY(0) scaleY(1); } 50% { transform: translateY(-6px); } 85% { transform: translateY(0) scaleY(1); } }
 
 .composer { position: relative; min-width: 0; padding: 8px 0 16px; background: var(--paper); }
 .composer > .box { --line: 21.75px; --box-chrome: 8px; position: relative; display: flex; flex-direction: column; gap: 4px; margin: 0 calc(max(0px, (100% - 760px) / 2) + 28px) 0 calc(max(0px, (100% - 760px) / 2) + 28px + var(--col)); padding: 10px 10px 8px; background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius-lg); }

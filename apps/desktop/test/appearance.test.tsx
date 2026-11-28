@@ -2,7 +2,7 @@ import type { Target } from '@highwing/hermes/domain'
 import type { ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Accent, Theme, WindowCommand } from '../src/ipc-contract'
+import type { Accent, ShowWork, Theme, WindowCommand } from '../src/ipc-contract'
 import type { CardSetup } from '../src/renderer/setup/screens'
 
 interface Shown { readonly labelledBy: string; readonly value: string; readonly onPick: (value: string) => void }
@@ -114,5 +114,21 @@ describe('the Theme and window-close rows of Settings', () => {
     const html = render('system', picked === 'bot' ? 'ink' : 'bot')
     seen.segmented.find(control => labelOf(html, control.labelledBy) === 'Accent')!.onPick(picked)
     expect(seen.commands).toEqual([{ do: 'setAccent', accent: picked }])
+  })
+
+  it('offers Show the bot’s work right after Accent, with Everything checked until another is picked', () => {
+    const html = render('system')
+    const labels = Array.from(html.matchAll(/<p class="label" id="[^"]*">([^<]*)<\/p>/g), ([, label]) => label)
+    expect(labels.slice(labels.indexOf('Accent'), labels.indexOf('Accent') + 2)).toEqual(['Accent', 'Show the bot’s work'])
+    expect(html).toContain('Replies only hides thinking and tool calls, and shows the bot hopping while it works.')
+    const work = seen.segmented.find(control => labelOf(html, control.labelledBy) === 'Show the bot’s work')!
+    expect(work.value).toBe('all')
+    expect(choicesOf(groupOf(html, 'seg', work.labelledBy))).toEqual(['only', 'Actions', 'Everything (checked)'])
+  })
+
+  it.each(['replies', 'actions', 'all'] satisfies ShowWork[])('asks main to show %s of the bot’s work when that segment is picked', picked => {
+    const html = render('system')
+    seen.segmented.find(control => labelOf(html, control.labelledBy) === 'Show the bot’s work')!.onPick(picked)
+    expect(seen.commands).toEqual([{ do: 'setShowWork', showWork: picked }])
   })
 })

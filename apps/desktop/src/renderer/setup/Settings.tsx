@@ -1,7 +1,7 @@
 import { shownBot, shownChat, type AvatarTone } from '@highwing/hermes/domain'
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
-import type { Accent, Mode, NoticeKind, OnClose, Theme } from '../../ipc-contract'
+import type { Accent, Mode, NoticeKind, OnClose, ShowWork, Theme } from '../../ipc-contract'
 import { botIn } from '../bots/roster-view'
 import { accentTone, toneOfBot } from '../chrome/accent'
 import { COMMAND_KEY, MAC } from '../keys'
@@ -28,6 +28,8 @@ const Pen = () => <svg {...line(16, 1.8)}><path d="M4 20h4L19 9l-4-4L4 16z" /><p
 const Info = () => <svg {...line(16, 1.8)}><circle cx="12" cy="12" r="8.5" /><path d="M12 11v5M12 8h.01" /></svg>
 const Quit = () => <svg {...line(15, 1.9)}><path d="M10 7V6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6a2 2 0 0 1-2-2v-1" /><path d="M4 12h10M11 8.5 14.5 12 11 15.5" /></svg>
 const Tray = () => <svg {...line(15, 1.9)}><rect x="4" y="4" width="16" height="11" rx="2" /><path d="M3 20h18" /></svg>
+const Wrench = () => <svg {...line(15, 1.9)}><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9z" /></svg>
+const List = () => <svg {...line(15, 1.9)}><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" /></svg>
 
 const PAGE_ICONS: { readonly [P in Page]: () => ReactNode } = {
   connection: () => <Server size={16} width={1.8} />, appearance: Contrast, composer: Pen, window: WindowIcon, notifications: Bell, passwords: Key, skills: Spark, permissions: Shield,
@@ -68,6 +70,12 @@ const ACCENTS: readonly Segment<Accent>[] = [
   { value: 'olive', label: 'Olive', icon: orb('olive') },
   { value: 'mauve', label: 'Mauve', icon: orb('mauve') },
   { value: 'umber', label: 'Umber', icon: orb('umber') }
+]
+
+const SHOW_WORK: readonly Segment<ShowWork>[] = [
+  { value: 'replies', label: 'Replies only', icon: <Bubble /> },
+  { value: 'actions', label: 'Actions', icon: <Wrench /> },
+  { value: 'all', label: 'Everything', icon: <List /> }
 ]
 
 const CLOSES: readonly Segment<OnClose>[] = [
@@ -228,6 +236,7 @@ export function Settings({ setup, mode, theme, accent, onRequestClose, onShowSho
   const link = useTopic('link')
   const book = useTopic('servers')
   const onClose = useTopic('onClose') ?? 'quit'
+  const showWork = useTopic('showWork') ?? 'all'
   const tone = accentTone(accent, toneOfBot(useTopic('bots'), shownChat(useTopic('open'))?.bot ?? null))
   const heading = useRef<HTMLHeadingElement>(null)
   const title = useRef<HTMLHeadingElement>(null)
@@ -284,6 +293,7 @@ export function Settings({ setup, mode, theme, accent, onRequestClose, onShowSho
       <div className="card rows">
         <Choice label="Theme" desc="System follows your computer’s light or dark setting." value={theme} segments={looksOf(tone)} hidden={off('theme')} look="looks" onPick={picked => void run({ do: 'setTheme', theme: picked })} />
         <Choice label="Accent" desc="Bot uses the color of the open chat’s bot." value={accent} segments={ACCENTS} hidden={off('accent')} look="tones" onPick={picked => void run({ do: 'setAccent', accent: picked })} />
+        <Choice label="Show the bot’s work" desc="Replies only hides thinking and tool calls, and shows the bot hopping while it works." value={showWork} segments={SHOW_WORK} hidden={off('show-work')} onPick={picked => void run({ do: 'setShowWork', showWork: picked })} />
         <Choice label="Show in the sidebar" desc="Bots shows your bots. Chats shows the chats of the open bot." value={mode} segments={SIDEBAR} hidden={off('sidebar')} onPick={picked => void run({ do: 'setMode', mode: picked })} />
       </div>
     ),

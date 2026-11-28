@@ -5,6 +5,7 @@ import { Avatar, BotFace } from '../bots/Avatar'
 import { SentAttachments } from './Attachments'
 import { AskCard, type RequestAnswer } from './Asks'
 import { Command } from './Copy'
+import type { ShowWork } from '../../ipc-contract'
 import { isShortcut } from '../keys'
 import { modalOpen } from '../shortcuts'
 import { Helper, Moa, Notice, Plan, Reasoning, type HelperControls } from './Helpers'
@@ -14,6 +15,7 @@ import { hasActs, MessageActions, type MessageActs } from './MessageActions'
 import { Given } from './Reactions'
 import { Pages } from './Pages'
 import { placeByTurn } from './relays'
+import { shownWork } from './show-work'
 import { SideTurn } from './Sides'
 import type { SideRow } from './sides'
 import { cx, Elapsed, Stat, Step } from './Step'
@@ -279,11 +281,15 @@ const END_CLASS = {
 /** The bot of the open chat, which draws the end of a turn whose reply has not started. null where the chat has no listed bot. */
 export const ChatBotContext = createContext<Bot | null>(null)
 
-function End({ turnKey, end, started }: { readonly turnKey: string; readonly end: ThreadEnd; readonly started: boolean }) {
+const STAND_IN = { name: 'Hermes', tone: 'slate' } as const satisfies Pick<Bot, 'name' | 'tone'>
+
+function End({ turnKey, end, started, showWork }: { readonly turnKey: string; readonly end: ThreadEnd; readonly started: boolean; readonly showWork: ShowWork }) {
   const bot = useContext(ChatBotContext)
   if (end.kind === 'at' || end.kind === 'none') return null
   const words = end.kind === 'tip' ? <><span><PhraseText words={end.words} /></span><Elapsed elapsed={end.elapsed} /></> : end.kind === 'done' ? <span className="sr">{end.words}</span> : <span data-find={fieldId(turnKey, 'end')}>{end.words}</span>
-  return <div className={`tip ${END_CLASS[end.kind]}`} role="status" data-end={end.kind}>{end.kind === 'tip' && !started && bot !== null ? <BotFace bot={bot} mood="working" size={22} /> : <span className="glyph" />}{words}</div>
+  const pet = end.kind === 'tip' && showWork === 'replies'
+  const face = pet ? bot ?? STAND_IN : end.kind === 'tip' && !started ? bot : null
+  return <div className={cx('tip', END_CLASS[end.kind], pet && 'pet')} role="status" data-end={end.kind}>{face !== null ? <BotFace bot={face} mood="working" size={22} /> : <span className="glyph" />}{words}</div>
 }
 
 /** Acts on a sent message by its stored row and text: `onEdit` puts it in the composer, `onRegenerate` asks again for its reply. */
@@ -319,13 +325,14 @@ interface TurnProps {
   readonly canReact: boolean
   readonly onReact: ReactOn
   readonly helpers: HelperControls | null
+  readonly showWork: ShowWork
 }
 
 const RUNNING_ENDS: ReadonlySet<ThreadEnd['kind']> = new Set(['at', 'tip', 'paused'])
 
 const HANDED = 'Handed over'
 
-export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, onAskAgain, canEdit, showsRegenerate, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, onNewChat, versions, onVersion, canReact, onReact, helpers }: TurnProps) {
+export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, onAskAgain, canEdit, showsRegenerate, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, onNewChat, versions, onVersion, canReact, onReact, helpers, showWork }: TurnProps) {
   const { end, rowId, request, reactions } = turn
   const regenerates = showsRegenerate && rowId !== null && request !== null
   const movesToNewChat = end.kind === 'failed' && end.remedy === 'newChat' && request !== null
@@ -361,7 +368,7 @@ export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, onAskAg
         {turn.nodes.map(node => (
           <Node key={node.key} node={node} endTone={end.kind === 'at' && end.nodeKey === node.key ? end.tone : null} elapsed={end.kind === 'at' && end.tone === 'live' && end.nodeKey === node.key ? end.elapsed : null} open={open} onToggle={onToggle} onAnswer={onAnswer} onAskAgain={onAskAgain} helpers={helpers} />
         ))}
-        <End turnKey={turn.key} end={end} started={turn.nodes.length > 0} />
+        <End turnKey={turn.key} end={end} started={turn.nodes.length > 0} showWork={showWork} />
       </div>
       <Pages pages={turn.pages} />
       {turn.tokens !== null && <p className="used">{turn.tokens}</p>}
@@ -469,6 +476,7 @@ interface ThreadProps {
   readonly canReact: boolean
   readonly onReact: ReactOn
   readonly helpers: HelperControls | null
+  readonly showWork: ShowWork
 }
 
 type Found = BesideRow & { readonly after: TurnId | null }
@@ -486,7 +494,8 @@ const sideFound = ({ id, after, asked, answer }: SideRow): Found => ({
 const landingOf = ({ versions, current }: Versions) => versions[current]?.landing
 const NO_GROUPS: readonly Versions[] = []
 
-export function Thread({ view, relays, sides, onAnswer, onAskAgain, onAnswerRequest, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, onNewChat, versions, onVersion, queue, canReact, onReact, helpers }: ThreadProps) {
+export function Thread({ view, relays, sides, onAnswer, onAskAgain, onAnswerRequest, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, onNewChat, versions, onVersion, queue, canReact, onReact, helpers, showWork }: ThreadProps) {
+  const shown = useMemo(() => shownWork(view, showWork), [view, showWork])
   const [open, setOpen] = useState<OpenState>(NONE_OPEN)
   const [find, setFind] = useState<FindState | null>(null)
   const [changing, setChanging] = useState<Changing>(new Map())
@@ -506,7 +515,7 @@ export function Thread({ view, relays, sides, onAnswer, onAskAgain, onAnswerRequ
   }, [versions])
   const atEnd = groupsAt('end')
 
-  const turnKeys = useMemo(() => view.turns.map(turn => turn.key), [view.turns])
+  const turnKeys = useMemo(() => shown.turns.map(turn => turn.key), [shown.turns])
   const relayed = useMemo(() => placeByTurn(relays, turnKeys), [relays, turnKeys])
   const answered = useMemo(() => placeByTurn(sides, turnKeys), [sides, turnKeys])
   const beside = (held: readonly Relay[] = [], rows: readonly SideRow[] = []) => (
@@ -518,7 +527,7 @@ export function Thread({ view, relays, sides, onAnswer, onAskAgain, onAnswerRequ
 
   const query = find?.query ?? ''
   const findBeside = useMemo(() => placeByTurn([...relays.map(relayFound), ...sides.map(sideFound)], turnKeys), [relays, sides, turnKeys])
-  const matches = useMemo(() => findInThread(view, query, changing, findBeside), [view, query, changing, findBeside])
+  const matches = useMemo(() => findInThread(shown, query, changing, findBeside), [shown, query, changing, findBeside])
   const change = (key: string, question: string | null) => setChanging(held => {
     const next = new Map(held)
     if (question === null) next.delete(key)
@@ -612,13 +621,13 @@ export function Thread({ view, relays, sides, onAnswer, onAskAgain, onAnswerRequ
         {view.earlier === 'more' && <button className="earlier" onClick={onLoadEarlier}>Show earlier turns</button>}
         {view.earlier === 'loading' && <p className="earlier">Loading earlier turns</p>}
         {beside(relayed.first, answered.first)}
-        {view.turns.map(turn => (
+        {shown.turns.map(turn => (
           <Fragment key={turn.key}>
             <Turn
               turn={turn} open={open} onToggle={onToggle} onAnswer={onAnswer} onAskAgain={onAskAgain}
               canEdit={canEdit} showsRegenerate={turn.key === regenerateTurnKey} canRegenerate={canRegenerate} canBranch={canBranch}
               onEdit={onEdit} onRegenerate={onRegenerate} onBranch={onBranch} onNewChat={onNewChat} versions={groupsAt(turn.rowId)} onVersion={onVersion}
-              canReact={canReact} onReact={onReact} helpers={helpers}
+              canReact={canReact} onReact={onReact} helpers={helpers} showWork={showWork}
             />
             {beside(relayed.after.get(turn.key), answered.after.get(turn.key))}
           </Fragment>
