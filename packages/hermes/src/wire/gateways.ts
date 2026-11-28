@@ -190,6 +190,19 @@ interface Login {
 }
 
 /** One per process. Its sign-ins, one per address, are what a check and a route share. */
+/**
+ * The routes that resolve `?profile=` through the dashboard's profile scope, which over a web address reads `current` as
+ * the profile Hermes runs as (hermes_cli/web_server_profiles.py), yet `current` is a valid profile name. A read for a bot
+ * named `current` there would answer with another bot's data. The cron routes look the name up as it is, and a ticket
+ * read is bound by the ticket's own profile, so neither has the doubt.
+ */
+const SCOPED_ROUTES = ['/api/learning/', '/api/config']
+const namesCurrent = (path: string): boolean => {
+  const url = new URL(path, 'http://hermes.invalid')
+  return SCOPED_ROUTES.some(route => url.pathname.startsWith(route)) && url.searchParams.getAll('profile').some(name => name.trim().toLowerCase() === 'current')
+}
+const CURRENT_IS_OWN = 'Over a web address, Hermes reads a bot named current as the bot it runs as.'
+
 export function gatewaysByUrl(deps: GatewayDeps): Gateways {
   const clock = deps.clock ?? systemClock
   const fetcher = deps.fetch ?? fetch
@@ -434,6 +447,7 @@ export function gatewaysByUrl(deps: GatewayDeps): Gateways {
         }
       }
       const read: ReadHermes = async path => {
+        if (namesCurrent(path)) throw new Error(CURRENT_IS_OWN)
         const held = loginOf(url)
         const bearer = await held.bearer()
         const answer = await send('GET', `${url}${path}`, { bearer, signal: life.signal })

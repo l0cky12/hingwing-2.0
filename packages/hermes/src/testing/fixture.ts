@@ -2,6 +2,7 @@
  * `@highwing/hermes/testing`: a recorded or generated gateway, played back through the real client.
  */
 import { readFileSync } from 'node:fs'
+import { pythonStrip } from '../domain/memory'
 import { APPROVAL_MODES, type ApprovalMode, type SessionId } from '../domain/session'
 import { systemClock, type Reach } from '../wire/link'
 import { transcriptOf, type Transcribe } from '../wire/transcribe'
@@ -244,7 +245,14 @@ export interface Oneshot { readonly text?: string; readonly error?: string; read
  * `entries` are the chunks of MEMORY.md and USER.md, in file order. `limits.memory` caps MEMORY.md and `limits.user`
  * caps USER.md, in characters, the way MemoryStore does.
  */
-export interface MemoryScript {
+export interface MemoryScript extends MemoryFiles {
+  /**
+   * The top level is the launch profile, `default`. `profiles[p]` is the memory of bot `p`, which the dashboard API's
+   * `?profile=p` reads answer. A profile not listed holds no entries. Each profile's caps are its own `limits` over Hermes's defaults, as Hermes merges each profile's config, never the top level's.
+   */
+  readonly profiles?: { readonly [profile: string]: MemoryFiles }
+}
+export interface MemoryFiles {
   readonly entries: readonly { readonly file: 'MEMORY.md' | 'USER.md'; readonly text: string }[]
   readonly limits?: { readonly memory?: number; readonly user?: number }
 }
@@ -569,10 +577,12 @@ const isCronScript = (value: unknown): value is CronScript =>
   && (value.history === undefined || (isObject(value.history) && Object.keys(value.history).every(id => cronJobIds(value).has(id))))
 
 const MEMORY_FILES = new Set(['MEMORY.md', 'USER.md'])
-const isCharLimit = (value: unknown) => value === undefined || (Number.isSafeInteger(value) && (value as number) > 0)
-const isMemory = (value: unknown): value is MemoryScript =>
-  isObject(value) && Array.isArray(value.entries) && value.entries.every(entry => isObject(entry) && typeof entry.file === 'string' && MEMORY_FILES.has(entry.file) && typeof entry.text === 'string' && entry.text.trim() !== '')
+const isCharLimit = (value: unknown) => value === undefined || (Number.isSafeInteger(value) && (value as number) >= 0)
+const isMemoryFiles = (value: unknown): value is MemoryFiles =>
+  isObject(value) && Array.isArray(value.entries) && value.entries.every(entry => isObject(entry) && typeof entry.file === 'string' && MEMORY_FILES.has(entry.file) && typeof entry.text === 'string' && pythonStrip(entry.text) !== '')
   && (value.limits === undefined || (isObject(value.limits) && Object.keys(value.limits).every(key => key === 'memory' || key === 'user') && isCharLimit(value.limits.memory) && isCharLimit(value.limits.user)))
+const isMemory = (value: unknown): value is MemoryScript =>
+  isMemoryFiles(value) && ((value as MemoryScript).profiles === undefined || (isObject((value as MemoryScript).profiles) && Object.values((value as MemoryScript).profiles!).every(isMemoryFiles)))
 
 const MCP_STATUSES: readonly unknown[] = ['connected', 'disabled', 'connecting', 'failed', 'lazy', 'configured']
 const SEED_KEYS = ['name', 'url', 'headers', 'command', 'args', 'status', 'tools', 'needs_auth', 'plugin']
@@ -734,7 +744,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (pets !== undefined && !isPets(pets)) return '"pets" must be { pets, thumbs, delay_ms?, refused_once? } with "thumbs" mapping a slug to a data URL'
   const { connectors } = value
   if (connectors !== undefined && !isConnectors(connectors)) return '"connectors" must be { catalog, accounts, signInUrl } with a unique slug on every app and an http(s) sign-in page'
-  if (memory !== undefined && !isMemory(memory)) return '"memory" must be { entries, limits? } with each entry { file: "MEMORY.md" or "USER.md", text } and limits { memory?, user? }'
+  if (memory !== undefined && !isMemory(memory)) return '"memory" must be { entries, limits? } with each entry { file: "MEMORY.md" or "USER.md", text } and limits { memory?, user? }, and may add profiles mapping a profile to the same'
   const { vault } = value
   if (vault !== undefined && !isVaultScript(vault)) {
     return '"vault" must map a profile to { onepassword?, bitwarden? }, each { installed, enabled?, unlocked?, logins?, password?, refuses?, token?, listFails? }'

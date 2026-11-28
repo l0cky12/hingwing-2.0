@@ -6,7 +6,7 @@
 import { CHECK_FAILURES } from '../domain/reach'
 import { DialError, dialWith, EXIT_KINDS, GATEWAY_PROTOCOL, TICKET_PREFIX, type Clock, type Mint, type ReadHermes } from './link'
 import type { Route } from './remote'
-import { ASK_INTERACTIVE, ASK_NATIVE_HTTP, ATTACH, attachedOf, httpTicketOf, NOT_FOUND, originOf, PROBE, probeOf, runTool, SERVE, servedOf, type HermesArgs, type ProbeFailure, type SshRun } from './ssh'
+import { ASK_INTERACTIVE, askNativeHttp, ATTACH, attachedOf, httpTicketOf, NOT_FOUND, originOf, PROBE, probeOf, runTool, SERVE, servedOf, type HermesArgs, type ProbeFailure, type SshRun } from './ssh'
 import { CANT_REACH, CANT_TRANSCRIBE, postWithTicket, transcriptOf, type Transcribe } from './transcribe'
 
 /** How a hermes command runs on the gateway's machine: `runTool` here, `sshExec` on another. */
@@ -99,7 +99,7 @@ const EXIT_AS_LOCATOR: Readonly<Record<'missing' | 'cut', number>> = { missing: 
  */
 export function transcribeWith(run: RunHermes, reach: (origin: string) => Promise<string>): Transcribe {
   return async (recording, signal) => {
-    const result = await run(SERVE, { deadlineMs: SERVE_MS, input: ASK_NATIVE_HTTP }).catch(() => null)
+    const result = await run(SERVE, { deadlineMs: SERVE_MS, input: askNativeHttp() }).catch(() => null)
     if (result === null || !result.ok) return CANT_REACH
     const served = servedOf(result.code, result.stdout)
     if (served.is === 'unsupported') return CANT_TRANSCRIBE
@@ -114,10 +114,12 @@ export function transcribeWith(run: RunHermes, reach: (origin: string) => Promis
   }
 }
 
+const profileOf = (path: string): string | undefined => new URL(path, 'http://hermes.invalid').searchParams.get('profile') ?? undefined
+
 /** A fresh ticket per GET: Hermes's ticket is single use and lives 30 seconds (gateway-ssh-clients.md, client rule 3). */
 export function readWith(run: RunHermes, forward: (origin: string) => Promise<string>, fetcher: typeof fetch = fetch): ReadHermes {
   return async path => {
-    const serve = await run(SERVE, { deadlineMs: SERVE_MS, input: ASK_NATIVE_HTTP })
+    const serve = await run(SERVE, { deadlineMs: SERVE_MS, input: askNativeHttp(profileOf(path)) })
     const minted = serve.ok ? httpTicketOf(serve.code, serve.stdout) : null
     if (minted === null) throw new Error('Hermes minted no ticket for its HTTP API.')
     const response = await fetcher(`${await forward(minted.origin)}${path}`, {

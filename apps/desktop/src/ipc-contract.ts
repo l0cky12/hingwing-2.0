@@ -1,6 +1,6 @@
 import {
   APPROVAL_MODES, BOT_MARKS, BOT_TEMPLATES, BOT_TONES, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isManagerName, isPetSlug, onThisComputer, PICK_MODES, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, ROUTINE_ACTIONS, targetOf,
-  type About, type AdmissionId, type AvatarTone, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type Bots, type BranchId, type BusyMode, type ChatRef,
+  type About, type AdmissionId, type AvatarTone, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type BotMemory, type Bots, type BranchId, type BusyMode, type ChatRef,
   type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupChat, type GroupDraft, type GroupId, type Groups, type Header, type HelperId, type Item, type Link, type ModelOption,
   type BotActivities, type CatalogPlugin, type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type Quote, type Recording, type RelayDesk, type RequestId, type RequestReply,
   type PickMode, type RestoreScope, type ResultOf, type RoutineId, type ScreenView, type Server, type ServerId, type ServerSetup, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SkillLibrary, type SlashCatalog, type RoutineRun, type Target, type TaskBoard, type TaskChat, type Timed, type TurnId, type Unstarted
@@ -283,6 +283,8 @@ export interface Bridge {
   choosePicture(): Promise<CommandOutcome<PictureFile>>
   /** The kanban board of the connected Hermes, read afresh. */
   taskBoard(): Promise<CommandOutcome<TaskBoard>>
+  /** What the bot's Hermes profile remembers in MEMORY.md and USER.md, read afresh. */
+  botMemory(bot: BotId): Promise<CommandOutcome<BotMemory>>
   /** The chat working on a card, read afresh. null: the card has none yet. */
   taskChat(id: string): Promise<CommandOutcome<TaskChat | null>>
   /** The newest runs of a routine, read afresh from Hermes. */
@@ -313,7 +315,7 @@ export type ScreenFrame = 'open' | ArrayBuffer | { readonly closed: number }
 export const CHANNEL = {
   watch: 'highwing:watch', unwatch: 'highwing:unwatch', push: 'highwing:push', run: 'highwing:run', file: 'highwing:file', image: 'highwing:image',
   drafts: 'highwing:drafts', keepDraft: 'highwing:keep-draft', pickPicture: 'highwing:pick-picture', choosePicture: 'highwing:choose-picture', attachPick: 'highwing:attach-pick',
-  attachPaste: 'highwing:attach-paste', attachDrop: 'highwing:attach-drop', screen: 'highwing:screen', taskBoard: 'highwing:task-board', taskChat: 'highwing:task-chat', routineRuns: 'highwing:routine-runs', transcribe: 'highwing:transcribe'
+  attachPaste: 'highwing:attach-paste', attachDrop: 'highwing:attach-drop', screen: 'highwing:screen', taskBoard: 'highwing:task-board', taskChat: 'highwing:task-chat', routineRuns: 'highwing:routine-runs', botMemory: 'highwing:bot-memory', transcribe: 'highwing:transcribe'
 } as const
 
 const WEB_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:'])

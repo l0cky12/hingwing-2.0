@@ -11,7 +11,7 @@ import { APPROVAL_MODES, type ApprovalMode } from '../domain/session'
 import { GATEWAY_PROTOCOL, type Clock, type Reach } from '../wire/link'
 import { parseEvent } from '../wire/parse'
 import { BACKUP_KEYS, MASKED, type ChatSeed, type Fixture, type FixtureStep, type PluginSeed, type Reads } from './fixture'
-import { memoryBook, type MemoryBook } from './memory-book'
+import { launchBookOf, type MemoryBook } from './memory-book'
 import { checkParams } from './params'
 import { ScriptedRooms } from './rooms'
 import { ScriptedVault } from './vault'
@@ -1125,7 +1125,7 @@ export class ScriptedGateway {
     const { profiles } = fixture.header
     this.profiles = isObject(profiles) && Array.isArray(profiles.profiles) ? profiles.profiles.filter(isObject) : []
     this.home = this.profiles.map(row => (row.is_default === true ? row.name : undefined)).find(isText) ?? 'default'
-    this.memory = fixture.header.memory === undefined ? null : memoryBook(fixture.header.memory)
+    this.memory = fixture.header.memory === undefined ? null : launchBookOf(fixture.header.memory)
     this.storyIsBotChatOf = fixture.header.homeBotChat === false ? null : this.home
     const seededChats = Object.entries(fixture.header.chats ?? {}).flatMap(([profile, seeds]) => seeds.map(seed => seeded(profile, seed)))
     for (const { name, canonical_session: named } of this.profiles) {
