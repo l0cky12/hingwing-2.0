@@ -1,9 +1,12 @@
 import type { Bot, BotId } from '@highwing/hermes/domain'
 import type { ThreadView, TurnView } from '@highwing/thread'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { ShowWork } from '../src/ipc-contract'
+import { usePicture } from '../src/renderer/bots/pictures'
 import { ChatBotContext, Thread } from '../src/renderer/chat/Thread'
+
+vi.mock('../src/renderer/bots/pictures', () => ({ usePicture: vi.fn((bot: string | null) => (bot === null ? null : 'blob:rae-picture')) }))
 
 const BOT: Bot = { id: 'rae' as BotId, name: 'Rae', preview: '', description: '', tone: 'plum', picture: false, pinned: false, hidden: false }
 const tip = { kind: 'tip', words: [], elapsed: null } as unknown as TurnView['end']
@@ -60,5 +63,37 @@ describe('the end of a running turn under Replies only', () => {
     const markup = drawn({ ...turn([NODE]), end: { kind: 'done', words: 'Done' } }, BOT, 'replies')
     expect(markup).toContain('class="glyph"')
     expect(markup).not.toContain('pet')
+  })
+})
+
+describe('the end of a running turn under Replies only, for a bot with a picture', () => {
+  const PICTURED: Bot = { ...BOT, picture: true }
+
+  it("shows the bot's own picture, and keeps the words for screen readers only", () => {
+    const markup = drawn(turn([]), PICTURED, 'replies')
+    expect(markup).toContain('class="tip working pet"')
+    expect(markup).toMatch(/<img class="face pet-picture" src="blob:rae-picture"/)
+    expect(markup).not.toContain('data-mood')
+    expect(markup).toContain('><span class="sr"></span></div>')
+  })
+
+  it("draws today's face for a bot with no picture, and its words in the open", () => {
+    const markup = drawn(turn([]), BOT, 'replies')
+    expect(markup).toContain('data-mood="working"')
+    expect(markup).not.toContain('pet-picture')
+    expect(markup).toContain('</span><span></span></div>')
+  })
+
+  it("draws today's face while the picture is still being read", () => {
+    vi.mocked(usePicture).mockReturnValueOnce(null)
+    const markup = drawn(turn([]), PICTURED, 'replies')
+    expect(markup).toContain('data-mood="working"')
+    expect(markup).not.toContain('pet-picture')
+  })
+
+  it('draws no picture under Everything', () => {
+    const markup = drawn(turn([]), PICTURED, 'all')
+    expect(markup).toContain('data-mood="working"')
+    expect(markup).not.toContain('pet-picture')
   })
 })

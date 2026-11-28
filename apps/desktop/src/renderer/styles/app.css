@@ -506,6 +506,8 @@ button.file-open:hover { color: var(--signal); text-decoration: underline; text-
 .tip .face { position: absolute; z-index: 1; left: calc(var(--thread-x) - var(--col) - 10.25px); width: 22px; height: 22px; }
 .tip .face svg { display: block; }
 .tip.pet .face { animation: hop var(--duration-hop) ease-in-out infinite; transform-origin: 50% 100%; }
+.tip .pet-picture { left: calc(var(--thread-x) - var(--col) - 21.25px); width: 44px; height: 44px; border-radius: var(--radius-round); object-fit: cover; }
+.tip.pet:has(.pet-picture) { min-height: 56px; }
 .face-dot { transform-box: fill-box; transform-origin: center; }
 .face[data-mood="working"] .face-dot { animation: dot var(--duration-dots) ease-in-out infinite; }
 .face[data-mood="working"] .face-dot:nth-child(2) { animation-delay: var(--duration-fast); }
