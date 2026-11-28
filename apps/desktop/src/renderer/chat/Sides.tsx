@@ -3,6 +3,7 @@ import { fieldId } from '@highwing/thread'
 import { memo, useId, useLayoutEffect, useRef } from 'react'
 import { MessageActions } from './MessageActions'
 import type { SideAnswer, SideCard, SideRow } from './sides'
+import type { ReplyTo } from './Thread'
 import { Markdown } from './text'
 
 function Answer({ id, answer }: { readonly id: SideId; readonly answer: SideAnswer }) {
@@ -58,7 +59,7 @@ export function Sides({ cards, onClose, returnFocus }: { readonly cards: readonl
   )
 }
 
-export const SideTurn = memo(function SideTurn({ row }: { readonly row: SideRow }) {
+export const SideTurn = memo(function SideTurn({ row, onReply }: { readonly row: SideRow; readonly onReply: ReplyTo }) {
   const heading = useId()
   const { answer } = row
   return (
@@ -66,7 +67,7 @@ export const SideTurn = memo(function SideTurn({ row }: { readonly row: SideRow 
       <h2 id={heading}>Side question</h2>
       <p className="side-asked" data-find={row.asked === null ? undefined : fieldId(`side:${row.id}`, 'request')}>{row.asked ?? 'Asked in another window'}</p>
       {answer.s === 'answered'
-        ? <><div className="prose"><Markdown source={answer.markdown} caret={false} nodeKey={`side:${row.id}`} /></div><div className="turn-actions"><MessageActions acts={{ copy: { text: answer.markdown, name: 'Copy reply' } }} /></div></>
+        ? <><div className="prose"><Markdown source={answer.markdown} caret={false} nodeKey={`side:${row.id}`} /></div><div className="turn-actions"><MessageActions acts={{ copy: { text: answer.markdown, name: 'Copy reply' }, reply: { disabled: false, run: () => onReply({ from: 'hermes', text: answer.markdown }) } }} /></div></>
         : <p className="err" data-find={fieldId(`side:${row.id}`, 'error')}>{answer.message}</p>}
       <p className="side-note">Not saved with the chat. Later replies won't see it.</p>
     </article>

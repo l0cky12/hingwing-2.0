@@ -533,7 +533,7 @@ export function Thread({ view, relays, sides, onAnswer, onAskAgain, onAnswerRequ
   const beside = (held: readonly Relay[] = [], rows: readonly SideRow[] = []) => (
     <>
       {held.map(relay => <RelayTurn key={relay.id} relay={relay} />)}
-      {rows.map(row => <SideTurn key={row.id} row={row} />)}
+      {rows.map(row => <SideTurn key={row.id} row={row} onReply={onReply} />)}
     </>
   )
 
