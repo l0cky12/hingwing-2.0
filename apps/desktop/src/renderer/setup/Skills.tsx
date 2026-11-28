@@ -1,53 +1,22 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
-import { botsIn, type BotId, type Bots, type Skill } from '@highwing/hermes/domain'
+import { useId, useLayoutEffect, useRef, useState } from 'react'
+import { botsIn, type BotId, type Bots } from '@highwing/hermes/domain'
 import { run, useTopic } from '../store'
+import { useSwitches } from '../switches'
 
 type Opened = { readonly name: string; readonly text: string | null; readonly problem: string | null }
-type Asked = { readonly bot: BotId | null; readonly skills: ReadonlyMap<string, boolean> }
-const NONE: ReadonlyMap<string, boolean> = new Map()
 
 export const nameOf = (bot: BotId | null, bots: Bots | undefined): string =>
   (bot !== null && bots?.state === 'listed' ? botsIn(bots.roster).find(listed => listed.id === bot)?.name : undefined) ?? 'This bot'
 
 export function useSkillSwitches() {
   const library = useTopic('skills')
-  const [asked, setAsked] = useState<Asked>({ bot: null, skills: NONE })
-  const [problem, setProblem] = useState<{ readonly bot: BotId | null; readonly message: string } | null>(null)
-  useEffect(() => {
-    if (library?.state !== 'listed') return
-    setAsked(held => {
-      if (held.bot !== library.bot) return held
-      const skills = new Map([...held.skills].filter(([skill, wanted]) => library.skills.find(listed => listed.name === skill)?.enabled !== wanted))
-      return skills.size === held.skills.size ? held : { bot: held.bot, skills }
-    })
-  }, [library])
-  const ask = (bot: BotId | null, skill: string, wanted: boolean | null) => setAsked(before => {
-    if (wanted === null && before.bot !== bot) return before
-    const skills = new Map(before.bot === bot ? before.skills : NONE)
-    if (wanted === null) skills.delete(skill)
-    else skills.set(skill, wanted)
-    return { bot, skills }
-  })
-  const toggle = async ({ name: skill, enabled }: Skill) => {
-    if (library === undefined) return
-    const { bot } = library
-    setProblem(null)
-    ask(bot, skill, !enabled)
-    const done = await run({ do: 'setSkill', bot, name: skill, enabled: !enabled })
-    if (done.ok) return
-    ask(bot, skill, null)
-    setProblem({ bot, message: done.refusal.message })
-  }
-  return {
-    library,
-    pending: library !== undefined && asked.bot === library.bot ? asked.skills : NONE,
-    problem: problem !== null && problem.bot === library?.bot ? problem.message : null,
-    toggle
-  }
+  const bot = library?.bot ?? null
+  const switches = useSwitches(bot, library?.state === 'listed' ? library.skills : null, skill => skill.name, (skill, enabled) => run({ do: 'setSkill', bot, name: skill.name, enabled }))
+  return { library, ...switches }
 }
 
 export function Skills() {
-  const { library, pending, problem, toggle } = useSkillSwitches()
+  const { library, problem, of } = useSkillSwitches()
   const bots = useTopic('bots')
   const [opened, setOpened] = useState<Opened | null>(null)
   if (library === undefined) return null
@@ -78,10 +47,7 @@ export function Skills() {
           </div>
           <div className="control">
             <button type="button" className="btn" aria-label={`Open ${skill.name}`} onClick={() => void open(skill.name)}>Open</button>
-            <input
-              type="checkbox" role="switch" aria-label={`Use ${skill.name}`} checked={pending.get(skill.name) ?? skill.enabled} disabled={pending.has(skill.name)}
-              onChange={() => void toggle(skill)}
-            />
+            <input type="checkbox" role="switch" aria-label={`Use ${skill.name}`} {...of(skill)} />
           </div>
         </div>
       ))}

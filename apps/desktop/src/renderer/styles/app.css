@@ -1588,6 +1588,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .hub-kind { flex: none; font-size: var(--text-xs); font-weight: 400; color: var(--graphite); }
 .hub-detail { overflow: hidden; margin: 2px 0 0; font-size: var(--text-sm); color: var(--graphite); text-overflow: ellipsis; white-space: nowrap; }
 .hub-detail[data-mono] { font: var(--text-xs)/1.6 var(--mono); }
+.hub-later { margin: 4px 0 0; font-size: var(--text-xs); color: var(--caution); }
 .hub-side { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; max-width: 50%; }
 .hub-state { display: flex; align-items: center; gap: 6px; margin: 0; font-size: var(--text-xs); color: var(--graphite); text-align: right; }
 .hub-state::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: var(--radius-round); background: currentColor; }
