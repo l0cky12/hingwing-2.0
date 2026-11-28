@@ -56,13 +56,25 @@ export async function servedPath(page: string, path: string, home: string): Prom
 /** What a request to show something comes to. null: refused, so the pane stays as it is. */
 export type Verdict = { readonly address: string; readonly page: Page } | { readonly address: string; readonly failed: string } | null
 
-/** What a request is judged against: the chat that named it, and the machine Hermes runs on. `host`: that machine, when ssh reaches it. */
-export interface Reach { readonly session: Session | undefined; readonly local: boolean; readonly machine: string; readonly host: SshHost | null }
+/** Who vouches for a path the pane is asked to show. */
+export interface Source {
+  /** The file on the Hermes machine that a finished step named for `path`, or null when none did. */
+  named(path: string): string | null
+  /** Said after "This file is on <machine>." when the pane can't show a file from there. */
+  readonly elsewhere?: string
+  /** The chat whose step named it, which the pane's page belongs to. */
+  readonly session: SessionId
+}
 
-export const reachOf = (setup: Setup, session: Session | undefined): Reach => {
+/** The steps of a chat the window watches: a path one of them named, as `openablePath` decides. */
+export const stepsOf = (session: Session): Source => ({ named: path => openablePath(session, path), session: session.id })
+
+/** The machine Hermes runs on. `host`: that machine, when ssh reaches it. */
+export interface Reach { readonly local: boolean; readonly machine: string; readonly host: SshHost | null }
+
+export const reachOf = (setup: Setup): Reach => {
   const target = setup.at === 'pinned' ? null : setup.live?.target ?? null
   return {
-    session,
     local: target === null || onThisComputer(target),
     machine: target === null ? 'this computer' : machineOf(target),
     host: target === null ? null : byKind<SshHost | null>(target, { local: () => null, remote: ({ host }) => host, ssh: ({ host }) => host, url: () => null })
@@ -85,11 +97,10 @@ const pathIn = (request: string, url: URL | null): string | null => {
 
 /**
  * A web page loads as asked, unless it names the loopback of a remote Hermes, which is that machine's
- * and not this one's. A path, or a `file:` URL, loads only when a finished step of the chat named it,
- * as `openablePath` decides: from this computer when the chat runs here, and over ssh when it is an
- * HTML page on the ssh machine Hermes runs on.
+ * and not this one's. A path, or a `file:` URL, loads only when `source` names it: from this computer
+ * when Hermes runs here, and over ssh when it is an HTML page on the ssh machine Hermes runs on.
  */
-export function pageFor(request: string, { session, local, machine, host }: Reach): Verdict {
+export function pageFor(request: string, source: Source | undefined, { local, machine, host }: Reach): Verdict {
   const url = URL.parse(request)
   if (url !== null && isWebPage(request)) {
     return !local && LOOPBACK.test(url.hostname)
@@ -97,10 +108,11 @@ export function pageFor(request: string, { session, local, machine, host }: Reac
       : { address: request, page: { kind: 'web', url: request } }
   }
   const path = pathIn(request, url)
-  const named = path === null || session === undefined ? null : openablePath(session, path)
+  const named = path === null || source === undefined ? null : source.named(path)
   if (named === null) return null
   if (local) return { address: named, page: { kind: 'file', path: named } }
-  return host !== null && PAGE_FILE.test(named) ? { address: named, page: { kind: 'ssh', host, path: named } } : { address: named, failed: `This file is on ${machine}.` }
+  if (host !== null && PAGE_FILE.test(named)) return { address: named, page: { kind: 'ssh', host, path: named } }
+  return { address: named, failed: source?.elsewhere === undefined ? `This file is on ${machine}.` : `This file is on ${machine}. ${source.elsewhere}` }
 }
 
 const FAILURES: { readonly [code: number]: (host: string) => string } = {

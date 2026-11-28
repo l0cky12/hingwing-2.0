@@ -9,14 +9,14 @@ import type { PageLoad, PaneLayout, Preview, PreviewCommand, Rect, Setup } from 
 import type { Opener } from './files'
 import { formatOf, MISSING, readPreviewFile, type FileContents, type Format } from './preview-file'
 import {
-  failureOf, nextPane, PAGE_SCHEME, pageFor, pageInView, pageUrlOf, pathOfPageUrl, previewOf, servedPath, type Page, type Pane, type PaneEvent, type Reach
+  failureOf, nextPane, PAGE_SCHEME, pageFor, pageInView, pageUrlOf, pathOfPageUrl, previewOf, servedPath, stepsOf, type Page, type Pane, type PaneEvent, type Reach, type Source
 } from './preview-page'
 
 /** The pane beside the chat: one page at a time, drawn by main in a view of its own over the window. */
 export interface PreviewPane {
   readonly preview: Feed<Preview>
-  /** A web URL, a path or a `file:` URL, judged against the chat that named it. false: refused, and the pane is as it was. */
-  show(request: string, label: string | null, session: Session | undefined, layout?: PaneLayout): boolean
+  /** A web URL, a path or a `file:` URL, which `source` vouches for. false: refused, and the pane is as it was. */
+  show(request: string, label: string | null, source: Source | undefined, layout?: PaneLayout): boolean
   ask(ask: PaneAsk, from: Session): void
   run(command: PreviewCommand): Promise<CommandOutcome<void>>
   attach(window: BrowserWindow): void
@@ -26,7 +26,7 @@ export interface PreviewPane {
 
 export interface PreviewDeps {
   readonly opener: Pick<Opener, 'browse' | 'open'>
-  reach(session: Session | undefined): Reach
+  reach(): Reach
   isAppUrl(url: string): boolean
   readRemote(host: SshHost, path: string): Promise<RemoteRead>
 }
@@ -148,16 +148,16 @@ export function previewPane(deps: PreviewDeps): PreviewPane {
     csv: (_path, table) => apply({ on: 'tabled', table })
   }
 
-  const show: PreviewPane['show'] = (request, label, session, layout = 'beside') => {
-    const reach = deps.reach(session)
-    const verdict = pageFor(request, reach)
+  const show: PreviewPane['show'] = (request, label, source, layout = 'beside') => {
+    const reach = deps.reach()
+    const verdict = pageFor(request, source, reach)
     if (verdict === null) return false
     generation++
-    retry = () => show(request, label, session, layout)
+    retry = () => show(request, label, source, layout)
     const page = 'page' in verdict ? verdict.page : null
     const file = page?.kind === 'file' ? page.path : null
     const format = file === null ? null : formatOf(file)
-    const shows = (state: PageLoad) => apply({ on: 'show', layout, session: session?.id ?? null, asked: request, address: verdict.address, file, label, load: state })
+    const shows = (state: PageLoad) => apply({ on: 'show', layout, session: source?.session ?? null, asked: request, address: verdict.address, file, label, load: state })
     if (page?.kind === 'ssh') {
       drop()
       shows({ at: 'loading' })
@@ -215,7 +215,7 @@ export function previewPane(deps: PreviewDeps): PreviewPane {
     },
     show,
     ask: (ask, from) => {
-      if (ask.do === 'open') show(ask.url, ask.label, from)
+      if (ask.do === 'open') show(ask.url, ask.label, stepsOf(from))
       else if (ask.url === null || ask.url === pane?.asked || ask.url === pane?.address) close()
     },
     run: async command => {

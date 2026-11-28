@@ -1,6 +1,6 @@
 import { checkTarget, gatewaysByUrl, liveRoute, openHermes, pickedRoute, remoteRoute, sshRead, timeWay, type Dialer, type Hermes, type Route } from '@highwing/hermes'
 import { byKind, type BotId, type GatewayUrl, type ServerId, type Servers, type Target } from '@highwing/hermes/domain'
-import { fixtureLatency, fixtureRead, fixtureTranscribe, loadFixture, maskedFrame, recordingDialer, scriptedDialer } from '@highwing/hermes/testing'
+import { fixtureDownload, fixtureLatency, fixtureRead, fixtureTranscribe, loadFixture, maskedFrame, recordingDialer, scriptedDialer } from '@highwing/hermes/testing'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, net, Notification, safeStorage, session, shell, type OpenDialogOptions } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { appendFileSync } from 'node:fs'
@@ -15,6 +15,7 @@ import { desktopOpener, recordingOpener, type Opener } from './files'
 import { desktopImageDeps, fixtureImageDeps, imageLoader } from './images'
 import { draftStore, DRAFTS_DIR } from './drafts'
 import { serveWindows } from './ipc'
+import { ownLibrary } from './library'
 import { desktopCatalogDeps, fixtureCatalogDeps, pluginCatalog } from './plugin-catalog'
 import { serveScreen } from './screen'
 import { dbusSend, hasSecretService } from './keyring'
@@ -124,7 +125,7 @@ app.whenReady().then(async () => {
   const opener = HIGHWING_OPEN_LOG ? recordingOpener(HIGHWING_OPEN_LOG) : desktopOpener(shell)
   const pane = previewPane({
     opener, isAppUrl,
-    reach: session => reachOf(owner.setup.get(), session),
+    reach: () => reachOf(owner.setup.get()),
     readRemote: (host, path) => sshRead(host, path, { deadlineMs: REMOTE_READ_MS, signal: new AbortController().signal })
   })
   const settingsDir = app.getPath('userData')
@@ -157,7 +158,7 @@ app.whenReady().then(async () => {
     ? pinnedConnection(open(scriptedDialer(fixture, {
       timing: 'recorded', latencyMs: fixtureLatency(HIGHWING_FIXTURE_LATENCY_MS),
       ...(HIGHWING_FIXTURE_CALLS ? { onReceived: (frame: unknown) => appendFileSync(HIGHWING_FIXTURE_CALLS, `${JSON.stringify(maskedFrame(frame))}\n`) } : {})
-    }), 'fixture'), fixtureRead(fixture.header), fixtureTranscribe(fixture.header.transcribe))
+    }), 'fixture'), fixtureRead(fixture.header), fixtureTranscribe(fixture.header.transcribe), fixtureDownload(fixture.header.files, fixture.header.chats))
     : await savedConnection(settingsDir, opener, open, intro.armIntro)
   pane.follow(owner.setup)
   const pictureDeps = { choose: pictureFile, read: readHead, set: (bot: BotId, data: string) => owner.run({ do: 'setBotPicture', bot, data }) }
@@ -166,7 +167,7 @@ app.whenReady().then(async () => {
   const saver = HIGHWING_SAVE_DIR ? folderSaver(HIGHWING_SAVE_DIR) : dialogSaver(dialog, () => app.getPath('downloads'))
   const served = serveWindows(
     owner, ipcMain, isAppUrl, opener, images, drafts, pane, { pick: (bot, live) => pickPicture(pictureDeps, bot, live), choose: () => choosePicture(pictureDeps) },
-    { store: attachments, sources }, saver, { mode, theme, accent, sidebarWidth, sendKey, showWork, spellCheck, snoozes, notices, onClose, appearance }, intro,
+    { store: attachments, sources }, saver, ownLibrary({ owner, pane, saver }), { mode, theme, accent, sidebarWidth, sendKey, showWork, spellCheck, snoozes, notices, onClose, appearance }, intro,
     pluginCatalog(fixture ? fixtureCatalogDeps(fixture.header.pluginCatalog) : desktopCatalogDeps(net))
   )
   const stopScreen = serveScreen(owner, ipcMain, isAppUrl)

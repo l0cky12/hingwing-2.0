@@ -2,7 +2,7 @@ import {
   APPROVAL_MODES, BOT_MARKS, BOT_TEMPLATES, BOT_TONES, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isManagerName, isPetSlug, onThisComputer, PICK_MODES, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, ROUTINE_ACTIONS, targetOf,
   type About, type AdmissionId, type AvatarTone, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type BotMemory, type Bots, type BranchId, type BusyMode, type ChatRef,
   type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupChat, type GroupDraft, type GroupId, type Groups, type Header, type HelperId, type Item, type Link, type ModelOption,
-  type BotActivities, type CatalogPlugin, type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type Quote, type Recording, type RelayDesk, type RequestId, type RequestReply,
+  type BotActivities, type CatalogPlugin, type LibraryItemId, type LibraryRead, type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type Quote, type Recording, type RelayDesk, type RequestId, type RequestReply,
   type PickMode, type RestoreScope, type ResultOf, type RoutineId, type ScreenView, type Server, type ServerId, type ServerSetup, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SkillLibrary, type SlashCatalog, type RoutineRun, type Target, type TaskBoard, type TaskChat, type Timed, type TurnId, type Unstarted
 } from '@highwing/hermes/domain'
 import { isAppearance, type Appearance } from './appearance'
@@ -167,10 +167,27 @@ export type IntroCommand = { readonly do: 'examples' } | { readonly do: 'done' }
 /** Hermes's public plugin catalog, which main reads from the web and keeps for a while. It needs no connection to Hermes. */
 export type PluginCatalogCommand = { readonly do: 'pluginCatalog' }
 
-export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand | ThemeCommand | AccentCommand | SidebarWidthCommand | SendKeyCommand | ShowWorkCommand | SpellCheckCommand | SnoozeCommand | NoticeCommand | OnCloseCommand | AppearanceCommand | IntroCommand | PluginCatalogCommand
+/**
+ * A bot's Library, which main reads and keeps. A window names an item only by the id main gave it, so main acts on no path
+ * or address a window sent. `step`: how far back through the bot's chats, from 0.
+ */
+export type LibraryCommand =
+  | { readonly do: 'readLibrary'; readonly bot: BotId; readonly step: number }
+  | { readonly do: 'previewLibraryItem'; readonly bot: BotId; readonly id: LibraryItemId }
+  /** Saves a file of the Hermes machine on this computer. Answers where it went, or null when the user cancelled. */
+  | { readonly do: 'saveLibraryItem'; readonly bot: BotId; readonly id: LibraryItemId }
+
+const LIBRARY_VERBS: { readonly [K in LibraryCommand['do']]: true } = { readLibrary: true, previewLibraryItem: true, saveLibraryItem: true }
+export const isLibraryCommand = (command: AppCommand): command is LibraryCommand => Object.hasOwn(LIBRARY_VERBS, command.do)
+
+export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand | ThemeCommand | AccentCommand | SidebarWidthCommand | SendKeyCommand | ShowWorkCommand | SpellCheckCommand | SnoozeCommand | NoticeCommand | OnCloseCommand | AppearanceCommand | IntroCommand | PluginCatalogCommand | LibraryCommand
 export type WindowCommand = Exclude<AppCommand, { readonly do: 'refreshBots' | 'readMade' }>
 export type HubResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
-export type AppResult<C extends AppCommand> = C extends { do: 'export' } ? string | null : C extends PluginCatalogCommand ? readonly CatalogPlugin[] : HubResult<C>
+export type AppResult<C extends AppCommand> =
+  C extends { do: 'export' | 'saveLibraryItem' } ? string | null
+  : C extends PluginCatalogCommand ? readonly CatalogPlugin[]
+  : C extends { do: 'readLibrary' } ? LibraryRead
+  : HubResult<C>
 
 /** Every topic and what it carries. Each has one value per connection, except `preview`, `mode`, `theme`, `accent`, `sidebarWidth`, `sendKey`, `showWork`, `spellCheck`, `snoozes`, `notices`, `onClose`, `appearance` and `intro`, which belong to the window. */
 export interface AppTopics {
@@ -679,6 +696,18 @@ export const validators: Validators = {
   listRoutines: raw => {
     const bot = botIdOf(raw.bot)
     return bot && { do: 'listRoutines', bot }
+  },
+  readLibrary: raw => {
+    const bot = botIdOf(raw.bot)
+    return bot && Number.isSafeInteger(raw.step) && (raw.step as number) >= 0 ? { do: 'readLibrary', bot, step: raw.step as number } : null
+  },
+  previewLibraryItem: raw => {
+    const bot = botIdOf(raw.bot)
+    return bot && filled(raw.id) ? { do: 'previewLibraryItem', bot, id: raw.id as LibraryItemId } : null
+  },
+  saveLibraryItem: raw => {
+    const bot = botIdOf(raw.bot)
+    return bot && filled(raw.id) ? { do: 'saveLibraryItem', bot, id: raw.id as LibraryItemId } : null
   },
   controlRoutine: raw => {
     const bot = botIdOf(raw.bot)

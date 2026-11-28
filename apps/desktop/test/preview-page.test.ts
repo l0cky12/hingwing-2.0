@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import type { ServerId, Session, SessionId, SshHost, Target } from '@highwing/hermes/domain'
 import { describe, expect, it } from 'vitest'
 import type { PaneLayout, Setup } from '../src/ipc-contract'
-import { failureOf, nextPane, pageFor, pageInView, pageUrlOf, pathOfPageUrl, previewOf, reachable, reachOf, servedPath, type Pane, type PaneEvent } from '../src/main/preview-page'
+import { failureOf, nextPane, pageFor, pageInView, pageUrlOf, pathOfPageUrl, previewOf, reachable, reachOf, servedPath, stepsOf, type Pane, type PaneEvent, type Source } from '../src/main/preview-page'
 
 const SITE = '/tmp/hermes-proto-work/site/index.html'
 const wrote = (path: string) => ({
@@ -13,41 +13,42 @@ const wrote = (path: string) => ({
   run: { state: 'idle' }
 }) as unknown as Session
 
-const local = { session: wrote(SITE), local: true, machine: 'this computer', host: null }
-const remote = { session: wrote(SITE), local: false, machine: 'hermes-host', host: null }
+const local = { local: true, machine: 'this computer', host: null }
+const remote = { local: false, machine: 'hermes-host', host: null }
 const overSsh = { ...remote, host: 'hermes-host' as SshHost }
+const steps = stepsOf(wrote(SITE))
 
 describe('pageFor', () => {
   it.each(['http://localhost:5173/', 'https://example.com/docs?page=2', 'http://127.0.0.1:8000/'])('loads the web page %s from a local Hermes', url => {
-    expect(pageFor(url, local)).toEqual({ address: url, page: { kind: 'web', url } })
+    expect(pageFor(url, undefined, local)).toEqual({ address: url, page: { kind: 'web', url } })
   })
 
   it.each(['http://localhost:5173/', 'http://127.0.0.1:8000/', 'http://[::1]:3000/', 'http://0.0.0.0:4000/', 'http://app.localhost/'])(
     "says a remote Hermes's loopback page %s is out of reach",
     url => {
-      expect(pageFor(url, remote)).toEqual({ address: url, failed: "This page runs on hermes-host. Highwing can't reach that machine's localhost." })
+      expect(pageFor(url, undefined, remote)).toEqual({ address: url, failed: "This page runs on hermes-host. Highwing can't reach that machine's localhost." })
     }
   )
 
   it('loads a page on another host from a remote Hermes', () => {
-    expect(pageFor('https://example.com/', remote)).toEqual({ address: 'https://example.com/', page: { kind: 'web', url: 'https://example.com/' } })
+    expect(pageFor('https://example.com/', undefined, remote)).toEqual({ address: 'https://example.com/', page: { kind: 'web', url: 'https://example.com/' } })
   })
 
   it('loads a file a finished step named, as a path or a file url, from a local Hermes', () => {
-    expect(pageFor(SITE, local)).toEqual({ address: SITE, page: { kind: 'file', path: SITE } })
-    expect(pageFor(`file://${SITE}`, local)).toEqual({ address: SITE, page: { kind: 'file', path: SITE } })
-    expect(pageFor('site/index.html', { ...local, session: wrote('site/index.html') })).toEqual({ address: SITE, page: { kind: 'file', path: SITE } })
+    expect(pageFor(SITE, steps, local)).toEqual({ address: SITE, page: { kind: 'file', path: SITE } })
+    expect(pageFor(`file://${SITE}`, steps, local)).toEqual({ address: SITE, page: { kind: 'file', path: SITE } })
+    expect(pageFor('site/index.html', stepsOf(wrote('site/index.html')), local)).toEqual({ address: SITE, page: { kind: 'file', path: SITE } })
   })
 
   it("says a remote Hermes's file is on that machine", () => {
-    expect(pageFor(SITE, remote)).toEqual({ address: SITE, failed: 'This file is on hermes-host.' })
+    expect(pageFor(SITE, steps, remote)).toEqual({ address: SITE, failed: 'This file is on hermes-host.' })
   })
 
   it('reads an HTML page a finished step named over ssh, and only a page', () => {
-    expect(pageFor(SITE, overSsh)).toEqual({ address: SITE, page: { kind: 'ssh', host: 'hermes-host', path: SITE } })
+    expect(pageFor(SITE, steps, overSsh)).toEqual({ address: SITE, page: { kind: 'ssh', host: 'hermes-host', path: SITE } })
     const csv = '/tmp/hermes-proto-work/report.csv'
-    expect(pageFor(csv, { ...overSsh, session: wrote(csv) })).toEqual({ address: csv, failed: 'This file is on hermes-host.' })
-    expect(pageFor('/etc/passwd.html', overSsh)).toBeNull()
+    expect(pageFor(csv, stepsOf(wrote(csv)), overSsh)).toEqual({ address: csv, failed: 'This file is on hermes-host.' })
+    expect(pageFor('/etc/passwd.html', steps, overSsh)).toBeNull()
   })
 
   it.each([
@@ -59,27 +60,35 @@ describe('pageFor', () => {
     ['inline data', 'data:text/html,<h1>hi</h1>'],
     ['a bare host', 'localhost:5173']
   ])('refuses %s', (_, request) => {
-    expect(pageFor(request, local)).toBeNull()
+    expect(pageFor(request, steps, local)).toBeNull()
   })
 
-  it('refuses a path when no chat named it', () => {
-    expect(pageFor(SITE, { ...local, session: undefined })).toBeNull()
+  it('refuses a path when nothing vouches for it', () => {
+    expect(pageFor(SITE, undefined, local)).toBeNull()
   })
 
   it('refuses a CSV or a PDF no finished step named, so main reads nothing of it', () => {
-    expect(pageFor('/tmp/hermes-proto-work/site/report.csv', local)).toBeNull()
-    expect(pageFor('file:///tmp/hermes-proto-work/report.pdf', local)).toBeNull()
+    expect(pageFor('/tmp/hermes-proto-work/site/report.csv', steps, local)).toBeNull()
+    expect(pageFor('file:///tmp/hermes-proto-work/report.pdf', steps, local)).toBeNull()
+  })
+
+  it("shows a file a bot's Library vouches for, and says how to get one from a remote Hermes", () => {
+    const notes = '/home/rae/notes.md'
+    const library: Source = { named: path => (path === notes ? notes : null), elsewhere: 'Save it to open it on this computer.', session: 'local-0301' as SessionId }
+    expect(pageFor(notes, library, local)).toEqual({ address: notes, page: { kind: 'file', path: notes } })
+    expect(pageFor(notes, library, overSsh)).toEqual({ address: notes, failed: 'This file is on hermes-host. Save it to open it on this computer.' })
+    expect(pageFor('/home/rae/other.md', library, local)).toBeNull()
   })
 })
 
 describe('reachOf', () => {
   it('reads a fixture run and a local connection as this computer, and a remote one as its machine', () => {
     const live = (target: Target): Setup => ({ at: 'chat', live: { server: 'server-1' as ServerId, target, epoch: 1 } })
-    expect(reachOf({ at: 'pinned' }, undefined)).toEqual({ session: undefined, local: true, machine: 'this computer', host: null })
-    expect(reachOf(live({ kind: 'local' }), undefined)).toMatchObject({ local: true, machine: 'this computer', host: null })
-    expect(reachOf(live({ kind: 'remote', host: 'hermes-host.example-tailnet.ts.net' as SshHost }), undefined))
+    expect(reachOf({ at: 'pinned' })).toEqual({ local: true, machine: 'this computer', host: null })
+    expect(reachOf(live({ kind: 'local' }))).toMatchObject({ local: true, machine: 'this computer', host: null })
+    expect(reachOf(live({ kind: 'remote', host: 'hermes-host.example-tailnet.ts.net' as SshHost })))
       .toMatchObject({ local: false, machine: 'hermes-host', host: 'hermes-host.example-tailnet.ts.net' })
-    expect(reachOf(live({ kind: 'ssh', host: 'ada@192.168.1.20' as SshHost }), undefined))
+    expect(reachOf(live({ kind: 'ssh', host: 'ada@192.168.1.20' as SshHost })))
       .toMatchObject({ local: false, machine: '192.168.1.20', host: 'ada@192.168.1.20' })
   })
 })

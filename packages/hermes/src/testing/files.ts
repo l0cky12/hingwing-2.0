@@ -4,7 +4,7 @@
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { fileNameOf } from '../domain/library'
-import { DOWNLOAD_PATH } from '../wire/download'
+import { DOWNLOAD_PATH, downloadedOf, downloadPath, type Download } from '../wire/download'
 import type { ChatSeed } from './fixture'
 import type { Front, Loopback } from './loopback'
 
@@ -53,4 +53,14 @@ export function ticketedFiles(gateway: Pick<Loopback, 'redeemHttp'>, drive: Driv
     sendDownload(response, downloadAnswer(drive, searchParams, profile))
   }
   return { prefix: '', upgrades: 'gateway', serve }
+}
+
+/** The route as a fixture run's connection answers it, through the same reading of Hermes's answer as a live route. No `files`: no route. */
+export function fixtureDownload(files: FarFiles | undefined, chats: Drive['chats'] = {}): Download {
+  return async file => {
+    const answer = files === undefined ? { status: 404, detail: 'Not Found' } : downloadAnswer({ files, chats }, new URL(downloadPath(file), 'http://fixture').searchParams, file.bot)
+    const bytes = 'bytes' in answer ? answer.bytes : Buffer.from(JSON.stringify({ detail: answer.detail }))
+    const header = (name: string) => (name === 'content-disposition' && 'bytes' in answer ? `attachment; filename="${answer.name}"` : null)
+    return downloadedOf({ status: answer.status, header, body: (async function* () { yield bytes })() }, file)
+  }
 }

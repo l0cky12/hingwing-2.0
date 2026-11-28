@@ -1,5 +1,5 @@
 import type { CheckResult, Dialer, Hermes, Picked, PickedRoute } from '@highwing/hermes'
-import { currentServer, type BotId, type CheckFailure, type CheckStep, type CommandOutcome, type GroupId, type PickMode, type ServerId, type Servers, type SessionId, type SshHost, type Target } from '@highwing/hermes/domain'
+import { currentServer, type BotId, type CheckFailure, type CheckStep, type CommandOutcome, type FarFile, type GroupId, type PickMode, type ServerId, type Servers, type SessionId, type SshHost, type Target } from '@highwing/hermes/domain'
 import type { GatewayUrl } from '@highwing/hermes/domain'
 import { describe, expect, it } from 'vitest'
 import type { Live, Setup } from '../src/ipc-contract'
@@ -13,6 +13,7 @@ const REMOTE: Target = { kind: 'remote', host: 'hermes-host.example-tailnet.ts.n
 const OTHER: Target = { kind: 'remote', host: 'other-host' as SshHost }
 const LOCAL: Target = { kind: 'local' }
 const RECORDING = { mime: 'audio/webm', audio: new Uint8Array([1]) }
+const FILE = { bot: 'rae', sessionId: 'local-0301', path: '/home/rae/notes.md' } as FarFile
 const LAN: Target = { kind: 'ssh', host: '192.168.1.20' as SshHost }
 const LIVE: Live = { server: SERVER, target: LOCAL, epoch: 1 }
 const NEXT: Live = { server: 'server-2' as ServerId, target: REMOTE, epoch: 2 }
@@ -187,6 +188,7 @@ describe('ownConnection at launch', () => {
     expect(owner.hermes).toBeNull()
     expect(await owner.run({ do: 'reconnect', start: true })).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
     expect(await owner.transcribe(RECORDING)).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
+    expect(await owner.download(FILE)).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
     await expect(owner.read('/api/plugins/kanban/board')).rejects.toThrow('No Hermes is connected.')
   })
 })
@@ -258,6 +260,7 @@ describe('ownConnection, checking a target', () => {
     expect(opened[1]!.commands).toEqual([{ do: 'reconnect', start: true }])
     expect(opened[0]!.commands).toEqual([])
     expect(await owner.transcribe(RECORDING), 'speech goes to the new connection too').toEqual({ ok: true, value: 'heard by remote' })
+    expect(await owner.download(FILE), 'and files come from it').toEqual({ ok: true, value: new TextEncoder().encode('sent by remote') })
   })
 
   it('does not switch when the target checked is the one already live', async () => {
@@ -967,7 +970,9 @@ describe('pinnedConnection', () => {
     const commands: unknown[] = []
     const hermes = { run: async (command: unknown) => { commands.push(command); return { ok: true, value: undefined } }, close: async () => {} } as unknown as Hermes
     const read = async () => ({ status: 200, body: 'board' })
-    const owner = pinnedConnection(hermes, read, async () => ({ ok: true, value: 'heard by the fixture' }))
+    const download = async () => ({ ok: true as const, value: new TextEncoder().encode('sent by the fixture') })
+    const owner = pinnedConnection(hermes, read, async () => ({ ok: true, value: 'heard by the fixture' }), download)
+    expect(owner.download).toBe(download)
     expect(owner.read).toBe(read)
     expect(owner.setup.get()).toEqual({ at: 'pinned' })
     expect(await owner.transcribe(RECORDING)).toEqual({ ok: true, value: 'heard by the fixture' })

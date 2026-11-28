@@ -1,22 +1,25 @@
 import type { Hermes } from '@highwing/hermes'
 import { isTaskId, type BotId, type CommandOutcome, type Session, type SessionId } from '@highwing/hermes/domain'
 import {
-  CHANNEL, epochOf, isAppTopic, isLocal, OTHER_CONNECTION, isPreviewCommand, isSetupCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseRecording, parseRoutineId, parseTopic,
+  CHANNEL, epochOf, isAppTopic, isLibraryCommand, isLocal, OTHER_CONNECTION, isPreviewCommand, isSetupCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseRecording, parseRoutineId, parseTopic,
   type Accent, type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type ImageType, type Mode, type Notices, type OnClose, type PictureChoice, type PictureFile, type Push, type SessionPatch, type StageResult,
   type SendKey, type ShowWork, type SidebarWidth, type Snoozes, type Tail, type Theme, type Topic
 } from '../ipc-contract'
+import { writeFile } from 'node:fs/promises'
 import { basename } from 'node:path'
 import type { Appearance } from '../appearance'
 import type { AttachmentStore, AttachSources, StageSource } from './attachments'
 import type { ConnectionOwner } from './connection'
 import type { IntroOwner } from './intro'
+import type { LibraryOwner } from './library'
 import type { PluginCatalog } from './plugin-catalog'
 import type { DraftStore } from './drafts'
 import { openablePath, type Opener } from './files'
+import { stepsOf } from './preview-page'
 import type { ImageLoader } from './images'
 import { snoozed, type PreferenceStore } from './preferences'
 import type { PreviewPane } from './preview'
-import type { Saver } from './saves'
+import { savedAs, type Saver } from './saves'
 import { readRoutineRuns } from './routine-runs'
 import { readBotMemory } from './memory'
 import { readTaskBoard, readTaskChat } from './tasks'
@@ -147,7 +150,6 @@ function serveTopic(topic: Topic, servedBy: Hermes | null, source: Source, send:
 
 const DONE: CommandOutcome<void> = { ok: true, value: undefined }
 const REFUSED: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejected', message: 'Highwing refused a malformed request from its window.' } }
-const NOT_SAVED: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejected', message: "Highwing couldn't write the file." } }
 const FILE_REFUSED: FileOutcome = { ok: false, reason: 'refused' }
 const FILE_DONE: FileOutcome = { ok: true }
 const IMAGE_REFUSED: ImageOutcome = { ok: false }
@@ -166,8 +168,8 @@ function fileActions(opener: Opener, pane: PreviewOwner): FileActions {
   return {
     open: named(path => opener.open(path)),
     show: named(path => opener.show(path)),
-    preview: async (session, path) => (pane.show(path, null, session) ? FILE_DONE : FILE_REFUSED),
-    page: async (session, path) => (pane.show(path, null, session, 'page') ? FILE_DONE : FILE_REFUSED)
+    preview: async (session, path) => (pane.show(path, null, stepsOf(session)) ? FILE_DONE : FILE_REFUSED),
+    page: async (session, path) => (pane.show(path, null, stepsOf(session), 'page') ? FILE_DONE : FILE_REFUSED)
   }
 }
 
@@ -182,7 +184,7 @@ export interface Pictures {
 export function serveWindows(
   owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl: (url: string) => boolean, opener: Opener, images: ImageLoader, drafts: Pick<DraftStore, 'keep' | 'load'>,
   pane: PreviewOwner, pictures: Pictures, attaching: Attaching,
-  saver: Saver, preferences: Preferences, intro: Pick<IntroOwner, 'intro' | 'apply'>, catalog: PluginCatalog
+  saver: Saver, library: LibraryOwner, preferences: Preferences, intro: Pick<IntroOwner, 'intro' | 'apply'>, catalog: PluginCatalog
 ): { dispose(): void } {
   const windows = new Map<number, Map<number, Served>>()
   const owners: Owners = { owner, pane, preferences, intro }
@@ -281,10 +283,12 @@ export function serveWindows(
     }
     if (command.do === 'pluginCatalog') return catalog.read()
     if (!isSetupCommand(command) && epoch !== epochOf(owner.setup.get())) return OTHER_CONNECTION
+    if (isLibraryCommand(command)) return library.run(command, () => epoch === epochOf(owner.setup.get()))
     if (command.do !== 'export') return owner.run(command)
     const rendered = await owner.run(command)
     if (!rendered.ok) return rendered
-    return saver.save(rendered.value).then(path => ({ ok: true, value: path }), () => NOT_SAVED)
+    const { filename, content } = rendered.value
+    return savedAs(saver.save(filename, to => writeFile(to, content)))
   })
 
   ipc.handle(CHANNEL.file, async (event, raw) => {

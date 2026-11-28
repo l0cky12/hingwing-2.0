@@ -1,4 +1,6 @@
-import { readdirSync, readFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import type { Hermes, HttpAnswer, PickedRoute } from '@highwing/hermes'
 import type { AttachmentId, BotActivities, Bots, CatalogPlugin, CommandOutcome, Exported, Groups, Link, OpenChat, Recording, RelayDesk, ServerId, Session, SessionId, Sidebar, SkillLibrary, SlashCatalog, SshHost } from '@highwing/hermes/domain'
@@ -13,6 +15,8 @@ import type { Opener } from '../src/main/files'
 import type { ImageContext } from '../src/main/images'
 import type { AttachSources, StageSource } from '../src/main/attachments'
 import { COALESCE_MS, serveWindows, sessionPatch, type Attaching, type IpcEvent, type IpcMainLike, type PreviewOwner } from '../src/main/ipc'
+import type { LibraryOwner } from '../src/main/library'
+import type { Saver } from '../src/main/saves'
 
 const fixture = loadFixture('fixtures/errand.jsonl')
 const topic = `session:${fixture.header.sessionId}` as const
@@ -623,8 +627,8 @@ describe('validators', () => {
       'accountUsage', 'addToolServer', 'answer', 'appSignIn', 'apps', 'archive', 'arrangeWays', 'botModelSettings', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff',
       'checkpoints', 'closePreview', 'completePath', 'compress', 'connectApp', 'contextBreakdown', 'control', 'controlRoutine', 'createBot', 'createFromTemplate', 'createGroup', 'deleteGroup', 'denyRules', 'describeBot', 'discard',
       'done', 'editBot', 'editTarget', 'examples', 'export', 'generatePicture', 'handBack', 'installPlugin', 'keepTarget', 'killProcess', 'listRoutines', 'loadEarlier', 'lockPasswordManager', 'markBot', 'memory', 'models', 'move',
-      'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'pluginCatalog', 'plugins', 'preview', 'queued', 'react', 'readMessages', 'reconnect',
-      'reloadPreview', 'remove', 'removeApp', 'removeBotPicture', 'removeMemory', 'removeServer', 'removeToolServer', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'saveMemory', 'send',
+      'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'pluginCatalog', 'plugins', 'preview', 'previewLibraryItem', 'queued', 'react', 'readLibrary', 'readMessages', 'reconnect',
+      'reloadPreview', 'remove', 'removeApp', 'removeBotPicture', 'removeMemory', 'removeServer', 'removeToolServer', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'saveLibraryItem', 'saveMemory', 'send',
       'sendToGroup', 'setAccent', 'setAppearance', 'setBotBackup', 'setBotModel', 'setBotPicture', 'setMode', 'setNotice', 'setOnClose', 'setPlugin', 'setSendKey', 'setShowWork', 'setSidebarWidth', 'setSkill', 'setSpellCheck', 'setTheme', 'side', 'skillText', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper',
       'takeControl', 'toolServers', 'tools', 'tune', 'unlockPasswordManager', 'usePasswordManager', 'useServer', 'versions'
     ])
@@ -645,6 +649,7 @@ const NO_GROUPS: Groups = { state: 'unsupported' }
 const RESEARCH_WAITING = { research: 'waiting' } as BotActivities
 
 const HEARD = async ({ mime, audio }: Recording): Promise<CommandOutcome<string>> => ({ ok: true, value: `${audio.byteLength} bytes of ${mime}` })
+const NO_FILES = async (): Promise<CommandOutcome<Uint8Array>> => ({ ok: false, refusal: { kind: 'unsupported', message: "This Hermes can't send files to Highwing. Update Hermes, then try again." } })
 
 /** An owner live on a remote machine, whose every check passes, so a check of this computer switches to it at epoch 2. */
 const switchable = (hermes: Hermes) => ownConnection({
@@ -678,7 +683,7 @@ function harness(ownerOf?: (hermes: Hermes) => ConnectionOwner) {
   let emit: (session: Session) => void = () => {}
   const commands: unknown[] = []
   let exported: CommandOutcome<Exported> = { ok: true, value: { filename: 'chat.md', content: '# Notes' } }
-  let savedAt: Promise<string | null> = Promise.resolve('/home/u/Downloads/chat.md')
+  let savedTo: string | null | Error = '/home/u/Downloads/chat.md'
   let catalog: SlashCatalog = []
   const catalogListeners = new Set<(value: SlashCatalog) => void>()
   let bots: Bots = { state: 'loading' }
@@ -738,16 +743,24 @@ function harness(ownerOf?: (hermes: Hermes) => ConnectionOwner) {
     browse: async () => { throw new Error('a window never browses through the opener') }
   }
   const saves: Exported[] = []
-  const saver = { save: async (rendered: Exported): Promise<string | null> => (saves.push(rendered), savedAt) }
+  const saver: Saver = {
+    save: async (filename, write) => {
+      const at = join(mkdtempSync(join(tmpdir(), 'highwing-ipc-saves-')), filename)
+      await write(at)
+      saves.push({ filename, content: readFileSync(at, 'utf8') })
+      if (savedTo instanceof Error) throw savedTo
+      return savedTo
+    }
+  }
   const kept: Draft[] = []
   const picked: string[] = []
   const lives: (() => boolean)[] = []
   const stored: readonly Draft[] = [{ key: 'new', bot: null, text: 'kept on disk', attachments: [], quote: null }]
-  const previewed: { request: string; label: string | null; session: Session | undefined; layout?: PaneLayout }[] = []
+  const previewed: { request: string; label: string | null; named: string | null; layout?: PaneLayout }[] = []
   const toPane: PreviewCommand[] = []
   const pane: PreviewOwner = {
     preview: still<Preview>({ state: 'closed' }),
-    show: (request, label, session, layout) => (previewed.push({ request, label, session, ...(layout && { layout }) }), request.startsWith('/')),
+    show: (request, label, source, layout) => (previewed.push({ request, label, named: source?.named(request) ?? null, ...(layout && { layout }) }), request.startsWith('/')),
     run: async command => (toPane.push(command), { ok: true, value: undefined })
   }
   const staged: StageSource[] = []
@@ -771,12 +784,14 @@ function harness(ownerOf?: (hermes: Hermes) => ConnectionOwner) {
   const intro = feed<Intro>(OFF)
   const onClose = feed<OnClose>('quit')
   const appearance = feed<Appearance>(DEFAULT_APPEARANCE)
+  const toLibrary: { readonly command: unknown; readonly live: () => boolean }[] = []
+  const library: LibraryOwner = { run: async (command, live) => (toLibrary.push({ command, live }), { ok: true, value: null } as never) }
   const sources: AttachSources = { pick: async () => ['/home/me/error.png', '/home/me/big.zip'], pasted: async () => ({ name: 'Pasted image 1.png', bytes: PNG }) }
   const served = serveWindows(
-    (ownerOf ?? (held => pinnedConnection(held, read, HEARD)))(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) },
+    (ownerOf ?? (held => pinnedConnection(held, read, HEARD, NO_FILES)))(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) },
     { keep: draft => void kept.push(draft), load: async () => stored }, pane,
     { pick: async (bot, live) => (picked.push(bot), lives.push(live), { ok: true, value: 'cancelled' }), choose: async () => (picked.push('chosen'), { ok: true, value: PICTURE }) },
-    { store, sources }, saver, { mode, theme, accent, sidebarWidth, sendKey, showWork, spellCheck, snoozes, notices, onClose, appearance },
+    { store, sources }, saver, library, { mode, theme, accent, sidebarWidth, sendKey, showWork, spellCheck, snoozes, notices, onClose, appearance },
     { intro, apply: async (event: IntroEvent) => intro.set(nextIntro(intro.get(), event)) },
     { read: async () => ({ ok: true, value: CATALOG }) }
   )
@@ -794,10 +809,10 @@ function harness(ownerOf?: (hermes: Hermes) => ConnectionOwner) {
   }
   const exportsAs = (next: CommandOutcome<Exported>, path: string | null | Error) => {
     exported = next
-    savedAt = path instanceof Error ? Promise.reject(path) : Promise.resolve(path)
+    savedTo = path
   }
   return {
-    listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, loaded, kept, picked, lives, stored, previewed, toPane, staged, served,
+    listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, loaded, kept, picked, lives, stored, previewed, toPane, toLibrary, staged, served,
     reads, answers: (next: HttpAnswer) => void (answer = next), saves, exportsAs, setCatalog, setBots, setOpen, mode, theme, accent, sidebarWidth, sendKey, showWork, spellCheck, snoozes, notices, onClose, appearance, intro
   }
 }
@@ -910,6 +925,7 @@ describe('serveWindows', () => {
       hermes: null,
       read: async () => { throw new Error('the test never reads') },
       transcribe: HEARD,
+      download: NO_FILES,
       close: async () => {},
       run: async (command: { readonly do: string }) => {
         ran.push(command.do)
@@ -1188,14 +1204,14 @@ describe('the file call', () => {
     const { file, previewed, opened } = watching()
     await expect(file({ ...asked('open', NOTES), action: 'preview' })).resolves.toEqual({ ok: true })
     await expect(file({ ...asked('open', 'notes.md'), action: 'preview' })).resolves.toEqual({ ok: false, reason: 'refused' })
-    expect(previewed).toEqual([{ request: NOTES, label: null, session: diffMoment() }, { request: 'notes.md', label: null, session: diffMoment() }])
+    expect(previewed).toEqual([{ request: NOTES, label: null, named: NOTES }, { request: 'notes.md', label: null, named: null }])
     expect(opened).toEqual([])
   })
 
   it('opens a page filling the window, judged by the pane as a preview is', async () => {
     const { file, previewed, opened } = watching()
     await expect(file({ ...asked('open', NOTES), action: 'page' })).resolves.toEqual({ ok: true })
-    expect(previewed).toEqual([{ request: NOTES, label: null, session: diffMoment(), layout: 'page' }])
+    expect(previewed).toEqual([{ request: NOTES, label: null, named: NOTES, layout: 'page' }])
     expect(opened).toEqual([])
   })
 
@@ -1222,7 +1238,7 @@ describe('the file call', () => {
     rig.listeners.get(CHANNEL.watch)!(rig.event(), 1, topic)
     rig.emit(diffMoment())
     await expect(rig.handlers.get(CHANNEL.file)!(rig.event(), { ...asked('open', NOTES), action: 'page' })).resolves.toEqual({ ok: true })
-    expect(rig.previewed).toEqual([{ request: NOTES, label: null, session: diffMoment(), layout: 'page' }])
+    expect(rig.previewed).toEqual([{ request: NOTES, label: null, named: NOTES, layout: 'page' }])
   })
 
   it('refuses a path a remote Hermes served after the connection moves to this computer, until the window watches the session again', async () => {
@@ -1460,6 +1476,40 @@ describe('the bot memory call', () => {
     const { handlers, served } = harness()
     served.dispose()
     expect(handlers.has(CHANNEL.botMemory)).toBe(false)
+  })
+})
+
+describe('a bot\'s Library', () => {
+  it('goes to the Library owner and never to Hermes, which a window reaches by id alone', async () => {
+    const rig = harness()
+    const run = rig.handlers.get(CHANNEL.run)!
+    const sent = [{ do: 'readLibrary', bot: 'rae', step: 0 }, { do: 'previewLibraryItem', bot: 'rae', id: 'hermes:/home/rae/notes.md' }, { do: 'saveLibraryItem', bot: 'rae', id: 'hermes:/home/rae/notes.md' }]
+    for (const command of sent) await expect(run(rig.event(), command, 0)).resolves.toEqual({ ok: true, value: null })
+    expect(rig.toLibrary.map(held => held.command)).toEqual(sent)
+    expect(rig.commands).toEqual([])
+  })
+
+  it('refuses a step that is not a whole number, an item with no id, and a path or an address in place of one', () => {
+    for (const raw of [
+      { do: 'readLibrary', bot: 'rae', step: -1 }, { do: 'readLibrary', bot: 'rae', step: 1.5 }, { do: 'readLibrary', bot: ' ', step: 0 },
+      { do: 'previewLibraryItem', bot: 'rae', id: ' ' }, { do: 'saveLibraryItem', bot: 'rae', path: '/home/rae/notes.md' }, { do: 'previewLibraryItem', bot: 'rae', url: 'https://example.com/' }
+    ]) expect(parseCommand(raw), JSON.stringify(raw)).toBeNull()
+  })
+
+  it('refuses a command sent for a connection that is no longer live, and tells one left waiting across the switch', async () => {
+    let owner: ConnectionOwner | undefined
+    const rig = harness(hermes => (owner = switchable(hermes)))
+    const run = rig.handlers.get(CHANNEL.run)!
+    await run(rig.event(), { do: 'saveLibraryItem', bot: 'rae', id: 'hermes:/home/rae/notes.md' }, 1)
+    const [{ live } = { live: () => false }] = rig.toLibrary
+    expect(live()).toBe(true)
+    await run(rig.event(), { do: 'editTarget' }, 1)
+    await run(rig.event(), { do: 'checkTarget', target: { kind: 'local' }, into: 'replace' }, 1)
+    await new Promise(resolve => setImmediate(resolve))
+    expect(owner!.setup.get()).toMatchObject({ live: { epoch: 2 } })
+    expect(live()).toBe(false)
+    await expect(run(rig.event(), { do: 'saveLibraryItem', bot: 'rae', id: 'hermes:/home/rae/notes.md' }, 1)).resolves.toMatchObject({ ok: false, refusal: { kind: 'stale' } })
+    expect(rig.toLibrary).toHaveLength(1)
   })
 })
 
