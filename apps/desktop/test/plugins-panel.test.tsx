@@ -8,7 +8,7 @@ vi.mock('../src/renderer/store', () => ({ Epoch: {}, run: async () => ({ ok: tru
 const { OfferCard } = await import('../src/renderer/apps/Connectors')
 
 const offered = (fields: Partial<CatalogPlugin> = {}): CatalogPlugin => ({
-  name: 'mem0', description: 'Mem0 memory provider.', tier: 'community', category: 'memory', maintainer: 'mem0ai', version: '1.3.0', platforms: [], stars: 3, featured: null, repo: 'https://github.com/mem0ai/mem0', ...fields
+  name: 'mem0', description: 'Mem0 memory provider.', tier: 'community', category: 'memory', maintainer: 'mem0ai', version: '1.3.0', platforms: [], stars: 3, featured: null, repo: 'https://github.com/mem0ai/mem0', image: null, ...fields
 })
 const card = (plugin: CatalogPlugin, installing: Parameters<typeof OfferCard>[0]['installing']) =>
   renderToStaticMarkup(<OfferCard plugin={plugin} installing={installing} onAsk={() => {}} onInstall={() => {}} onCancel={() => {}} />)
