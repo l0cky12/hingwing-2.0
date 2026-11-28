@@ -85,7 +85,6 @@ describe("a group chat's menu", () => {
 
   it('says what deleting takes, and that Hermes cannot bring it back', () => {
     expect(DELETE_WORDS.group).toBe("Hermes ends this group chat and deletes its messages. It can't bring them back.")
-    expect(DELETE_WORDS.bot).toBe("Hermes removes the bot, its chats and its settings. It can't bring them back.")
   })
 })
 

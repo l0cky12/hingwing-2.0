@@ -62,8 +62,7 @@ export const deleteRefusal = (bot: Bot, featured: boolean): string =>
     ? "The default bot can't be deleted."
     : `This Hermes can't delete bots from Highwing. To delete ${bot.name}, run hermes profile delete ${bot.id} on the Hermes machine.`
 
-export const DELETE_WORDS: { readonly [K in MenuOwner['kind']]: string } = {
-  bot: "Hermes removes the bot, its chats and its settings. It can't bring them back.",
+export const DELETE_WORDS: { readonly group: string } = {
   group: "Hermes ends this group chat and deletes its messages. It can't bring them back."
 }
 

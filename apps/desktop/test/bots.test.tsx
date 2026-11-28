@@ -216,7 +216,7 @@ describe("a bot's menu on a Hermes that can't delete bots", () => {
     const editor = bots.state === 'listed' ? botsIn(bots.roster).find(bot => bot.id === 'editor') : undefined
     if (editor === undefined) throw new Error('expected Editor in the roster')
     const markup = renderToStaticMarkup(
-      <RowMenu name="Editor" items={botMenuOf(editor, 'section')} more={{ to: 'more', bot: editor.id }} anchor={() => ({ at: 'point', x: 0, y: 0 })} onChoose={() => {}} onClose={() => {}} />
+      <RowMenu name="Editor" items={botMenuOf(editor, 'section')} more={{ to: 'more', bot: editor.id }} anchor={() => ({ at: 'point', x: 0, y: 0 })} onChoose={() => {}} onBlocked={() => {}} onClose={() => {}} />
     )
     const del = /<button[^>]*title="([^"]*)"[^>]*aria-disabled="true"[^>]*aria-describedby="([^"]*)"[^>]*>.*?Delete…/.exec(markup)
     const how = 'This Hermes can&#x27;t delete bots from Highwing. To delete Editor, run hermes profile delete editor on the Hermes machine.'

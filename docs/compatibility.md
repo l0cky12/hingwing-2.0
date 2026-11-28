@@ -838,8 +838,8 @@ in the same place.
   menu is shown unavailable, and its title and screen-reader description say
   "This Hermes can't delete bots from Highwing. To delete Editor, run hermes
   profile delete editor on the Hermes machine." On the default bot they say
-  "The default bot can't be deleted." Choosing it does nothing and sends
-  nothing. `DELETES_BOTS` in `packages/hermes/src/domain/bots.ts` holds this,
+  "The default bot can't be deleted." Choosing it shows the same words in the
+  column's alert line and sends nothing. `DELETES_BOTS` in `packages/hermes/src/domain/bots.ts` holds this,
   false for every Hermes so far.
 - The missing call is `profiles.delete {name}`, beside `profiles.create` in
   `tui_gateway/methods_profiles.py`. It would run
