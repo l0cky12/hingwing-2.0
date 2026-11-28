@@ -15,9 +15,9 @@ When Hermes hands work to a helper, keeps a to-do list, or reasons before it ans
 
 ## How to get to it (user POV)
 
-- Run `HIGHWING_FIXTURE=fixtures/delegate.jsonl pnpm --filter @highwing/desktop start`, then send a message. The story hands a disk check to one helper, keeps a three-item plan and reasons twice before it answers.
-- Run `HIGHWING_FIXTURE=fixtures/stop-helper.jsonl pnpm --filter @highwing/desktop start`, send a message, and press Stop beside the helper once it has started `du -sh`.
-- Run `HIGHWING_FIXTURE=fixtures/delegate-reopened.jsonl pnpm --filter @highwing/desktop start`. The chat opens as Hermes stored it after the delegate story.
+- Run `HIGHWING_FIXTURE=$PWD/fixtures/delegate.jsonl pnpm --filter @highwing/desktop start`, then send a message. The story hands a disk check to one helper, keeps a three-item plan and reasons twice before it answers.
+- Run `HIGHWING_FIXTURE=$PWD/fixtures/stop-helper.jsonl pnpm --filter @highwing/desktop start`, send a message, and press Stop beside the helper once it has started `du -sh`.
+- Run `HIGHWING_FIXTURE=$PWD/fixtures/delegate-reopened.jsonl pnpm --filter @highwing/desktop start`. The chat opens as Hermes stored it after the delegate story.
 
 ## Driving it with highwing-verify
 

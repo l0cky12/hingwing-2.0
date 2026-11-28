@@ -38,5 +38,5 @@ Preconditions:
 - "Branch from here" keeps the message and its reply in the new chat, so the new chat parts from the original at the message after it. Branching at the second message makes a version of the third.
 - The versions are read when a chat opens. A message sent in a chat a branch just made leaves that chat's switcher after its last turn until the chat is opened again.
 - The launch chat asks for its own versions too, so `called projects.tree '{}'` counts one call more than the chat under test made. Name the profile in the assertion.
-- A request with a switcher keeps 188px beside it, 84px more than the 104px the three actions take.
+- A request with a switcher keeps 196px beside it, 84px more than the 112px the three actions take, and one with two switchers keeps 280px.
 - Hermes previews a project's three newest chats unless `preview_limit` asks for more, and the gateway does the same. A family whose chats are not all among the newest three shows only with the `preview_limit` Highwing sends.

@@ -7,7 +7,8 @@ With the desktop's forced-colors setting on, Highwing still shows the thread lin
 - `forced-thread` draws the thread line and every step, group and approval node in `CanvasText`, with the live node as a larger `Highlight` dot circled by a `Highlight` outline.
 - `forced-approval` gives the waiting card a `CanvasText` border with a 4px left edge. Its node, the live end, stays the only `Highlight` element.
 - `forced-diff` marks added lines with a solid left edge and removed lines with a dotted one, next to the `+` and `−` marks.
-- `forced-focus` shows a `Highlight` ring on the composer textarea and the system focus ring on the approval buttons.
+- `forced-focus` shows a `Highlight` ring on the composer card while its message box has focus, and the system focus ring on the approval buttons.
+- `forced-outlines` draws a 1px `CanvasText` outline around the request pill and each reply card, since their tinted backgrounds are gone.
 - `more-contrast` darkens `--graphite` and `--rule`.
 
 ## How to get to it (user POV)
@@ -35,4 +36,5 @@ Preconditions:
 - Chromium snaps border widths to whole pixels. A 1.5px border draws 1px wide.
 - The universal `box-sizing: border-box` rule does not reach pseudo-elements. The thread nodes set it themselves.
 - `settled-expanded` shows the top of the turn, as the design C reference does, so the Done ring is below the fold. The checker reports `n/a` for its end mark. The `settled` shot shows the same end mark.
-- The checker finds the thread column from the request's left rule and the background from the pixel at (20, 70), so it needs the 1180x860 reference size and a shot of the chat column alone. Without `--chat-only` it finds no border above the composer and fails.
+- The checker finds the thread column as the vertical run at most 2px wide in the left half with the most ink, and the background from the pixel at (20, 70), so it needs the 1180x860 reference size and a shot of the chat column alone. Without `--chat-only` it finds no border above the composer and fails.
+- The `tool-running` moment lives a few hundred ms, and a forced-colors shot can take longer, so `shot tool-running` sometimes fails with `state "tool-running" ended before tool-running.png was taken`. Run the story again.

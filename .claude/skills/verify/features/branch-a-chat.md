@@ -36,7 +36,7 @@ Preconditions:
 
 - The branch fixtures have no steps, so a message sent in the original chat would fail the story. Send in the new chat instead: its gateway answers `default: <text>`.
 - More shows on hover or focus, as Copy and the pencil do. The ARIA snapshot lists it, and lists the menu item only while the menu is open.
-- The three actions hang in the margin beside a request, and the request keeps 104px for them. With less, the actions run past the thread and the default 1180px window shows a horizontal scrollbar in a shot.
+- The three actions hang in the margin beside a request, and the request keeps 112px for them. With less, the actions run past the thread and the default 1180px window shows a horizontal scrollbar in a shot.
 - The gateway does not read the row beyond checking that the chat has it. Assert the cut with `called ... "through_message_id":4`.
 - The window keeps the key it minted for a message until Hermes answers, so a click after a dropped connection sends the same request and gets the same chat. An answer, whether a success or a refusal, makes the next click mint a new key.
 - The scripted gateway forgets a branched chat when its run ends. A second run with the same name loses the new chat, and the draft sweep then deletes its draft, as it does for any chat that is gone.

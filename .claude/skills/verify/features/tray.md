@@ -8,7 +8,7 @@ The tray icon shows how many chats on the open bot are waiting for your OK. Its 
 
 ## How to get to it (user POV)
 
-- With a saved connection, press Settings in the top bar. Then pick Window in the Settings nav.
+- With a saved connection, press the Hermes button at the foot of the sidebar (or Ctrl+,). Then pick Window in the Settings nav.
 
 ## Driving it with highwing-verify
 

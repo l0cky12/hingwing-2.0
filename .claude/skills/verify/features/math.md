@@ -13,7 +13,7 @@ A formula in a reply shows as typeset math, not as TeX source. `$...$` and `\(..
 
 ## How to get to it (user POV)
 
-- Run `HIGHWING_FIXTURE=fixtures/math.jsonl pnpm --filter @highwing/desktop start` from the repo root, type in the "Message Hermes" box and press Send.
+- Run `HIGHWING_FIXTURE=$PWD/fixtures/math.jsonl pnpm --filter @highwing/desktop start` from the repo root, type in the "Message Hermes" box and press Send.
 
 ## Driving it with highwing-verify
 

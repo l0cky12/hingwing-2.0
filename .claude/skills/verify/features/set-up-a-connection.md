@@ -15,7 +15,7 @@ With no saved connection Highwing opens on a setup screen, "Connect to Hermes", 
 
 ## How to get to it (user POV)
 
-- Start Highwing for the first time, or press Settings in the top bar of the chat, then Change.
+- Start Highwing for the first time, or press the Hermes button at the foot of the sidebar (or Ctrl+,), then Change.
 
 ## Driving it with highwing-verify
 

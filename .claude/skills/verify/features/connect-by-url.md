@@ -17,7 +17,7 @@ The connection card has a third segment, "Web address", with a "Gateway address"
 
 ## How to get to it (user POV)
 
-- Start Highwing for the first time, or press Settings in the top bar and then Change, and pick "Web address".
+- Start Highwing for the first time, or press the Hermes button at the foot of the sidebar (or Ctrl+,) and then Change, and pick "Web address".
 
 ## Driving it with highwing-verify
 

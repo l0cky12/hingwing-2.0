@@ -41,12 +41,15 @@ const runs = (length, test) => {
   return found
 }
 
-function threadColumn({ width, ink }) {
-  for (let y = 60; y < 400; y++) {
-    const [first] = runs(width >> 1, x => ink(x, y))
-    if (first) return (first[0] + first[1] + 1) / 2
+/** The thread line: the vertical run at most 2px wide in the left half with the most ink. A reply card's edge is shorter, and a node or the waiting card's 4px edge is too wide to count. */
+function threadColumn({ width, height, ink }) {
+  let best = null
+  for (let x = 2; x < width >> 1; x++) {
+    let rows = 0
+    for (let y = 60; y < height - 120; y++) if (ink(x, y) && !ink(x - 2, y) && !ink(x + 2, y)) rows++
+    if (best === null || rows > best.rows) best = { x, rows }
   }
-  return null
+  return best !== null && best.rows > 50 ? best.x : null
 }
 
 function bottomBorder({ width, height, ink }) {
@@ -58,7 +61,7 @@ function bottomBorder({ width, height, ink }) {
 
 function checkThread(shot, image) {
   const cx = threadColumn(image)
-  if (cx === null) return [`FAIL ${shot}: no request rule to locate the thread column`]
+  if (cx === null) return [`FAIL ${shot}: no thin vertical line in the left half to locate the thread column`]
   const transcriptEnd = bottomBorder(image)
   if (transcriptEnd === null) return [`FAIL ${shot}: no border above the composer to locate the transcript's end`]
   const x0 = Math.floor(cx)
@@ -68,8 +71,8 @@ function checkThread(shot, image) {
     return xs.length > 0 && xs.at(-1) - xs[0] + 1 >= NODE_WIDTH
   }
   const rowsOnLine = Array.from({ length: transcriptEnd }, (_, y) => y).filter(y => y > 60 && onLine(y))
-  const threadRows = rowsOnLine.slice(rowsOnLine.findIndex((y, i) => i > 0 && y !== rowsOnLine[i - 1] + 1))
-  if (rowsOnLine.length < 2 || threadRows.length < 2 || threadRows[0] === rowsOnLine[0]) return [`FAIL ${shot}: nothing is drawn on the thread column x=${cx} below the request`]
+  const threadRows = rowsOnLine
+  if (threadRows.length < 2) return [`FAIL ${shot}: nothing is drawn on the thread column x=${cx}`]
   const top = threadRows[0]
   const blobs = runs(transcriptEnd, y => y >= top && onNode(y))
   const bottom = Math.max(threadRows.at(-1), blobs.at(-1)?.[1] ?? 0)

@@ -12,7 +12,7 @@ Hermes says things beside the conversation, and the thread shows them where they
 
 ## How to get to it (user POV)
 
-- Run `HIGHWING_FIXTURE=fixtures/says.jsonl pnpm --filter @highwing/desktop start`, then send a message. Hermes asks two models, compacts its context, warns that credits are low, asks to delete a folder, clears the warning, and checks the goal after the turn ends.
+- Run `HIGHWING_FIXTURE=$PWD/fixtures/says.jsonl pnpm --filter @highwing/desktop start`, then send a message. Hermes asks two models, compacts its context, warns that credits are low, asks to delete a folder, clears the warning, and checks the goal after the turn ends.
 
 ## Driving it with highwing-verify
 

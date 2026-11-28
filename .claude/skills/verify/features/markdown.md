@@ -12,10 +12,11 @@ A code block in a language Highwing knows is colored for keywords, strings, comm
 - `markdown-find` finds text in every part of a reply, a table cell and a colored code block included.
 - `markdown-streaming` shows a fence that is still open as code from its first line. The prefix test in `apps/desktop/test/markdown.test.tsx` covers this, not a run.
 - `markdown-highlight` colors a closed `sh` or `ts` block, keeps an open fence plain, and colors in without a jump.
+- `markdown-setext` reads a line over `---` or `===` as a heading, ends a list at a rule between its bullets, and keeps a link whose label is bold as one link to its own address.
 
 ## How to get to it (user POV)
 
-- Run `HIGHWING_FIXTURE=fixtures/markdown.jsonl pnpm --filter @highwing/desktop start` from the repo root, type in the "Message Hermes" box and press Send.
+- Run `HIGHWING_FIXTURE=$PWD/fixtures/markdown.jsonl pnpm --filter @highwing/desktop start` from the repo root, type in the "Message Hermes" box and press Send.
 
 ## Driving it with highwing-verify
 
@@ -35,6 +36,7 @@ The reply holds two code blocks: an `sh` block, then a `ts` block. `click-at but
 - **Streaming.** Run `$H run --fixture fixtures/markdown.jsonl --run markdown-steady wait live type "Message Hermes" @request click button Send steady ts wait settled quiet`. `steady` must follow Send, before the block streams. `steps.log` logs how many times it sampled the block, and the block's and the thread's heights just before and just after the colors arrived. They match.
 - **Forced colors.** Run `$H run --fixture fixtures/markdown.jsonl --forced-colors --run markdown-forced wait live type "Message Hermes" @request click button Send wait settled hues 1 shot forced`. The `ts` block draws in one system color.
 - **Offline.** Run `unshare -rn sh -c "ip link set lo up && $H run --fixture fixtures/markdown.jsonl --run markdown-offline wait live type 'Message Hermes' @request click button Send wait settled hues 6 quiet"`. The namespace has only the loopback link, so nothing outside the machine is reachable, and the `ts` block still draws in six colors. Playwright reaches Electron over loopback, so the run fails to launch unless `lo` is up.
+- **Dashed headings, rules and link labels.** The echo bot of `roster.json` answers a message as `<profile>: <text>`, so a typed reply is drawn as Markdown. Run `$H run --fixture fixtures/errand.jsonl --profiles fixtures/profiles/roster.json --run md-setext wait live wait bots click button "dr eggbot" type "Message Hermes" $'Next steps\n----------\n- one\n- - -\n- two\n\n[**https://example.org**](https://example.com)' click button Send said "dr-eggbot: Next steps" count heading "dr-eggbot: Next steps" 1 shot setext click link "https://example.org" click button "Open in browser" opened browse https://example.com quiet`. `setext.aria.txt` holds the level-2 heading, a list of "one", a `separator`, a list of "two", and one `link "https://example.org"` to `https://example.com` holding a `strong`.
 
 ## Gotchas
 

@@ -1,6 +1,6 @@
 # Chat commands
 
-The user types `/btw <question>` to ask beside the chat, `/bg <prompt>` to run a prompt apart from it, and `/compress [focus]` to summarise the older turns. The slash menu offers all three. A side question or a background prompt sends its words to Hermes and leaves the turns as they were. A side question's answer joins the thread after the turn current when it came, and a background prompt's answer shows in a card above the composer, as [Side questions](./side-questions.md) covers. A compression shows Hermes's report under the composer, and the thread is then read again from what Hermes stores. Another client turns the chat's own YOLO on in the replay, since the window has no switch for it. `@` and letters list the chat's files through #112's `completePath`, which the replay's header answers. The Thinking pill sets the effort and fast mode with `tune`, and the folder chip moves the chat with `move`. Export has no control in the window yet, and another client makes it in the replay below.
+The user types `/btw <question>` to ask beside the chat, `/bg <prompt>` to run a prompt apart from it, and `/compress [focus]` to summarise the older turns. The slash menu offers all three. A side question or a background prompt sends its words to Hermes and leaves the turns as they were. A side question's answer joins the thread after the turn current when it came, and a background prompt's answer shows in a card above the composer, as [Side questions](./side-questions.md) covers. A compression shows Hermes's report under the composer, and the thread is then read again from what Hermes stores. Another client turns the chat's own YOLO on in the replay, since the window has no switch for it. `@` and letters list the chat's files through #112's `completePath`, which the replay's header answers. The Thinking pill sets the effort and fast mode with `tune`, and the folder chip moves the chat with `move`. Export is a chat row's More menu, as [Chat list](./chat-list.md) covers. In the replay below another client makes it, at the point the story waits for it.
 
 ## Sub-features
 
@@ -15,14 +15,14 @@ The user types `/btw <question>` to ask beside the chat, `/bg <prompt>` to run a
 ## How to get to it (user POV)
 
 - Type `/btw`, `/bg` or `/compress` in the "Message Hermes" box, then words, and press Send.
-- Click "Effort: Default" under the composer, then a level or the Fast switch.
-- Click "Folder: /tmp/hermes-proto-work" under the composer, type a folder in "Folder on the Hermes machine", and press Move.
+- Click the effort pill in the composer's toolbar row (it reads "Default", and is named "Effort: Default"), then a level or the Fast switch.
+- Click the folder chip in the composer's toolbar row (it reads "hermes-proto-work", and is named "Folder: /tmp/hermes-proto-work"), type a folder in "Folder on the Hermes machine", and press Move.
 
 ## Driving it with highwing-verify
 
 Preconditions:
 
-- `fixtures/commands.jsonl`, played with `--acted-elsewhere`. Without it the story waits after the folder move for an export the window cannot make.
+- `fixtures/commands.jsonl`, played with `--acted-elsewhere`. Without it the story waits after the folder move for an export, which the window makes only from a chat row in chat mode.
 - `fixtures/commands.jsonl` holds Hermes's `complete.path` reply for `@no` in its header's `paths`, so the gateway answers it whenever the window asks, as in complete-a-path.
 - `--acted-elsewhere` leaves to another client every `session.export` and the story's `config.set` of `yolo`.
 - Every run sets `HIGHWING_SAVE_DIR` to `saves/` in the evidence directory, so an export never opens a dialog.
