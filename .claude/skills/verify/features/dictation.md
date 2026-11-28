@@ -1,6 +1,6 @@
 # Dictation
 
-A microphone button sits beside the paperclip in the toolbar row under a chat's message box. It and Ctrl+D (Cmd+D on macOS) in the message box start and stop dictation. The shortcut sheet (Ctrl+/) and Settings → Keyboard shortcuts list Ctrl+D as "Start or stop dictation, or hold to talk". While it records, the button is filled in and pressed ("Stop dictating"), and a line under the box says "Listening. Press Ctrl+D or the microphone to stop." Holding the keys while talking works too: letting go after at least 400 ms stops. Hermes then turns the recording into text ("Turning speech into text…"), and the text lands at the caret, in place of any selection, ready to edit. Nothing is sent until the user sends. Hermes does the transcription through its own `/api/audio/transcribe`, so a Hermes with no speech-to-text answers in its own words. A missing microphone and a refused one have plain words of their own. The group composer has no microphone, as it has no paperclip.
+A microphone button sits in the composer's pill, between the message box and Send. It and Ctrl+D (Cmd+D on macOS) in the message box start and stop dictation. The shortcut sheet (Ctrl+/) and Settings → Keyboard shortcuts list Ctrl+D as "Start or stop dictation, or hold to talk". While it records, the button is filled in and pressed ("Stop dictating"), and a line under the box says "Listening. Press Ctrl+D or the microphone to stop." Holding the keys while talking works too: letting go after at least 400 ms stops. Hermes then turns the recording into text ("Turning speech into text…"), and the text lands at the caret, in place of any selection, ready to edit. Nothing is sent until the user sends. Hermes does the transcription through its own `/api/audio/transcribe`, so a Hermes with no speech-to-text answers in its own words. A missing microphone and a refused one have plain words of their own. The group composer has no microphone, as it has no add button.
 
 ## Sub-features
 
@@ -13,7 +13,7 @@ A microphone button sits beside the paperclip in the toolbar row under a chat's 
 
 ## How to get to it (user POV)
 
-- Press the microphone in the toolbar under the message box, or Ctrl+D in the box, speak, and press either again.
+- Press the microphone right of the message box, or Ctrl+D in the box, speak, and press either again.
 
 ## Driving it with highwing-verify
 

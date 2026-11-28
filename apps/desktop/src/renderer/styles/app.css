@@ -83,6 +83,7 @@
   --code-break: normal;
   --terminal-wrap: pre-wrap;
   --chat-width: 760px;
+  --bar-height: 56px;
   --measure: 66ch;
   --request-measure: 62ch;
   --space-1: 4px;
@@ -175,9 +176,16 @@ button:disabled { cursor: default; opacity: .45; }
 :focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; border-radius: var(--radius-xs); }
 code, pre { font-family: var(--mono); }
 
-.bar { display: flex; align-items: center; gap: var(--space-6); min-height: 56px; padding: var(--space-3) var(--space-7); border-bottom: 1px solid var(--rule); }
-.top { min-width: 0; }
-.top .bar { background: color-mix(in srgb, var(--accent) 10%, var(--sheet)); }
+.bar { display: flex; align-items: center; gap: var(--space-6); min-height: var(--bar-height); padding: var(--space-3) var(--space-7); border-bottom: 1px solid var(--rule); }
+.top { position: relative; z-index: 2; min-width: 0; }
+/* The chat's bar floats over the top of the thread, under the connection banner, so messages scroll beneath it. */
+.top .bar { position: absolute; top: 100%; left: 0; right: 0; border-bottom: 0; pointer-events: none; }
+.top .bar > * { pointer-events: auto; }
+.top .bar :is(h1, .members, .pencil) { border: 1px solid var(--rule); border-radius: var(--radius-pill); background: color-mix(in srgb, var(--accent, var(--sheet)) 10%, var(--sheet)); box-shadow: var(--shadow-1); }
+.top .bar h1 { padding: 4px 14px; }
+.top .bar h1 .brand:only-child { margin-right: 0; }
+.top .bar h1:has(.bot-pill) { padding: 2px 12px 2px 2px; }
+.top .bar .members { padding: 3px 12px 3px 5px; }
 .bar h1 { min-width: 0; margin: 0; overflow: clip; overflow-clip-margin: 4px; font-size: var(--text-md); font-weight: 400; color: var(--graphite); white-space: nowrap; text-overflow: ellipsis; }
 .bar h1 .brand { font-weight: 700; color: var(--ink); margin-right: 8px; }
 .bar button { flex: none; margin-left: auto; padding: 4px 14px; border-radius: var(--radius-sm); border: 1px solid var(--ink); background: transparent; }
@@ -185,9 +193,9 @@ code, pre { font-family: var(--mono); }
 .bar .pencil { display: none; margin-left: auto; padding: 0; border: 0; }
 .bar button:hover { background: var(--sheet); }
 .bar h1:has(.bot-pill) { display: flex; align-items: center; gap: 8px; }
-.bar h1:has(.bot-pill) .brand { margin-right: 0; }
-.bar .bot-pill { flex: 0 1 auto; min-width: 0; display: inline-flex; align-items: center; gap: 6px; margin: 0; padding: 3px 12px 3px 3px; border: 1px solid var(--rule); border-radius: var(--radius-pill); background: var(--sheet); color: var(--ink); font-weight: 500; }
-.bar .bot-pill:hover { border-color: var(--ink); }
+.bar h1:has(.bot-pill) .brand { display: none; }
+.bar .bot-pill { flex: 0 1 auto; min-width: 0; display: inline-flex; align-items: center; gap: 6px; margin: 0; padding: 3px 10px 3px 3px; border: 0; border-radius: var(--radius-pill); background: none; color: var(--ink); font-weight: 500; }
+.bar .bot-pill:hover { background: var(--paper); }
 .bar .bot-pill .name { overflow: hidden; text-overflow: ellipsis; }
 .bar h1 .where { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
@@ -197,6 +205,7 @@ code, pre { font-family: var(--mono); }
 .banner button:hover { background: var(--sheet); }
 
 .screen > main { grid-row: 2; grid-column: 1; }
+.top ~ main { padding-top: var(--bar-height); scroll-padding-block-start: var(--bar-height); }
 .screen > .composer { grid-row: 3; grid-column: 1; }
 main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: thin; scrollbar-color: var(--edge) transparent; }
 #transcript { max-width: var(--chat-width); margin: 0 auto; padding: 36px 28px 56px; }
@@ -569,34 +578,43 @@ button.reaction:hover:not(:disabled) { border-color: var(--signal); }
 @keyframes hop { 0%, 100% { transform: translateY(0) scaleY(.9); } 15% { transform: translateY(0) scaleY(1); } 50% { transform: translateY(-6px); } 85% { transform: translateY(0) scaleY(1); } }
 
 .composer { position: relative; min-width: 0; padding: 8px 0 16px; background: var(--paper); }
-.composer > .box { --line: var(--prompt-line); --box-chrome: 8px; position: relative; display: flex; flex-direction: column; gap: 4px; margin: 0 calc(max(0px, (100% - var(--chat-width)) / 2) + 28px) 0 calc(max(0px, (100% - var(--chat-width)) / 2) + 28px + var(--col)); padding: 10px 10px 8px; background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius-lg); }
-/* The text box stops at eight lines or 40vh, whichever is smaller, and the card adds about 170px of chrome under it, a wrapped toolbar row included. A popover opening above the card gets the rest of the window. */
+.composer > .box { --line: var(--prompt-line); --box-chrome: 8px; position: relative; margin: 0 calc(max(0px, (100% - var(--chat-width)) / 2) + 28px) 0 calc(max(0px, (100% - var(--chat-width)) / 2) + 28px + var(--col)); }
+/* One line of text makes the pill fully round. A taller draft keeps the same corners. */
+.composer .pill { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 4px; padding: 6px; background: var(--sheet); border: 1px solid var(--rule); border-radius: calc(var(--radius-lg) + var(--radius-sm)); }
+/* The text box stops at eight lines or 40vh, whichever is smaller, and the card adds about 170px of chrome under it, the row of controls included. A popover opening above the card gets the rest of the window. */
 .composer > .box { --pop-room: calc(100vh - min(calc(8 * var(--line) + var(--box-chrome)), 40vh) - 170px); }
-.composer > .box:has(textarea:focus) { border-color: var(--signal); box-shadow: var(--ring); }
-.composer > .box > form { display: flex; }
+.composer .pill:has(textarea:focus) { border-color: var(--signal); box-shadow: var(--ring); }
+/* The add button is drawn first and comes after the text in the tab order, so Shift+Tab from the text still reaches the thread. */
+.pill > .quote-chip { order: -2; flex: 1 0 100%; }
+.pill > .clip:not(.mic) { order: -1; }
+.pill > form { flex: 1 1 0; min-width: 0; display: flex; align-self: center; }
 .composer textarea { flex: 1; min-width: 0; resize: none; field-sizing: content; min-height: calc(var(--line) + var(--box-chrome)); max-height: min(calc(8 * var(--line) + var(--box-chrome)), 40vh); overflow-y: auto; padding: 4px 8px; font: var(--prompt-size)/var(--line) var(--prompt-font); color: var(--ink); background: transparent; border: 0; }
 textarea::placeholder { color: var(--graphite); }
 textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--ring); }
 .composer textarea:focus { box-shadow: none; }
-.composer .tools { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; font: var(--text-md)/1.4 var(--sans); color: var(--graphite); }
+.composer .tools { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 4px 8px 0; font: var(--text-md)/1.4 var(--sans); color: var(--graphite); }
 /* Every control sits on one row at any width. Each readout starts from nothing and grows to its whole name as room allows, so the row never wraps, and a note or refusal takes a row of its own under it. */
+.composer .tools:not(:has(button)) { display: none; }
 .tools .end { display: contents; }
 .tools .end > :first-child, .tools .end > .model:first-child > .anchor { margin-left: auto; }
-.tools .go { display: flex; flex: none; gap: 4px; padding-left: 4px; }
-.tools :where(.clip, .readout, .meter) { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px; border: 0; border-radius: var(--radius-md); background: transparent; font: inherit; color: var(--graphite); white-space: nowrap; }
-.tools :where(.clip, .readout, .meter):is(:hover:not(:disabled), [aria-expanded="true"]) { color: var(--ink); background: var(--paper); }
+.pill .go { display: flex; flex: none; gap: 4px; }
+.tools :where(.readout, .meter) { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px; border: 0; border-radius: var(--radius-md); background: transparent; font: inherit; color: var(--graphite); white-space: nowrap; }
+.tools :where(.readout, .meter):is(:hover:not(:disabled), [aria-expanded="true"]) { color: var(--ink); background: var(--paper); }
 .tools :is(.knob, .model .anchor, .context) { flex: 1 1 0; min-width: 0; max-width: max-content; }
 .tools .model .anchor { flex-grow: 2; }
 .tools :is(.readout, .meter) { min-width: 0; max-width: 100%; }
 .tools .value { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .tools :is(.readout, .meter) > :not(.value) { flex: none; }
-.tools .clip { flex: none; justify-content: center; width: 28px; padding: 0; }
-.tools .clip.mic[aria-pressed="true"] { color: var(--sheet); background: var(--brick); }
+.pill :is(.clip, .send, .stop) { flex: none; display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border-radius: var(--radius-round); }
+.pill .clip { border: 0; background: var(--paper); color: var(--graphite); }
+.pill .clip.mic { background: transparent; }
+.pill .clip:hover:not(:disabled) { color: var(--ink); background: var(--rule); }
+.pill .clip.mic[aria-pressed="true"] { color: var(--sheet); background: var(--brick); }
 .tools button:disabled { cursor: default; opacity: .45; }
-.tools :is(.send, .stop) { flex: none; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border-radius: var(--radius-round); background: transparent; }
-.tools .send { border: 1.5px solid var(--rule); color: var(--graphite); }
-.tools .send.ready { border-color: var(--accent, var(--ink)); background: var(--accent, var(--ink)); color: var(--sheet); }
-.tools .stop { border: 1.5px solid var(--ink); color: var(--ink); }
+/* Its `.tone-<name>` class fills the send button with the open bot's colour, whatever accent Settings picks. */
+.pill .send { border: 0; color: var(--sheet); }
+.pill .send:not(.ready) { opacity: .45; }
+.pill .stop { border: 1.5px solid var(--ink); background: transparent; color: var(--ink); }
 .editing { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; max-width: var(--chat-width); margin: 0 auto 8px; padding: 0 28px 0 calc(28px + var(--col)); font: 500 var(--text-sm)/1.4 var(--sans); color: var(--graphite); }
 .editing button, .approval .tell { padding: 0; border: 0; background: none; color: var(--signal); font: inherit; text-decoration: underline; }
 .approval .tell { display: block; margin-top: 12px; font-size: var(--text-sm); }
@@ -708,7 +726,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .look-reset { display: block; margin-inline: auto; padding: 2px 4px; border: 0; background: none; color: var(--signal); font-size: var(--text-sm); text-decoration: underline; text-underline-offset: 3px; }
 .composer :is(.refusal, .busy) { max-width: var(--chat-width); margin: 8px auto 0; padding: 0 28px 0 calc(28px + var(--col)); }
 .composer .busy { font-size: var(--text-sm); color: var(--graphite); }
-.composer.dragging > .box { border-style: dashed; border-color: var(--signal); }
+.composer.dragging .pill { border-style: dashed; border-color: var(--signal); }
 .chips, .attach-refused, .drop-line { max-width: var(--chat-width); margin: 0 auto 10px; padding: 0 28px 0 calc(28px + var(--col)); box-sizing: border-box; }
 .chips { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; list-style: none; }
 .attach-refused { list-style: none; font-size: var(--text-sm); line-height: 1.45; }
@@ -1289,18 +1307,18 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 
   .step.open > .record:not(.bare), .prose pre, .approval pre { border: 1px solid CanvasText; }
   .composer { border-top: 1px solid CanvasText; }
-  .composer > .box { border-color: CanvasText; }
+  .composer .pill, .top .bar :is(h1, .members, .pencil) { border-color: CanvasText; }
   .composer button { border: 1px solid ButtonText; }
-  .tools .send.ready { background: ButtonText; color: ButtonFace; }
+  .pill .send.ready { background: ButtonText; color: ButtonFace; }
   .chip, .quote-chip, .sent .file, .chip .mark, .sent .mark { border: 1px solid CanvasText; }
-  .composer.dragging > .box { border-color: Highlight; }
+  .composer.dragging .pill { border-color: Highlight; }
   .drop-line { color: Highlight; }
   .editing button, .approval .tell, .remove-choices button, .form-choices button { border: 1px solid ButtonText; }
   .remove, .bot-form { border: 2px solid CanvasText; }
   .bot-form :is(input, select, textarea):focus { outline: 2px solid Highlight; outline-offset: 2px; }
   textarea:focus { outline: 2px solid Highlight; outline-offset: 2px; }
   .composer textarea:focus { outline: none; }
-  .composer > .box:has(textarea:focus) { outline: 2px solid Highlight; outline-offset: 2px; }
+  .composer .pill:has(textarea:focus) { outline: 2px solid Highlight; outline-offset: 2px; }
   .context .stack .free { box-sizing: border-box; background: Canvas; border: 1px solid CanvasText; }
   .context .stack .part { background: CanvasText; }
   .context .ring .track { stroke: GrayText; }

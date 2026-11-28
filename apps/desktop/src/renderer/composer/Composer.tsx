@@ -2,6 +2,7 @@ import { quoteOf, shownChat, slashLineOf, withQuote, type Attachment, type Attac
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { MAX_ATTACHMENTS, type StageResult } from '../../ipc-contract'
 import { Avatar } from '../bots/Avatar'
+import { botIn } from '../bots/roster-view'
 import { Chips } from '../chat/Attachments'
 import { COMMAND_KEY, isShortcut, SEND_KEY_LABEL, sendsMessage } from '../keys'
 import { useTopic } from '../store'
@@ -45,9 +46,9 @@ interface ComposerProps {
   readonly above?: ReactNode
   readonly onEscape?: () => boolean
   readonly stack?: ReactNode
-  /** Toolbar controls on the left, after the attach button. */
+  /** Controls at the left of the row under the pill. */
   readonly start?: ReactNode
-  /** Toolbar controls on the right, before Stop and Send. They wrap together. */
+  /** Controls at the right of the row under the pill. */
   readonly end?: ReactNode
   /** What renders under the card. */
   readonly children?: ReactNode
@@ -140,6 +141,7 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
   const relay = useTopic('relay')
   const open = useTopic('open')
   const own = shownChat(open)?.bot ?? null
+  const ownBot = own === null ? null : botIn(roster, own)
   const draft = useDraft(slot)
   const [caret, setCaret] = useState(0)
   const [focused, setFocused] = useState(false)
@@ -424,50 +426,48 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
       )}
       {dragging && canAttach && <p className="drop-line" role="status">Drop to attach</p>}
       <div className="box">
-        {quote !== null && (
-          <div className="quote-chip" role="group" aria-label="Replying to">
-            <span title={quote.text}>{quote.text}</span>
-            <button type="button" className="unchip" aria-label="Remove quote" onClick={unquote}>
-              <svg aria-hidden="true" viewBox="0 0 10 10" width="10" height="10"><path d="M2 2l6 6M8 2 2 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
-            </button>
-          </div>
-        )}
-        <form id={FORM_ID} onSubmit={submit}>
-          <textarea
-            ref={box} autoFocus={autoFocus} rows={1} value={draft}
-            placeholder={group !== undefined ? 'Message the group, or type @ to ask specific bots' : quote === null ? 'What’s next?' : 'Reply…'}
-            aria-label={group === undefined ? 'Message Hermes' : `Message ${group.name}`}
-            aria-autocomplete="list" aria-controls={menu.open ? MENU_ID : undefined}
-            aria-activedescendant={menu.open ? optionId(menu.active) : undefined} aria-describedby={hint === null ? undefined : HINT_ID}
-            onChange={event => edit(event.target.value, event.target.selectionStart)} onKeyDown={onKeyDown} onPaste={onPaste}
-            onKeyUp={onKeyUp}
-            onSelect={event => setCaret(event.currentTarget.selectionStart)}
-            onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
-          />
-        </form>
-        <div className="tools">
+        <div className="pill">
+          {quote !== null && (
+            <div className="quote-chip" role="group" aria-label="Replying to">
+              <span title={quote.text}>{quote.text}</span>
+              <button type="button" className="unchip" aria-label="Remove quote" onClick={unquote}>
+                <svg aria-hidden="true" viewBox="0 0 10 10" width="10" height="10"><path d="M2 2l6 6M8 2 2 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+              </button>
+            </div>
+          )}
+          <form id={FORM_ID} onSubmit={submit}>
+            <textarea
+              ref={box} autoFocus={autoFocus} rows={1} value={draft}
+              placeholder={group !== undefined ? 'Message the group, or type @ to ask specific bots' : quote === null ? `Message ${ownBot?.name ?? 'Hermes'}` : 'Reply…'}
+              aria-label={group === undefined ? 'Message Hermes' : `Message ${group.name}`}
+              aria-autocomplete="list" aria-controls={menu.open ? MENU_ID : undefined}
+              aria-activedescendant={menu.open ? optionId(menu.active) : undefined} aria-describedby={hint === null ? undefined : HINT_ID}
+              onChange={event => edit(event.target.value, event.target.selectionStart)} onKeyDown={onKeyDown} onPaste={onPaste}
+              onKeyUp={onKeyUp}
+              onSelect={event => setCaret(event.currentTarget.selectionStart)}
+              onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+            />
+          </form>
           {group === undefined && (
             <button type="button" className="clip" aria-label="Attach files" disabled={!canAttach} onClick={() => void take(window.highwing.attachPick())}>
-              <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16">
-                <path d="M10.5 4.5 5.4 9.6a1.6 1.6 0 0 0 2.3 2.3l5.4-5.4a3 3 0 0 0-4.3-4.3L3.4 7.6a4.4 4.4 0 0 0 6.2 6.2l4-4" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+              <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16"><path d="M8 3v10M3 8h10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
             </button>
           )}
           {group === undefined && <Microphone state={dictation} disabled={!canAttach} onPress={() => dictate({ do: 'press', at: performance.now() })} />}
-          {start}
-          <div className="end">
-            {end}
-            <span className="go">
-              {showStop && (
-                <button type="button" className="stop" aria-label="Stop" disabled={!canSend} onClick={onStop}>
-                  <svg aria-hidden="true" viewBox="0 0 10 10" width="10" height="10"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="currentColor" /></svg>
-                </button>
-              )}
-              <button type="submit" form={FORM_ID} className={blocked || draft.trim() === '' ? 'send' : 'send ready'} aria-label="Send" title={`Send (${SEND_KEY_LABEL[sendKey]})`} disabled={blocked}>
-                <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          <span className="go">
+            {showStop && (
+              <button type="button" className="stop" aria-label="Stop" disabled={!canSend} onClick={onStop}>
+                <svg aria-hidden="true" viewBox="0 0 10 10" width="10" height="10"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="currentColor" /></svg>
               </button>
-            </span>
-          </div>
+            )}
+            <button type="submit" form={FORM_ID} className={`send tone-${ownBot?.tone ?? 'ink'}${blocked || draft.trim() === '' ? '' : ' ready'}`} aria-label="Send" title={`Send (${SEND_KEY_LABEL[sendKey]})`} disabled={blocked}>
+              <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            </button>
+          </span>
+        </div>
+        <div className="tools">
+          {start}
+          <div className="end">{end}</div>
         </div>
       </div>
       {hint !== null && <p className="busy" id={HINT_ID}>{hint}</p>}
