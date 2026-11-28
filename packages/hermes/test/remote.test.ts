@@ -1,11 +1,15 @@
+import { get } from 'node:http'
 import { isDeepStrictEqual } from 'node:util'
 import { describe, expect, it } from 'vitest'
+import type { FarFile } from '../src/domain/library'
 import type { Link } from '../src/domain/session'
 import { DialError, openHermes, remoteRoute, type Hermes, type Route } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
 import { FAKE_HOST, type FakeHost, type ScenarioName } from '../src/testing/fake-host'
 import { playToEnd } from '../src/testing/fixture'
+import { ticketedFiles, type Drive } from '../src/testing/files'
 import type { Loopback } from '../src/testing/loopback'
+import { DOWNLOAD_FIRST_BYTE_MS } from '../src/wire/download'
 import { UPGRADE_MS } from '../src/wire/ssh'
 import { ERRAND } from './support/errand'
 import { closing, errandGateway, host, listen, PATIENT_TEST_MS, until } from './support/host'
@@ -193,5 +197,52 @@ describe('the processes of a route', { timeout: PATIENT_TEST_MS }, () => {
     await clock.advance(1)
     expect(await dial).toMatchObject({ kind: 'dropped' })
     await none(far)
+  })
+})
+
+describe("a file from the far machine, through the gateway's download route", { timeout: PATIENT_TEST_MS }, () => {
+  const FILE = { bot: 'rae', sessionId: 'local-0301', path: '/home/rae/notes.md' } as FarFile
+  const DRIVE: Drive = { files: { '/home/rae/notes.md': '# Notes from Hermes\n' }, chats: { rae: [{ id: 'local-0301', title: 'Notes', last_active: 1, rows: [] }] } }
+
+  const serving = async (holdAt?: 'relay') => {
+    const listening = await listen(errandGateway())
+    listening.front(ticketedFiles(listening, DRIVE))
+    return { listening, far: await host('ok', listening, holdAt, listening) }
+  }
+
+  const ask = (listening: Loopback, query: string, headers: Readonly<Record<string, string>>) =>
+    new Promise<number>((resolve, reject) => {
+      get(`http://127.0.0.1:${listening.port}/api/fs/download?${query}`, { headers }, response => {
+        response.resume()
+        resolve(response.statusCode ?? 0)
+      }).on('error', reject)
+    })
+
+  it("gets the file on a ticket minted for the file's bot, through a relay of its own", async () => {
+    const { far } = await serving()
+    expect(await routeTo(far).download(FILE)).toEqual({ ok: true, value: new TextEncoder().encode('# Notes from Hermes\n') })
+    expect(far.calls).toEqual([SERVE, 'relay 1'])
+  })
+
+  it("is refused at the gate with an Origin, a used ticket, or another bot's profile, as Hermes's gate refuses them", async () => {
+    const { listening } = await serving()
+    const query = 'path=%2Fhome%2Frae%2Fnotes.md&session_id=local-0301'
+    expect(await ask(listening, query, { 'x-hermes-gateway-ticket': listening.mintHttp('rae'), origin: 'http://127.0.0.1' })).toBe(401)
+    const once = listening.mintHttp('rae')
+    expect(await ask(listening, `${query}&profile=rae`, { 'x-hermes-gateway-ticket': once })).toBe(200)
+    expect(await ask(listening, `${query}&profile=rae`, { 'x-hermes-gateway-ticket': once })).toBe(401)
+    expect(await ask(listening, `${query}&profile=sam`, { 'x-hermes-gateway-ticket': listening.mintHttp('rae') })).toBe(403)
+    expect(await ask(listening, `${query}&profile=rae`, { 'x-hermes-gateway-ticket': listening.mintHttp('default') })).toBe(403)
+  })
+
+  it(`gives Hermes ${DOWNLOAD_FIRST_BYTE_MS} ms to start sending, then ends the relay`, async () => {
+    const clock = manualClock()
+    const { far } = await serving('relay')
+    const download = routeTo(far, { clock }).download(FILE)
+    await until('the relay to wait', () => far.calls.includes('relay 1'))
+    await clock.advance(DOWNLOAD_FIRST_BYTE_MS - 1)
+    expect(far.running()).toHaveLength(1)
+    await clock.advance(1)
+    expect(await download).toEqual({ ok: false, refusal: { kind: 'offline', message: "Highwing couldn't reach Hermes to get notes.md." } })
   })
 })

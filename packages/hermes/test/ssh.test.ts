@@ -95,17 +95,23 @@ describe('servedOf', () => {
 
 describe('httpTicketOf', () => {
   const hello = '{"type": "hello", "protocol": 1, "endpoint": {"api_origin": "http://127.0.0.1:35187", "instance_id": "i-1"}}'
+  const refused = (code: string) => `${hello}\n{"id": 1, "ok": false, "error": {"code": "${code}", "message": "no"}}\n`
 
   it.each([
-    [0, `${hello}\n{"id": 1, "ok": true, "ticket": "t-1", "expires_in": 30}\n`, { origin: 'http://127.0.0.1:35187', ticket: 't-1' }],
-    [0, `a banner\n${hello}\n{"id": 1, "ok": true, "ticket": "t-1"}\n`, null],
-    [0, '{"type": "hello", "protocol": 1}\n{"id": 1, "ok": true, "ticket": "t-1"}\n', null],
-    [0, `${hello}\n{"id": 1, "ok": false, "error": {"code": "unsupported_purpose"}}\n`, null],
-    [0, `${hello}\n{"id": 1, "ok": true, "ticket": ""}\n`, null],
-    [0, `${hello}\n`, null],
-    [5, '{"type": "error", "error": {"code": "absent"}}\n', null],
-    [1, `${hello}\n{"id": 1, "ok": true, "ticket": "t-1"}\n`, null],
-    [0, '', null]
+    [0, `${hello}\n{"id": 1, "ok": true, "ticket": "t-1", "expires_in": 30}\n`, { ok: true, origin: 'http://127.0.0.1:35187', ticket: 't-1' }],
+    [0, `a banner\n${hello}\n{"id": 1, "ok": true, "ticket": "t-1"}\n`, { ok: false, why: 'unavailable' }],
+    [0, '{"type": "hello", "protocol": 1}\n{"id": 1, "ok": true, "ticket": "t-1"}\n', { ok: false, why: 'unsupported' }],
+    [0, refused('unsupported_purpose'), { ok: false, why: 'unsupported' }],
+    [0, refused('unknown_profile'), { ok: false, why: 'unknown-profile' }],
+    [0, refused('profile_not_served'), { ok: false, why: 'not-served' }],
+    [0, refused('invalid_request'), { ok: false, why: 'malformed' }],
+    [0, refused('ticket_unavailable'), { ok: false, why: 'unavailable' }],
+    [0, refused('constructor'), { ok: false, why: 'unavailable' }],
+    [0, `${hello}\n{"id": 1, "ok": true, "ticket": ""}\n`, { ok: false, why: 'unavailable' }],
+    [0, `${hello}\n`, { ok: false, why: 'unavailable' }],
+    [5, '{"type": "error", "error": {"code": "absent"}}\n', { ok: false, why: 'unavailable' }],
+    [1, `${hello}\n{"id": 1, "ok": true, "ticket": "t-1"}\n`, { ok: false, why: 'unavailable' }],
+    [0, '', { ok: false, why: 'unavailable' }]
   ])('reads exit %i with %j', (code, stdout, ticket) => {
     expect(httpTicketOf(code, stdout)).toEqual(ticket)
   })

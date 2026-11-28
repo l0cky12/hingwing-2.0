@@ -4,6 +4,7 @@
  */
 import { spawn } from 'node:child_process'
 import { createServer, type AddressInfo, type Socket } from 'node:net'
+import type { BotId } from '../domain/bots'
 import type { SshFailure, SshHost } from '../domain/reach'
 import { EXIT_KINDS, HANDSHAKE_MS, systemClock, type Clock, type DialError } from './link'
 
@@ -230,12 +231,30 @@ export function originOf(stdout: string): string | null {
   return typeof origin === 'string' && URL.canParse(origin) ? origin : null
 }
 
-/** Reads a run of `--serve` that was sent `askNativeHttp`: the hello's `api_origin` and the reply's ticket. null: no gateway to ask, or no ticket came. */
-export function httpTicketOf(code: number, stdout: string): { readonly origin: string; readonly ticket: string } | null {
+/**
+ * Why `--serve` gave no ticket to the HTTP routes. `unsupported`: this Hermes mints none, or names no HTTP address for one.
+ * `unknown-profile`: it has no such profile. `not-served`: its gateway does not serve that profile. `malformed`: it refused the
+ * request line. `unavailable`: no gateway to ask, or a ticket it would not mint now.
+ */
+export type TicketRefusal = 'unsupported' | 'unknown-profile' | 'not-served' | 'malformed' | 'unavailable'
+export type HttpTicket = { readonly ok: true; readonly origin: string; readonly ticket: string } | { readonly ok: false; readonly why: TicketRefusal }
+
+/** `_reply`'s refusal codes (gateway_runtime_tickets.py:79-118). Any other is `unavailable`. */
+const TICKET_REFUSALS: Readonly<Record<string, TicketRefusal>> = {
+  unsupported_purpose: 'unsupported', unknown_profile: 'unknown-profile', profile_not_served: 'not-served', invalid_request: 'malformed'
+}
+
+/** Reads a run of `--serve` that was sent `askNativeHttp`: the hello's `api_origin` and the reply's ticket, or why none came. */
+export function httpTicketOf(code: number, stdout: string): HttpTicket {
   const hello = jsonObjectAt(stdout, 0)
   const reply = jsonObjectAt(stdout, 1)
-  const origin = hello?.type === 'hello' && isObject(hello.endpoint) ? hello.endpoint.api_origin : null
-  return code === 0 && typeof origin === 'string' && reply?.ok === true && typeof reply.ticket === 'string' && reply.ticket !== '' ? { origin, ticket: reply.ticket } : null
+  if (code !== 0 || hello?.type !== 'hello') return { ok: false, why: 'unavailable' }
+  if (reply?.ok !== true || typeof reply.ticket !== 'string' || reply.ticket === '') {
+    const refusal = isObject(reply?.error) ? reply.error.code : null
+    return { ok: false, why: typeof refusal === 'string' && Object.hasOwn(TICKET_REFUSALS, refusal) ? TICKET_REFUSALS[refusal] as TicketRefusal : 'unavailable' }
+  }
+  const origin = isObject(hello.endpoint) ? hello.endpoint.api_origin : null
+  return typeof origin === 'string' ? { ok: true, origin, ticket: reply.ticket } : { ok: false, why: 'unsupported' }
 }
 
 export async function probeHermes(host: SshHost, options: SshOptions): Promise<Probe> {

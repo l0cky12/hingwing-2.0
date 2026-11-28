@@ -3,8 +3,9 @@ import type { AddressInfo } from 'node:net'
 import { describe, expect, it } from 'vitest'
 import { DialError, liveRoute } from '../src/hub'
 import type { ScenarioName } from '../src/testing/fake-host'
+import type { FarFile } from '../src/domain/library'
 import { askNativeHttp, ATTACH, PROBE, SERVE, type HermesArgs, type SshRun } from '../src/wire/ssh'
-import { mintWith, readWith, transcribeWith, type MintOptions, type RunHermes } from '../src/wire/tickets'
+import { downloadWith, mintWith, readWith, transcribeWith, type MintOptions, type RunHermes } from '../src/wire/tickets'
 import { closing, errandGateway, host, listen } from './support/host'
 
 const failureOf = (dial: Promise<unknown>) => dial.then(
@@ -273,5 +274,77 @@ describe('transcribeWith', () => {
 
   it('answers that Hermes could not be reached when the post fails', async () => {
     expect(await transcriber(NATIVE, 'http://127.0.0.1:1').transcribe(RECORDING)).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
+  })
+})
+
+describe('downloadWith', () => {
+  const FILE = { bot: 'rae', sessionId: 'local-0301', path: '/home/rae/work/notes & plans.md' } as FarFile
+  const minted = (ticket: string) => out(`${JSON.stringify({ type: 'hello', protocol: 1, endpoint: { api_origin: 'http://127.0.0.1:4100', instance_id: 'i-1' } })}\n${JSON.stringify({ id: 1, ok: true, ticket })}\n`)
+
+  const listener = async (reply: (response: import('node:http').ServerResponse) => void) => {
+    const asked: { readonly method: string | undefined; readonly url: string | undefined; readonly headers: IncomingHttpHeaders }[] = []
+    const server = createServer((request, response) => {
+      asked.push({ method: request.method, url: request.url, headers: request.headers })
+      reply(response)
+    })
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    closing(server, held => held.close())
+    return { asked, origin: `http://127.0.0.1:${(server.address() as AddressInfo).port}` }
+  }
+
+  const downloader = (serve: SshRun, origin: string) => {
+    const ran: (string | undefined)[] = []
+    const reached: string[] = []
+    const download = downloadWith(async (args, { input }) => (ran.push(`${args.join(' ')} <- ${input?.trim()}`), serve), async from => (reached.push(from), origin))
+    return { download, ran, reached }
+  }
+
+  it("asks --serve for a ticket for the file's bot, and gets the file with it as the bot, its chat and its path", async () => {
+    const gateway = await listener(response => response.writeHead(200, { 'content-disposition': 'attachment; filename="notes.md"', 'content-length': 5 }).end('notes'))
+    const { download, ran, reached } = downloader(minted('for-rae'), gateway.origin)
+    expect(await download(FILE)).toEqual({ ok: true, value: new TextEncoder().encode('notes') })
+    expect(ran).toEqual([`${SERVE_RAN} <- {"id":1,"purpose":"native-http","profile":"rae"}`])
+    expect(reached).toEqual(['http://127.0.0.1:4100'])
+    const [{ method, url, headers }] = gateway.asked as [(typeof gateway.asked)[number]]
+    expect(method).toBe('GET')
+    const asked = new URL(url ?? '', gateway.origin)
+    expect(asked.pathname).toBe('/api/fs/download')
+    expect(Object.fromEntries(asked.searchParams)).toEqual({ path: '/home/rae/work/notes & plans.md', profile: 'rae', session_id: 'local-0301' })
+    expect(headers['x-hermes-gateway-ticket']).toBe('for-rae')
+    expect(headers.origin, 'the gate refuses a ticket that comes with an Origin').toBeUndefined()
+  })
+
+  it('mints a new ticket for every file', async () => {
+    const gateway = await listener(response => response.writeHead(200, { 'content-disposition': 'attachment' }).end('x'))
+    const { download, ran } = downloader(minted('once'), gateway.origin)
+    await download(FILE)
+    await download(FILE)
+    expect(ran).toHaveLength(2)
+  })
+
+  it('never follows a redirect, so the ticket goes only to the address the gateway named', async () => {
+    const elsewhere = await listener(response => response.writeHead(200, { 'content-disposition': 'attachment' }).end('stolen'))
+    const gateway = await listener(response => response.writeHead(302, { location: `${elsewhere.origin}/api/fs/download` }).end())
+    expect(await downloader(minted('once'), gateway.origin).download(FILE)).toEqual({ ok: false, refusal: { kind: 'offline', message: "Highwing couldn't reach Hermes to get notes & plans.md." } })
+    expect(elsewhere.asked).toEqual([])
+  })
+
+  it.each([
+    ['a Hermes that mints no native-http ticket', served({ id: 1, ok: false, error: { code: 'unsupported_purpose' } }), { kind: 'unsupported', message: "This Hermes can't send files to Highwing. Update Hermes, then try again." }],
+    ['a hello with no HTTP address', served({ id: 1, ok: true, ticket: 'once' }), { kind: 'unsupported', message: "This Hermes can't send files to Highwing. Update Hermes, then try again." }],
+    ['a bot Hermes no longer has', served({ id: 1, ok: false, error: { code: 'unknown_profile' } }), { kind: 'stale', message: 'Hermes has no bot named rae any more.' }],
+    ['a bot the running gateway does not serve', served({ id: 1, ok: false, error: { code: 'profile_not_served' } }), { kind: 'unsupported', message: "The running Hermes doesn't serve rae, so it can't send rae's files." }],
+    ['a request line Hermes calls malformed', served({ id: 1, ok: false, error: { code: 'invalid_request' } }), { kind: 'offline', message: "Highwing couldn't reach Hermes to get notes & plans.md." }],
+    ['no gateway running', out('{"type": "error", "error": {"code": "absent"}}\n', 5), { kind: 'offline', message: "Highwing couldn't reach Hermes to get notes & plans.md." }],
+    ['a machine that cannot be reached', { ok: false, why: 'unreachable' } as SshRun, { kind: 'offline', message: "Highwing couldn't reach Hermes to get notes & plans.md." }]
+  ] as const)('refuses in plain words for %s, and asks for no file', async (_, serve, refusal) => {
+    const { download, reached } = downloader(serve, 'http://127.0.0.1:1')
+    expect(await download(FILE)).toEqual({ ok: false, refusal })
+    expect(reached).toEqual([])
+  })
+
+  it("answers with Hermes's refusal in words", async () => {
+    const gateway = await listener(response => response.writeHead(404, { 'content-type': 'application/json' }).end('{"detail":"File not found"}'))
+    expect(await downloader(minted('once'), gateway.origin).download(FILE)).toEqual({ ok: false, refusal: { kind: 'stale', message: "notes & plans.md isn't there any more." } })
   })
 })

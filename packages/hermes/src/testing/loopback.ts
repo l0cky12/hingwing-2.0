@@ -37,6 +37,10 @@ export interface Loopback {
   readonly instanceId: string
   /** A single-use ticket and where to redeem it. The socket it opens reaches what the ticket does. */
   mint(reach: Reach): Endpoint
+  /** A single-use `native-http` ticket to the HTTP routes, as `profile` (gateway_runtime_tickets.py:97-116). */
+  mintHttp(profile: string): string
+  /** The profile a `native-http` ticket was minted for, once, while it lives. null: no such ticket, or it was used or expired. */
+  redeemHttp(ticket: string): string | null
   readonly upgrades: readonly Upgrade[]
   readonly port: number
   front(front: Front): void
@@ -54,6 +58,7 @@ export async function loopback(gateway: ScriptedGateway, clock: Clock): Promise<
   const { WebSocketServer } = await import('ws')
   const minted: { readonly ticket: string; readonly reach: Reach }[] = []
   const live = new Map<string, number>()
+  const httpTickets = new Map<string, { readonly profile: string; readonly expires: number }>()
   const upgrades: Upgrade[] = []
   let front = NO_FRONT
 
@@ -113,6 +118,16 @@ export async function loopback(gateway: ScriptedGateway, clock: Clock): Promise<
       minted.push({ ticket, reach })
       live.set(ticket, clock.now() + TICKET_TTL_MS)
       return { url: `ws://127.0.0.1:${port}/api/ws`, protocols: [GATEWAY_PROTOCOL, TICKET_PREFIX + ticket], reach }
+    },
+    mintHttp: profile => {
+      const ticket = randomBytes(24).toString('base64url')
+      httpTickets.set(ticket, { profile, expires: clock.now() + TICKET_TTL_MS })
+      return ticket
+    },
+    redeemHttp: ticket => {
+      const held = httpTickets.get(ticket)
+      httpTickets.delete(ticket)
+      return held !== undefined && held.expires > clock.now() ? held.profile : null
     },
     close: () => new Promise(resolve => {
       for (const client of wss.clients) client.terminate()

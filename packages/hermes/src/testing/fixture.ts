@@ -6,6 +6,7 @@ import { pythonStrip } from '../domain/memory'
 import { APPROVAL_MODES, type ApprovalMode, type SessionId } from '../domain/session'
 import { systemClock, type Reach } from '../wire/link'
 import { transcriptOf, type Transcribe } from '../wire/transcribe'
+import { isFarFiles, type FarFiles } from './files'
 import { isKanban, type Kanban } from './kanban'
 
 export { play, playToEnd, type Moment } from './play'
@@ -173,6 +174,11 @@ export interface Fixture {
     readonly homeBotChat?: boolean
     /** The kanban plugin's replies, which the app reads over HTTP rather than the socket. Absent: the Hermes has no kanban plugin and every read of it is a 404. */
     readonly kanban?: Kanban
+    /**
+     * The files on the Hermes machine, which its download route sends to a chat of the profile that made them. Absent: a Hermes
+     * with no such route, which a fake Webapp answers with FastAPI's 404 `Not Found` and a fake machine mints no ticket for.
+     */
+    readonly files?: FarFiles
     /** Bytes the app's image loader answers with in place of the network and the disk, as base64 under the web URL or absolute path asked for. A key not here is missing. */
     readonly media?: Readonly<Record<string, string>>
     /** What Hermes's speech upload answers: `text` heard (default empty) after `delay_ms` (default 0), or a failure with `error` in its words. Absent: a Hermes with no speech-to-text. */
@@ -784,8 +790,9 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   const { reach, homeBotChat } = value
   if (reach !== undefined && reach !== 'host' && reach !== 'profile') return '"reach" must be "host" or "profile"'
   if (homeBotChat !== undefined && typeof homeBotChat !== 'boolean') return '"homeBotChat" must be true or false'
-  const { kanban } = value
+  const { kanban, files } = value
   if (kanban !== undefined && !isKanban(kanban)) return '"kanban" must be { board, tasks }: a kanban board reply, and each card\'s detail reply by task id'
+  if (files !== undefined && !isFarFiles(files)) return '"files" must map an absolute path to the text of the file'
   const { media, transcribe } = value
   if (transcribe !== undefined && !isOneshot(transcribe)) return '"transcribe" must be { text?, error?, delay_ms? }'
   if (media !== undefined && !(isObject(media) && Object.values(media).every(bytes => typeof bytes === 'string'))) return '"media" must map a url or path to base64 bytes'
@@ -866,7 +873,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(tools === undefined ? {} : { tools: tools as readonly ToolsetSeed[] }),
     ...(listOnly === undefined ? {} : { listOnly }),
     ...(reach === undefined ? {} : { reach }), ...(homeBotChat === undefined ? {} : { homeBotChat }),
-    ...(kanban === undefined ? {} : { kanban }),
+    ...(kanban === undefined ? {} : { kanban }), ...(files === undefined ? {} : { files }),
     ...(media === undefined ? {} : { media: media as Record<string, string> }), ...(transcribe === undefined ? {} : { transcribe }),
     ...(attachLimits === undefined ? {} : { attachLimits: attachLimits as { image?: number; file?: number } }),
     ...(chats === undefined ? {} : { chats: chats as { readonly [profile: string]: readonly ChatSeed[] } }),

@@ -9,10 +9,12 @@ import { createHash, randomBytes } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { inspect } from 'node:util'
+import type { Outcome } from '../domain/command'
 import { gatewayHost, URL_FAILURES, type GatewayUrl, type UrlFailure } from '../domain/reach'
 import type { CheckOptions } from './check'
 import { DialError, dialWith, GATEWAY_PROTOCOL, HANDSHAKE_MS, sessionAuthorityOf, systemClock, TICKET_PREFIX, type Clock, type Endpoint, type Mint, type ReadHermes } from './link'
 import type { Route } from './remote'
+import { cantReach as cantGet, WHOLE_DOWNLOAD_MS, downloadedOf, downloadPath, type Download } from './download'
 import { CANT_REACH, TRANSCRIBE_MS, TRANSCRIBE_PATH, transcribeBody, transcriptOf, type Transcribe } from './transcribe'
 
 /**
@@ -130,6 +132,8 @@ function fromKept(secret: string | null): Credential | null {
 interface Asked {
   readonly json?: unknown
   readonly bearer?: string
+  /** Default `application/json`. */
+  readonly accept?: string
   readonly signal?: AbortSignal
   /** How long the request may take. Default `REQUEST_MS`. */
   readonly ms?: number
@@ -208,20 +212,25 @@ export function gatewaysByUrl(deps: GatewayDeps): Gateways {
   const fetcher = deps.fetch ?? fetch
   const signInMs = deps.signInMs ?? SIGN_IN_MS
 
-  const send = async (method: 'GET' | 'POST', address: string, asked: Asked): Promise<Answer> => {
+  /** The deadline covers the body too, which the caller reads. */
+  const request = (method: 'GET' | 'POST', address: string, asked: Asked): Promise<Response> => {
     const deadline = AbortSignal.timeout(asked.ms ?? REQUEST_MS)
-    const response = await fetcher(address, {
+    return fetcher(address, {
       method,
       // Never followed, so a bearer goes only to the address the user gave.
       redirect: 'manual',
       signal: asked.signal === undefined ? deadline : AbortSignal.any([asked.signal, deadline]),
       headers: {
-        accept: 'application/json',
+        accept: asked.accept ?? 'application/json',
         ...(asked.json === undefined ? {} : { 'content-type': 'application/json' }),
         ...(asked.bearer === undefined ? {} : { authorization: `Bearer ${asked.bearer}` })
       },
       ...(asked.json === undefined ? {} : { body: JSON.stringify(asked.json) })
     })
+  }
+
+  const send = async (method: 'GET' | 'POST', address: string, asked: Asked): Promise<Answer> => {
+    const response = await request(method, address, asked)
     return { status: response.status, body: jsonOf(await response.text()) }
   }
 
@@ -329,22 +338,52 @@ export function gatewaysByUrl(deps: GatewayDeps): Gateways {
     return { url: `${url.replace(/^http/, 'ws')}/api/ws`, protocols: [GATEWAY_PROTOCOL, TICKET_PREFIX + reply.ticket], reach: 'host' }
   }
 
-  /** The upload goes with the address's sign-in, which Hermes's gate takes on any route (dashboard_auth/middleware.py:299-305). */
-  const transcribeAt = (url: GatewayUrl): Transcribe => async (recording, signal) => {
+  /**
+   * One request with the address's sign-in, which Hermes's gate takes on any route (dashboard_auth/middleware.py:299-305). A 401
+   * renews the sign-in once and asks again. Rejects as `signed-out` when no sign-in is held.
+   */
+  const authed = async <A extends { readonly status: number }>(url: GatewayUrl, ask: (bearer: string) => Promise<A>): Promise<A> => {
     const held = loginOf(url)
-    const post = async (bearer: string) =>
-      send('POST', `${url}${TRANSCRIBE_PATH}`, { json: transcribeBody(recording), bearer, ms: TRANSCRIBE_MS, ...(signal === undefined ? {} : { signal }) })
+    const bearer = await held.bearer()
+    const answer = await ask(bearer)
+    if (answer.status !== 401) return answer
+    await held.replaceRefused(bearer)
+    return ask(await held.bearer())
+  }
+
+  const signedOutOr = <T>(error: unknown, otherwise: Outcome<T>): Outcome<T> =>
+    (error instanceof DialError && error.kind === 'signed-out' ? { ok: false, refusal: { kind: 'offline', message: error.message } } : otherwise)
+
+  const transcribeAt = (url: GatewayUrl): Transcribe => async (recording, signal) => {
     try {
-      const bearer = await held.bearer()
-      let answer = await post(bearer)
-      if (answer.status === 401) {
-        await held.replaceRefused(bearer)
-        answer = await post(await held.bearer())
-      }
+      const answer = await authed(url, bearer =>
+        send('POST', `${url}${TRANSCRIBE_PATH}`, { json: transcribeBody(recording), bearer, ms: TRANSCRIBE_MS, ...(signal === undefined ? {} : { signal }) }))
       if (answer.status === 401) throw ended(url)
       return transcriptOf(answer.status, answer.body)
     } catch (error) {
-      return error instanceof DialError && error.kind === 'signed-out' ? { ok: false, refusal: { kind: 'offline', message: error.message } } : CANT_REACH
+      return signedOutOr(error, CANT_REACH)
+    }
+  }
+
+  async function* chunksOf(body: ReadableStream<Uint8Array> | null): AsyncIterable<Uint8Array> {
+    if (body === null) return
+    const reader = body.getReader()
+    try {
+      for (let read = await reader.read(); !read.done; read = await reader.read()) yield read.value
+    } finally {
+      void reader.cancel().catch(() => {})
+    }
+  }
+
+  /** A bearer reaches every profile, so `?profile=` alone picks the bot. */
+  const downloadAt = (url: GatewayUrl, life: AbortSignal): Download => async (file, signal) => {
+    try {
+      const answer = await authed(url, bearer =>
+        request('GET', `${url}${downloadPath(file)}`, { bearer, accept: '*/*', ms: WHOLE_DOWNLOAD_MS, signal: signal === undefined ? life : AbortSignal.any([signal, life]) }))
+      if (answer.status === 401) throw ended(url)
+      return await downloadedOf({ status: answer.status, header: name => answer.headers.get(name), body: chunksOf(answer.body) }, file)
+    } catch (error) {
+      return signedOutOr(error, cantGet(file))
     }
   }
 
@@ -448,14 +487,9 @@ export function gatewaysByUrl(deps: GatewayDeps): Gateways {
       }
       const read: ReadHermes = async path => {
         if (namesCurrent(path)) throw new Error(CURRENT_IS_OWN)
-        const held = loginOf(url)
-        const bearer = await held.bearer()
-        const answer = await send('GET', `${url}${path}`, { bearer, signal: life.signal })
-        if (answer.status !== 401) return answer
-        await held.replaceRefused(bearer)
-        return send('GET', `${url}${path}`, { bearer: await held.bearer(), signal: life.signal })
+        return authed(url, bearer => send('GET', `${url}${path}`, { bearer, signal: life.signal }))
       }
-      return { dial: dialWith(minted), read, transcribe: transcribeAt(url), dispose: () => life.abort() }
+      return { dial: dialWith(minted), read, transcribe: transcribeAt(url), download: downloadAt(url, life.signal), dispose: () => life.abort() }
     },
 
     keepOnly: async urls => {

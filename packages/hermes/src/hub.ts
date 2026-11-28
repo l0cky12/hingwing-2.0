@@ -51,6 +51,7 @@ export { remoteRoute, type Route } from './wire/remote'
 export { sshRead, type RemoteRead } from './wire/ssh'
 export { liveRoute } from './wire/tickets'
 export type { Transcribe } from './wire/transcribe'
+export type { Download } from './wire/download'
 
 /** A value that changes. `subscribe` calls back on every change, not for the current value. */
 export interface Feed<T> {

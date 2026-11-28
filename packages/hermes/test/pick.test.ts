@@ -40,6 +40,7 @@ function ways(plans: ReadonlyMap<Target, Plan>, pick: PickMode = 'fastest', list
         },
         read: async () => ({ status: 200, body: name(target) }),
         transcribe: async () => ({ ok: true, value: name(target) }),
+        download: async () => ({ ok: true, value: new TextEncoder().encode(name(target)) }),
         dispose: () => void log.push(`dispose ${name(target)}`)
       }
     }
@@ -197,12 +198,15 @@ describe('pickedRoute', () => {
     expect(picks).toEqual([{ using: TAILNET, times: [] }])
   })
 
-  it('reads and transcribes through the first way until one connects, then through the way in use', async () => {
+  it('reads, transcribes and downloads through the first way until one connects, then through the way in use', async () => {
     const { route, dial } = ways(planned([[TAILNET, { ms: 120 }], [LAN, { ms: 15 }]]))
+    const file = { bot: 'rae', sessionId: 'local-1', path: '/home/rae/notes.md' } as never
     expect(await route.read('/api/x')).toEqual({ status: 200, body: 'tailnet' })
+    expect(await route.download(file)).toEqual({ ok: true, value: new TextEncoder().encode('tailnet') })
     await dial()
     expect(await route.read('/api/x')).toEqual({ status: 200, body: 'lan' })
     expect(await route.transcribe({ bytes: new Uint8Array(), type: 'audio/webm' } as never)).toEqual({ ok: true, value: 'lan' })
+    expect(await route.download(file)).toEqual({ ok: true, value: new TextEncoder().encode('lan') })
   })
 
   it('arrange disposes a dropped way and closes the socket that went through it', async () => {

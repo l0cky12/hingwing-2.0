@@ -1,12 +1,14 @@
 import { connect } from 'node:net'
 import { inspect, isDeepStrictEqual } from 'node:util'
 import { describe, expect, it } from 'vitest'
+import type { FarFile } from '../src/domain/library'
 import { BOARD_PATH } from '../src/domain/tasks'
 import { failureOf, URL_FAILURES, type CheckStep, type GatewayUrl, type UrlFailure } from '../src/domain/reach'
 import type { Link } from '../src/domain/session'
 import { DialError, gatewaysByUrl, memoryKeep, openHermes, type GatewayDeps, type Gateways, type Hermes, type Keep, type Route } from '../src/hub'
 import { manualClock, settle } from '../src/testing/clock'
 import { WEBAPP_SCENARIOS, type FakeWebapp, type WebappScenarioName } from '../src/testing/fake-webapp'
+import type { Drive } from '../src/testing/files'
 import { playToEnd } from '../src/testing/fixture'
 import type { Loopback } from '../src/testing/loopback'
 import { Credential } from '../src/wire/gateways'
@@ -243,6 +245,37 @@ describe('speech to text through a gateway address, against the fake Webapp', ()
     const route = routeOf(await signedIn(web), web.url)
     web.signOut()
     expect(await route.transcribe(RECORDING)).toEqual({ ok: false, refusal: { kind: 'offline', message: 'Your sign-in to the Hermes on 127.0.0.1 has ended.' } })
+  })
+})
+
+describe('a file from the Hermes machine through a gateway address, against the fake Webapp', () => {
+  const FILE = { bot: 'rae', sessionId: 'local-0301', path: '/home/rae/notes.md' } as FarFile
+  const DRIVE: Drive = { files: { '/home/rae/notes.md': '# Notes from Hermes\n' }, chats: { rae: [{ id: 'local-0301', title: 'Notes', last_active: 1, rows: [] }] } }
+
+  it("gets the file with the sign-in's bearer, as the file's bot in its chat, refreshing once when Hermes no longer takes the bearer", async () => {
+    const web = await webapp('ok', { drive: DRIVE })
+    const route = routeOf(await signedIn(web), web.url)
+    expect(await route.download(FILE)).toEqual({ ok: true, value: new TextEncoder().encode('# Notes from Hermes\n') })
+    web.lapse()
+    expect(await route.download(FILE)).toMatchObject({ ok: true })
+    expect(count(web, 'POST /auth/native/refresh')).toBe(1)
+    expect(await route.download({ ...FILE, sessionId: 'local-9999' as FarFile['sessionId'] }), 'the route checks the chat is the bot\'s').toEqual({
+      ok: false, refusal: { kind: 'stale', message: 'Hermes no longer has the chat that made notes.md.' }
+    })
+    expect(await route.download({ ...FILE, path: '/home/rae/gone.md' })).toEqual({ ok: false, refusal: { kind: 'stale', message: "gone.md isn't there any more." } })
+  })
+
+  it("says this Hermes can't send files when it has no download route", async () => {
+    const web = await webapp('ok')
+    const route = routeOf(await signedIn(web), web.url)
+    expect(await route.download(FILE)).toEqual({ ok: false, refusal: { kind: 'unsupported', message: "This Hermes can't send files to Highwing. Update Hermes, then try again." } })
+  })
+
+  it('says the sign-in ended, in plain words, once Hermes ends it', async () => {
+    const web = await webapp('ok', { drive: DRIVE })
+    const route = routeOf(await signedIn(web), web.url)
+    web.signOut()
+    expect(await route.download(FILE)).toEqual({ ok: false, refusal: { kind: 'offline', message: 'Your sign-in to the Hermes on 127.0.0.1 has ended.' } })
   })
 })
 

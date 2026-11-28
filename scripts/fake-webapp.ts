@@ -81,11 +81,14 @@ function behindLoginForm(gateway: Loopback, user: { readonly username: string; r
 
 const oneLine = (file: string) => readFileSync(file, 'utf8').replace(/\r?\n$/, '')
 
-const gateway = await loopback(new ScriptedGateway(loadFixture(fixture), { clock: systemClock, timing: 'recorded', ringFrames: RING_FRAMES, drop: null }), systemClock)
+const played = loadFixture(fixture)
+const { files, chats = {} } = played.header
+const gateway = await loopback(new ScriptedGateway(played, { clock: systemClock, timing: 'recorded', ringFrames: RING_FRAMES, drop: null }), systemClock)
 const web = await fakeWebapp(
   scenario as WebappScenarioName,
   usernameFile === undefined || passwordFile === undefined ? gateway : behindLoginForm(gateway, { username: oneLine(usernameFile), password: oneLine(passwordFile) }),
-  systemClock
+  systemClock,
+  files === undefined ? {} : { drive: { files, chats } }
 )
 console.log(JSON.stringify({ url: web.url }))
 

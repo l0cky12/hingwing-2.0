@@ -25,7 +25,7 @@ export interface PickedRoute extends Route {
 }
 
 /**
- * `read` and `transcribe` go through the way that last connected, or the first way before any did.
+ * `read`, `transcribe` and `download` go through the way that last connected, or the first way before any did.
  * When every way fails, a dial fails as the first way does, since that is the one the user put first.
  */
 export function pickedRoute(server: Pick<Server, 'ways' | 'pick'>, wayFor: (target: Target) => Way, onPick: (picked: Picked) => void, clock: Clock = systemClock): PickedRoute {
@@ -158,6 +158,7 @@ export function pickedRoute(server: Pick<Server, 'ways' | 'pick'>, wayFor: (targ
     dial,
     read: path => through().read(path),
     transcribe: recording => through().transcribe(recording),
+    download: (file, signal) => through().download(file, signal),
     arrange: (targets, nextPick) => {
       const next = targets.map(target => ways.find(way => sameTarget(way.target, target)) ?? wayFor(target))
       const dropped = ways.filter(way => !next.includes(way))

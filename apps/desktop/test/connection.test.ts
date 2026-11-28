@@ -131,8 +131,9 @@ function harness(loaded: Settings, save: () => Promise<void> = async () => {}, a
       log.push(`open ${opened.length}`)
       const dial = Object.assign(async () => { throw new Error('the test never dials') }, { held })
       const transcribe = async () => ({ ok: true as const, value: `heard by ${held.target.kind}` })
+      const download = async () => ({ ok: true as const, value: new TextEncoder().encode(`sent by ${held.target.kind}`) })
       return {
-        dial, read: async path => ({ status: 200, body: { target, path } }), transcribe,
+        dial, read: async path => ({ status: 200, body: { target, path } }), transcribe, download,
         arrange: (ways, mode) => void held.arranged.push([ways, mode]),
         dispose: () => { held.disposed = true; log.push(`dispose ${opened.indexOf(held) + 1}`) }
       } satisfies PickedRoute

@@ -1,7 +1,8 @@
 import { machineOf, type SshHost } from '../domain/reach'
+import { DOWNLOAD_FIRST_BYTE_MS, type Download } from './download'
 import { DialError, dialWith, type Clock, type Dialer, type Mint, type ReadHermes } from './link'
 import { relay, sshExec } from './ssh'
-import { mintWith, readWith, transcribeWith, type RunHermes } from './tickets'
+import { downloadWith, mintWith, readWith, transcribeWith, type RunHermes } from './tickets'
 import { TRANSCRIBE_MS, type Transcribe } from './transcribe'
 
 /** A way to reach one gateway, and the processes that way holds. */
@@ -11,6 +12,8 @@ export interface Route {
   readonly transcribe: Transcribe
   /** Reads the gateway's HTTP API as this route's user. */
   readonly read: ReadHermes
+  /** One file of a bot's chat from the machine the gateway runs on, through its download route. */
+  readonly download: Download
   /** Ends every process and relay of this route, and refuses later dials. Call it after closing the `Hermes` that dials through it. */
   dispose(): void
 }
@@ -48,11 +51,12 @@ export function remoteRoute(host: SshHost, options: { readonly sshBin?: string; 
       return local
     }
   })
-  const read = readWith(run, async origin => {
+  /** The gateway's loopback HTTP origin, relayed to this computer. `firstByteMs`: how long Hermes may take to start answering. */
+  const httpAt = (firstByteMs?: number) => async (origin: string) => {
     const tunnel = tunnelOf(origin, 'http:')
     if (tunnel === null) throw new Error('Hermes named an HTTP address Highwing cannot forward.')
-    return `http://127.0.0.1:${await relay(host, tunnel.port, { ...options, signal })}`
-  })
+    return `http://127.0.0.1:${await relay(host, tunnel.port, { ...options, signal, ...(firstByteMs === undefined ? {} : { firstByteMs }) })}`
+  }
 
   /** A dial that a dispose cut short fails as `dropped`, whatever its killed ssh looked like. */
   const mint: Mint = async request => {
@@ -66,11 +70,11 @@ export function remoteRoute(host: SshHost, options: { readonly sshBin?: string; 
     }
   }
 
-  const transcribe = transcribeWith(run, async origin => {
-    const port = Number(URL.parse(origin)?.port)
-    if (!(port > 0)) throw new DialError('incompatible')
-    return `http://127.0.0.1:${await relay(host, port, { ...options, signal, firstByteMs: TRANSCRIBE_MS })}`
-  })
-
-  return { dial: dialWith(mint), read, transcribe, dispose: () => life.abort() }
+  return {
+    dial: dialWith(mint),
+    read: readWith(run, httpAt()),
+    transcribe: transcribeWith(run, httpAt(TRANSCRIBE_MS)),
+    download: downloadWith(run, httpAt(DOWNLOAD_FIRST_BYTE_MS)),
+    dispose: () => life.abort()
+  }
 }

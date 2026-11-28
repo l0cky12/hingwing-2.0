@@ -3,7 +3,7 @@
  * gateway's socket carries no transcription, so each route posts the recording to the gateway's
  * HTTP listener with the credential its kind of connection holds.
  */
-import { request } from 'node:http'
+import { request, type IncomingMessage } from 'node:http'
 import type { Outcome, Recording } from '../domain/command'
 
 /** Turns one recording into text. A refusal's message is plain words for the composer to show. */
@@ -25,7 +25,7 @@ export const CANT_TRANSCRIBE: Outcome<never> = {
   ok: false, refusal: { kind: 'unsupported', message: "This Hermes can't turn speech into text for Highwing. Update Hermes, then try again." }
 }
 
-const sentence = (words: string) => (/[.!?]$/.test(words) ? words : `${words}.`)
+export const sentence = (words: string) => (/[.!?]$/.test(words) ? words : `${words}.`)
 
 /** What Hermes's answer means. An empty transcript is a success: Hermes heard no words. */
 export function transcriptOf(status: number, body: unknown): Outcome<string> {
@@ -43,33 +43,43 @@ function jsonOf(text: string): unknown {
   }
 }
 
+export interface TicketRequest {
+  readonly method: 'GET' | 'POST'
+  readonly accept: string
+  readonly json?: string
+  readonly signal: AbortSignal
+}
+
 /**
- * Posts a recording to a gateway's loopback listener with a `native-http` ticket. Hermes's gate
- * refuses a ticket that comes with an `Origin` header (dashboard_auth/native_http.py:200), which
- * `fetch` may add, so this goes through `node:http`. One request per connection, so a relay that
+ * One request to a gateway's loopback listener with a `native-http` ticket. Resolves once Hermes answers with a status, and the
+ * body is the caller's to read. Hermes's gate refuses a ticket that comes with an `Origin` header (dashboard_auth/native_http.py:200),
+ * which `fetch` may add, so this goes through `node:http`, which follows no redirect. One request per connection, so a relay that
  * carries one connection carries all of it.
  */
-export function postWithTicket(origin: string, ticket: string, recording: Recording, signal?: AbortSignal): Promise<{ readonly status: number; readonly body: unknown }> {
-  const body = JSON.stringify(transcribeBody(recording))
-  const deadline = AbortSignal.timeout(TRANSCRIBE_MS)
+export function askWithTicket(url: URL, ticket: string, { method, accept, json, signal }: TicketRequest): Promise<IncomingMessage> {
   return new Promise((resolve, reject) => {
-    const asked = request(new URL(TRANSCRIBE_PATH, origin), {
-      method: 'POST',
-      signal: signal === undefined ? deadline : AbortSignal.any([signal, deadline]),
+    const asked = request(url, {
+      method,
+      signal,
       headers: {
-        accept: 'application/json',
-        'content-type': 'application/json',
-        'content-length': Buffer.byteLength(body),
+        accept,
+        ...(json === undefined ? {} : { 'content-type': 'application/json', 'content-length': Buffer.byteLength(json) }),
         'x-hermes-gateway-ticket': ticket,
         connection: 'close'
       }
-    }, response => {
-      const chunks: Buffer[] = []
-      response.on('data', (chunk: Buffer) => chunks.push(chunk))
-      response.on('end', () => resolve({ status: response.statusCode ?? 0, body: jsonOf(Buffer.concat(chunks).toString('utf8')) }))
-      response.on('error', reject)
-    })
+    }, resolve)
     asked.on('error', reject)
-    asked.end(body)
+    asked.end(json)
   })
+}
+
+/** Posts a recording with a `native-http` ticket, and reads Hermes's JSON answer. */
+export async function postWithTicket(origin: string, ticket: string, recording: Recording, signal?: AbortSignal): Promise<{ readonly status: number; readonly body: unknown }> {
+  const deadline = AbortSignal.timeout(TRANSCRIBE_MS)
+  const response = await askWithTicket(new URL(TRANSCRIBE_PATH, origin), ticket, {
+    method: 'POST', accept: 'application/json', json: JSON.stringify(transcribeBody(recording)), signal: signal === undefined ? deadline : AbortSignal.any([signal, deadline])
+  })
+  const chunks: Buffer[] = []
+  for await (const chunk of response) chunks.push(chunk as Buffer)
+  return { status: response.statusCode ?? 0, body: jsonOf(Buffer.concat(chunks).toString('utf8')) }
 }

@@ -6,7 +6,7 @@
  * - `/auth/native/authorize` takes S256 only, and a redirect that is http to a loopback IP literal;
  * - a code works once, for 120 s, and only with the verifier of its challenge;
  * - a refresh token works once: each refresh returns a new pair and ends the old one;
- * - `/api/auth/ws-ticket` and the kanban board answer 401 without the bearer of a live sign-in;
+ * - `/api/auth/ws-ticket`, the kanban board and the download route answer 401 without the bearer of a live sign-in;
  * - the socket is behind the loopback gate: one single-use ticket, no `Origin`.
  * It has no sign-in page. Its user is `browse`, which follows the authorize address as the browser
  * of a user who signs in at once.
@@ -16,8 +16,10 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createServer } from 'node:https'
 import type { AddressInfo } from 'node:net'
 import { BOARD_PATH } from '../domain/tasks'
+import { DOWNLOAD_PATH } from '../wire/download'
 import { parseGatewayUrl, type GatewayUrl, type UrlFailure } from '../domain/reach'
 import { TICKET_PREFIX, type Clock } from '../wire/link'
+import { downloadAnswer, sendDownload, type Drive } from './files'
 import type { Front, Loopback } from './loopback'
 
 /** A provider is listed whether or not it has a sign-in page. Only `auth_flows` says an app can sign in. */
@@ -99,6 +101,7 @@ type Reply =
   | { readonly status: number; readonly json: unknown }
   | { readonly status: 200; readonly html: string }
   | { readonly status: 302; readonly location: string }
+  | { readonly download: Parameters<typeof sendDownload>[1] }
 
 const refused = (status: number, detail: string): Reply => ({ status, json: { detail } })
 const s256 = (verifier: string) => createHash('sha256').update(verifier).digest('base64url')
@@ -150,10 +153,12 @@ export async function fakeWebapp(
   name: WebappScenarioName,
   gateway: Loopback,
   clock: Clock,
-  options: { readonly prefix?: string } = {}
+  /** `drive`: the files of the Hermes machine. Absent: a Hermes with no download route. */
+  options: { readonly prefix?: string; readonly drive?: Drive } = {}
 ): Promise<FakeWebapp> {
   const scenario = WEBAPP_SCENARIOS[name]
   const prefix = options.prefix ?? ''
+  const { drive } = options
   const secrets: string[] = []
   const requests: string[] = []
   const opened: string[] = []
@@ -237,7 +242,14 @@ export async function fakeWebapp(
     [`GET ${BOARD_PATH}`]: ({ bearer }) =>
       bearer !== null && [...signIns.values()].includes(bearer)
         ? { status: 200, json: { columns: [{ name: 'todo', tasks: [] }] } }
-        : { status: 401, json: { error: 'unauthenticated', detail: 'Unauthorized' } }
+        : { status: 401, json: { error: 'unauthenticated', detail: 'Unauthorized' } },
+    /** A bearer reaches every profile, so an omitted `profile` is the launch profile's. */
+    ...(drive === undefined ? {} : {
+      [`GET ${DOWNLOAD_PATH}`]: ({ bearer, query }: Asked): Reply =>
+        bearer !== null && [...signIns.values()].includes(bearer)
+          ? { download: downloadAnswer(drive, query, query.get('profile') ?? 'default') }
+          : { status: 401, json: { error: 'unauthenticated', detail: 'Unauthorized' } }
+    })
   }
 
   const serve = async (request: IncomingMessage, response: ServerResponse) => {
@@ -246,6 +258,7 @@ export async function fakeWebapp(
     const route = pathname.startsWith(`${prefix}/`) ? routes[`${request.method} ${pathname.slice(prefix.length)}`] : undefined
     const bearer = /^Bearer (.+)$/.exec(request.headers.authorization ?? '')?.[1] ?? null
     const reply = route === undefined ? refused(404, 'Not Found') : route({ query: searchParams, bearer, body: await bodyOf(request) })
+    if ('download' in reply) return sendDownload(response, reply.download)
     if ('location' in reply) return void response.writeHead(reply.status, { location: reply.location }).end()
     if ('html' in reply) return void response.writeHead(reply.status, { 'content-type': 'text/html; charset=utf-8' }).end(reply.html)
     response.writeHead(reply.status, { 'content-type': 'application/json' }).end(JSON.stringify(reply.json))

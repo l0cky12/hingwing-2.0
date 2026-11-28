@@ -187,12 +187,21 @@ function sshCall(argv: readonly string[]): { readonly host: string | undefined; 
   return { host: rest[0], forward, command: rest.slice(1).join(' ') }
 }
 
+export interface FakeHostOptions {
+  readonly holdAt?: Hold
+  /**
+   * The gateway's HTTP listener. With it, a `--serve` hello names its `api_origin`, and `native-http` tickets are minted for the
+   * profile the request names. Without it, the hello names none and every `native-http` ticket is `ticket_unavailable`.
+   */
+  readonly http?: Pick<Loopback, 'port' | 'mintHttp'>
+}
+
 /**
  * Starts the fake machine. `gateway` is where an attach mints its ticket. null: no gateway runs.
  * `holdAt` keeps every tool that reaches that moment waiting until `release()`, which pins a
  * passing state (a check in flight, a pending attach, a stalled upgrade) without a sleep.
  */
-export async function fakeHost(name: ScenarioName, gateway: Gateway | null, options: { readonly holdAt?: Hold } = {}): Promise<FakeHost> {
+export async function fakeHost(name: ScenarioName, gateway: Gateway | null, options: FakeHostOptions = {}): Promise<FakeHost> {
   const scenario = SCENARIOS[name]
   const calls: string[] = []
   const pids = new Set<number>()
@@ -203,40 +212,50 @@ export async function fakeHost(name: ScenarioName, gateway: Gateway | null, opti
   let printed = 0
   let serving = gateway
 
+  /** A port only this fake's `ssh -W` can resolve, so a client that skips the tunnel reaches nothing. */
+  const tunnelTo = (port: number): number => {
+    const hidden = tunnels.size + 1
+    tunnels.set(hidden, port)
+    return hidden
+  }
+
   /** The ticket attach returns reaches the profile attach ran in (gateway-ssh-clients.md, "The WebSocket ticket"). */
   const attach = (reach: 'direct' | 'tunnel'): Said => {
     if (serving === null) return ABSENT
     const { url, protocols } = serving.mint('profile')
     const reply = (address: string) => ({ stdout: `${JSON.stringify({ url: address, protocols, endpoint: { instance_id: serving?.instanceId } })}\n`, exit: 0 })
-    if (reach === 'direct') return reply(url)
-    // A port only this fake's `ssh -W` can resolve, so a client that skips the tunnel reaches nothing.
-    const hidden = tunnels.size + 1
-    tunnels.set(hidden, Number(new URL(url).port))
-    return reply(`ws://127.0.0.1:${hidden}/api/ws`)
+    return reply(reach === 'direct' ? url : `ws://127.0.0.1:${tunnelTo(Number(new URL(url).port))}/api/ws`)
   }
 
-  /** `_reply` in hermes_cli/gateway_runtime_tickets.py:77-119, for the one purpose Highwing asks for. */
+  /** `_reply` in hermes_cli/gateway_runtime_tickets.py:77-119, for the purposes Highwing asks for. Every profile is served. */
   const ticket = (line: string, purposes: readonly string[]): Said => {
-    const { id, purpose } = JSON.parse(line) as { readonly id?: unknown; readonly purpose?: unknown }
-    const refuse = (code: string) => ({ id, ok: false, error: { code, message: 'the fake host mints interactive tickets only' } })
+    const { id, purpose, profile } = JSON.parse(line) as { readonly id?: unknown; readonly purpose?: unknown; readonly profile?: unknown }
+    const refuse = (code: string) => ({ id, ok: false, error: { code, message: 'the fake host does not mint this ticket' } })
+    const minted = (ticket: string) => ({ id, ok: true, ticket, expires_in: 30 })
     const reply = !purposes.includes(String(purpose))
       ? refuse('unsupported_purpose')
-      : purpose !== 'interactive' || serving === null
+      : serving === null
         ? refuse('ticket_unavailable')
-        : { id, ok: true, ticket: (serving.mint('host').protocols[1] as string).slice(TICKET_PREFIX.length), expires_in: 30 }
+        : purpose === 'interactive'
+          ? minted((serving.mint('host').protocols[1] as string).slice(TICKET_PREFIX.length))
+          : purpose === 'native-http' && options.http !== undefined
+            ? minted(options.http.mintHttp(typeof profile === 'string' ? profile : 'default'))
+            : refuse('ticket_unavailable')
     return { stdout: `${JSON.stringify(reply)}\n`, exit: 0 }
   }
 
-  const serve = (purposes: readonly string[]): Said | Asks => {
+  const serve = (purposes: readonly string[], reach: 'direct' | 'tunnel'): Said | Asks => {
     if (serving === null) return SERVE_ABSENT
-    return { stdout: `${JSON.stringify({ type: 'hello', protocol: 1, endpoint: { instance_id: serving.instanceId } })}\n`, then: line => ticket(line, purposes) }
+    const port = options.http?.port
+    const origin = port === undefined ? {} : { api_origin: `http://127.0.0.1:${reach === 'direct' ? port : tunnelTo(port)}` }
+    return { stdout: `${JSON.stringify({ type: 'hello', protocol: 1, endpoint: { instance_id: serving.instanceId, ...origin } })}\n`, then: line => ticket(line, purposes) }
   }
 
   const hermes = (args: string, reach: 'direct' | 'tunnel'): Answer => {
     calls.push(args)
     const purposes = scenario.hermes === 'current' || scenario.hermes === 'bound' ? PURPOSES[scenario.hermes] : null
     if (args === 'gateway tickets --probe --json') return { at: reach === 'tunnel' ? 'ssh' : null, say: () => (purposes === null ? UNKNOWN_COMMAND : { stdout: probeReply(purposes), exit: 0 }) }
-    if (args === 'gateway tickets --serve --json' && purposes !== null) return { at: null, say: () => serve(purposes) }
+    if (args === 'gateway tickets --serve --json' && purposes !== null) return { at: null, say: () => serve(purposes, reach) }
     if (args.startsWith('gateway attach --json ')) return { at: 'attach', say: () => attach(reach) }
     return { at: null, say: () => UNKNOWN_COMMAND }
   }

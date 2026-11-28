@@ -2,10 +2,11 @@
  * Runs the fake Hermes machine for a verify run: `tsx scripts/fake-host.ts <scenario> <fixture> [hold]`.
  * It prints one JSON line naming the bin directory of the fake tools, then serves until it is killed.
  * The gateway behind it plays `fixture` at its recorded pace, and appends each frame it is sent, masked, to the file
- * `HIGHWING_FIXTURE_CALLS` names.
+ * `HIGHWING_FIXTURE_CALLS` names. A fixture with `files` also serves Hermes's download route on the gateway's HTTP listener.
  */
 import { appendFileSync } from 'node:fs'
 import { fakeHost, FAKE_HOST, SCENARIOS, type Hold, type ScenarioName } from '../packages/hermes/src/testing/fake-host'
+import { ticketedFiles } from '../packages/hermes/src/testing/files'
 import { loadFixture, maskedFrame } from '../packages/hermes/src/testing/fixture'
 import { RING_FRAMES, ScriptedGateway } from '../packages/hermes/src/testing/gateway'
 import { loopback } from '../packages/hermes/src/testing/loopback'
@@ -20,9 +21,13 @@ if (scenario === undefined || !Object.hasOwn(SCENARIOS, scenario) || fixture ===
 }
 
 const calls = process.env.HIGHWING_FIXTURE_CALLS
-const gateway = new ScriptedGateway(loadFixture(fixture), {
+const played = loadFixture(fixture)
+const gateway = new ScriptedGateway(played, {
   clock: systemClock, timing: 'recorded', ringFrames: RING_FRAMES, drop: null,
   ...(calls ? { onReceived: (frame: unknown) => appendFileSync(calls, `${JSON.stringify(maskedFrame(frame))}\n`) } : {})
 })
-const host = await fakeHost(scenario as ScenarioName, await loopback(gateway, systemClock), hold === undefined ? {} : { holdAt: hold as Hold })
+const listener = await loopback(gateway, systemClock)
+const { files, chats = {} } = played.header
+if (files !== undefined) listener.front(ticketedFiles(listener, { files, chats }))
+const host = await fakeHost(scenario as ScenarioName, listener, { ...(hold === undefined ? {} : { holdAt: hold as Hold }), ...(files === undefined ? {} : { http: listener }) })
 console.log(JSON.stringify({ bin: host.bin, host: FAKE_HOST }))

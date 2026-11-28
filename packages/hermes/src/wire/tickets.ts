@@ -6,8 +6,10 @@
 import { CHECK_FAILURES } from '../domain/reach'
 import { DialError, dialWith, EXIT_KINDS, GATEWAY_PROTOCOL, TICKET_PREFIX, type Clock, type Mint, type ReadHermes } from './link'
 import type { Route } from './remote'
-import { ASK_INTERACTIVE, askNativeHttp, ATTACH, attachedOf, httpTicketOf, NOT_FOUND, originOf, PROBE, probeOf, runTool, SERVE, servedOf, type HermesArgs, type ProbeFailure, type SshRun } from './ssh'
-import { CANT_REACH, CANT_TRANSCRIBE, postWithTicket, transcriptOf, type Transcribe } from './transcribe'
+import type { BotId } from '../domain/bots'
+import { cantReach, WHOLE_DOWNLOAD_MS, downloadedOf, downloadPath, unminted, type Download } from './download'
+import { ASK_INTERACTIVE, askNativeHttp, ATTACH, attachedOf, httpTicketOf, NOT_FOUND, originOf, PROBE, probeOf, runTool, SERVE, servedOf, type HermesArgs, type HttpTicket, type ProbeFailure, type SshRun } from './ssh'
+import { askWithTicket, CANT_REACH, CANT_TRANSCRIBE, postWithTicket, transcriptOf, type Transcribe } from './transcribe'
 
 /** How a hermes command runs on the gateway's machine: `runTool` here, `sshExec` on another. */
 export type RunHermes = (args: HermesArgs, options: { readonly deadlineMs: number; readonly input?: string }) => Promise<SshRun>
@@ -116,12 +118,18 @@ export function transcribeWith(run: RunHermes, reach: (origin: string) => Promis
 
 const profileOf = (path: string): string | undefined => new URL(path, 'http://hermes.invalid').searchParams.get('profile') ?? undefined
 
-/** A fresh ticket per GET: Hermes's ticket is single use and lives 30 seconds (gateway-ssh-clients.md, client rule 3). */
+/** Mints a one-use `native-http` ticket for `profile`: Hermes's ticket is single use and lives 30 seconds (gateway-ssh-clients.md, client rule 3). */
+const ticketFor = (run: RunHermes) => async (profile?: string): Promise<HttpTicket> => {
+  const serve = await run(SERVE, { deadlineMs: SERVE_MS, input: askNativeHttp(profile) }).catch(() => null)
+  return serve?.ok === true ? httpTicketOf(serve.code, serve.stdout) : { ok: false, why: 'unavailable' }
+}
+
+/** A fresh ticket per GET, for the profile the path names, else the one the gateway runs as. */
 export function readWith(run: RunHermes, forward: (origin: string) => Promise<string>, fetcher: typeof fetch = fetch): ReadHermes {
+  const ticket = ticketFor(run)
   return async path => {
-    const serve = await run(SERVE, { deadlineMs: SERVE_MS, input: askNativeHttp(profileOf(path)) })
-    const minted = serve.ok ? httpTicketOf(serve.code, serve.stdout) : null
-    if (minted === null) throw new Error('Hermes minted no ticket for its HTTP API.')
+    const minted = await ticket(profileOf(path))
+    if (!minted.ok) throw new Error('Hermes minted no ticket for its HTTP API.')
     const response = await fetcher(`${await forward(minted.origin)}${path}`, {
       // Never followed, so the ticket goes only to the address the gateway named.
       redirect: 'manual',
@@ -129,6 +137,28 @@ export function readWith(run: RunHermes, forward: (origin: string) => Promise<st
       headers: { accept: 'application/json', 'x-hermes-gateway-ticket': minted.ticket }
     })
     return { status: response.status, body: await response.json().catch(() => null) }
+  }
+}
+
+/** A fresh ticket per file, for the file's bot: the route checks `?profile=` against the profile the ticket was minted for. */
+export function downloadWith(run: RunHermes, forward: (origin: string) => Promise<string>): Download {
+  const ticket = ticketFor(run)
+  return async (file, signal) => {
+    const minted = await ticket(file.bot)
+    if (!minted.ok) return unminted(minted.why, file)
+    const deadline = AbortSignal.timeout(WHOLE_DOWNLOAD_MS)
+    try {
+      const answer = await askWithTicket(new URL(downloadPath(file), await forward(minted.origin)), minted.ticket, {
+        method: 'GET', accept: '*/*', signal: signal === undefined ? deadline : AbortSignal.any([signal, deadline])
+      })
+      const header = (name: string) => {
+        const value = answer.headers[name]
+        return typeof value === 'string' ? value : null
+      }
+      return await downloadedOf({ status: answer.statusCode ?? 0, header, body: answer }, file)
+    } catch {
+      return cantReach(file)
+    }
   }
 }
 
@@ -141,5 +171,8 @@ export function liveRoute(options: { readonly hermesBin?: string; readonly clock
     return { ok: true, code: EXIT_AS_LOCATOR[tool.end], stdout: '' }
   }
   const here = async (url: string) => url
-  return { dial: dialWith(mintWith(run, { machine: null, forward: here, unprobed: 'attach' })), read: readWith(run, here), transcribe: transcribeWith(run, here), dispose: () => {} }
+  return {
+    dial: dialWith(mintWith(run, { machine: null, forward: here, unprobed: 'attach' })), read: readWith(run, here), transcribe: transcribeWith(run, here), download: downloadWith(run, here),
+    dispose: () => {}
+  }
 }

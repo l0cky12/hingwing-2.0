@@ -1,6 +1,6 @@
 import { afterEach } from 'vitest'
 import { settle } from '../../src/testing/clock'
-import { fakeHost, type FakeHost, type Gateway, type Hold, type ScenarioName } from '../../src/testing/fake-host'
+import { fakeHost, type FakeHost, type FakeHostOptions, type Gateway, type Hold, type ScenarioName } from '../../src/testing/fake-host'
 import { RING_FRAMES, ScriptedGateway } from '../../src/testing/gateway'
 import { loopback, type Loopback } from '../../src/testing/loopback'
 import { systemClock } from '../../src/wire/link'
@@ -21,8 +21,8 @@ export const errandGateway = () => new ScriptedGateway(ERRAND, { clock: systemCl
 
 export const listen = async (gateway: ScriptedGateway): Promise<Loopback> => closing(await loopback(gateway, systemClock), held => held.close())
 
-export const host = async (name: ScenarioName, gateway: Gateway | null = null, holdAt?: Hold): Promise<FakeHost> =>
-  closing(await fakeHost(name, gateway, holdAt === undefined ? {} : { holdAt }), held => held.close())
+export const host = async (name: ScenarioName, gateway: Gateway | null = null, holdAt?: Hold, http?: FakeHostOptions['http']): Promise<FakeHost> =>
+  closing(await fakeHost(name, gateway, { ...(holdAt === undefined ? {} : { holdAt }), ...(http === undefined ? {} : { http }) }), held => held.close())
 
 const PATIENCE_MS = 10_000
 
