@@ -4,8 +4,9 @@ import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import type { BotId } from '../src/domain/bots'
 import { parseSshHost } from '../src/domain/reach'
-import { ASK_INTERACTIVE, ASK_NATIVE_HTTP, ATTACH, attachedOf, HERMES_PATHS, httpTicketOf, PROBE, probeOf, READ_CAP, relay, remoteHermes, runTool, SERVE, servedOf, SSH_OPTIONS, sshFailureOf, sshPing, UPGRADE_MS, sshRead } from '../src/wire/ssh'
+import { ASK_INTERACTIVE, askNativeHttp, ATTACH, attachedOf, HERMES_PATHS, httpTicketOf, PROBE, probeOf, READ_CAP, relay, remoteHermes, runTool, SERVE, servedOf, SSH_OPTIONS, sshFailureOf, sshPing, UPGRADE_MS, sshRead } from '../src/wire/ssh'
 import { manualClock, settle } from '../src/testing/clock'
 
 describe('sshFailureOf', () => {
@@ -110,9 +111,17 @@ describe('httpTicketOf', () => {
     expect(httpTicketOf(code, stdout)).toEqual(ticket)
   })
 
-  it('asks for the HTTP ticket on one line', () => {
-    expect(JSON.parse(ASK_NATIVE_HTTP)).toEqual({ id: 1, purpose: 'native-http' })
-    expect(ASK_NATIVE_HTTP.indexOf('\n')).toBe(ASK_NATIVE_HTTP.length - 1)
+  it.each([
+    [null, { id: 1, purpose: 'native-http' }],
+    ['rae' as BotId, { id: 1, purpose: 'native-http', profile: 'rae' }]
+  ])('asks for the HTTP ticket of %s on one line, naming a profile only for a bot', (bot, request) => {
+    const line = askNativeHttp(bot)
+    expect(JSON.parse(line)).toEqual(request)
+    expect(line.indexOf('\n')).toBe(line.length - 1)
+  })
+
+  it('keeps the launch profile\'s line as it always was', () => {
+    expect(askNativeHttp(null)).toBe('{"id":1,"purpose":"native-http"}\n')
   })
 })
 

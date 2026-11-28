@@ -1614,7 +1614,7 @@ export function parseToolsets(reply: ToolsetsListResult): readonly Toolset[] {
     const name = words(row.name)
     if (name === null) return []
     const tools = (Array.isArray(row.tools) ? row.tools : []).flatMap(tool => words(tool) ?? [])
-    return [{ name, description: trimmed(row.description) ?? '', tools, toolCount: isCount(row.tool_count) ? row.tool_count : tools.length, enabled: row.enabled === true }]
+    return [{ name, label: name, place: null, description: trimmed(row.description) ?? '', tools, toolCount: isCount(row.tool_count) ? row.tool_count : tools.length, enabled: row.enabled === true }]
   })
 }
 

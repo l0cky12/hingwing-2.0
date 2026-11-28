@@ -8,6 +8,7 @@ import { openHermes, type Command, type Hermes, type Upload } from '../hub'
 import { systemClock } from '../wire/link'
 import { manualClock } from './clock'
 import { MASKED, type Fixture, type FixtureStep } from './fixture'
+import { noAsk } from './http'
 import { recordingDialer } from './record'
 import { scriptedDialer, type ScriptedDialer, type ScriptOptions } from './script'
 
@@ -196,7 +197,7 @@ export async function* play(fixture: Fixture, options: PlayOptions = {}): AsyncG
   const attach = options.attach ?? []
   let attached = attach.length === 0
   const hermes = openHermes({
-    dial: options.record === undefined ? script : recordingDialer(script, options.record, clock), clock, client: { name: 'highwing-play', version: '0' }, mintId: () => ids.shift() ?? randomUUID(),
+    ask: noAsk, dial: options.record === undefined ? script : recordingDialer(script, options.record, clock), clock, client: { name: 'highwing-play', version: '0' }, mintId: () => ids.shift() ?? randomUUID(),
     uploads: { read: async id => attach.find(upload => upload.id === id) ?? null }
   })
 

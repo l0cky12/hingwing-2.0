@@ -1,13 +1,14 @@
 import { connect } from 'node:net'
 import { inspect, isDeepStrictEqual } from 'node:util'
 import { describe, expect, it } from 'vitest'
+import type { BotId } from '../src/domain/bots'
 import { BOARD_PATH } from '../src/domain/tasks'
 import { failureOf, URL_FAILURES, type CheckStep, type GatewayUrl, type UrlFailure } from '../src/domain/reach'
 import type { Link } from '../src/domain/session'
 import { DialError, gatewaysByUrl, memoryKeep, openHermes, type GatewayDeps, type Gateways, type Hermes, type Keep, type Route } from '../src/hub'
 import { manualClock, settle } from '../src/testing/clock'
 import { WEBAPP_SCENARIOS, type FakeWebapp, type WebappScenarioName } from '../src/testing/fake-webapp'
-import { playToEnd } from '../src/testing/fixture'
+import { noAsk, playToEnd } from '../src/testing/fixture'
 import type { Loopback } from '../src/testing/loopback'
 import { Credential } from '../src/wire/gateways'
 import { ERRAND } from './support/errand'
@@ -32,10 +33,12 @@ const signedIn = async (web: FakeWebapp, deps: Partial<GatewayDeps> = {}): Promi
   return gateways
 }
 
+const GET_BOARD = { method: 'GET', path: BOARD_PATH, bot: null } as const
+
 const routeOf = (gateways: Gateways, url: GatewayUrl): Route => closing(gateways.route(url), route => route.dispose())
 
 const open = (route: Route): Hermes =>
-  closing(openHermes({ dial: route.dial, client: { name: 'highwing-test', version: '0' } }), hermes => hermes.close())
+  closing(openHermes({ ask: noAsk, dial: route.dial, client: { name: 'highwing-test', version: '0' } }), hermes => hermes.close())
 
 const linkIs = (hermes: Hermes, state: Link['state']) => until(`the link to be ${state}`, () => hermes.link.get().state === state)
 
@@ -302,20 +305,40 @@ describe('the route to a gateway address, against the fake Webapp', () => {
   it('reads the gateway\'s HTTP API with the sign-in\'s bearer, refreshing once when Hermes no longer takes it', async () => {
     const web = await webapp('ok')
     const route = routeOf(await signedIn(web), web.url)
-    expect(await route.read(BOARD_PATH)).toEqual({ status: 200, body: { columns: [{ name: 'todo', tasks: [] }] } })
+    expect(await route.ask(GET_BOARD)).toEqual({ status: 200, body: { columns: [{ name: 'todo', tasks: [] }] } })
     expect(count(web, 'POST /auth/native/refresh')).toBe(0)
 
     web.lapse()
-    expect(await route.read(BOARD_PATH)).toMatchObject({ status: 200 })
+    expect(await route.ask(GET_BOARD)).toMatchObject({ status: 200 })
     expect(count(web, 'POST /auth/native/refresh')).toBe(1)
-    expect(await route.read('/api/plugins/kanban/missing'), 'a status passes through for the caller to read').toEqual({ status: 404, body: { detail: 'Not Found' } })
+    expect(await route.ask({ method: 'GET', path: '/api/plugins/kanban/missing', bot: null }), 'a status passes through for the caller to read').toEqual({ status: 404, body: { detail: 'Not Found' } })
+  })
+
+  it("names the bot in the query and sends a PUT's body with the bearer, refreshing once when Hermes no longer takes it", async () => {
+    const web = await webapp('ok')
+    const route = routeOf(await signedIn(web), web.url)
+    const rae = 'rae' as BotId
+    expect(await route.ask({ method: 'GET', path: '/api/tools/toolsets', bot: rae })).toMatchObject({ status: 200, body: [{ name: 'browser' }] })
+    expect(await route.ask({ method: 'PUT', path: '/api/tools/toolsets/browser', bot: rae, json: { enabled: false } })).toMatchObject({ status: 200, body: { ok: true, enabled: false } })
+    expect(web.urls.slice(-2)).toEqual(['GET /api/tools/toolsets?profile=rae', 'PUT /api/tools/toolsets/browser?profile=rae'])
+
+    web.lapse()
+    expect(await route.ask({ method: 'PUT', path: '/api/tools/toolsets/browser', bot: rae, json: { enabled: true } })).toMatchObject({ status: 200, body: { enabled: true } })
+    expect(count(web, 'POST /auth/native/refresh')).toBe(1)
+    expect(web.urls.filter(url => url === 'PUT /api/tools/toolsets/browser?profile=rae'), 'the lapsed bearer was tried once and the new one carried the write').toHaveLength(3)
+  })
+
+  it('names no profile for the launch profile', async () => {
+    const web = await webapp('ok')
+    await routeOf(await signedIn(web), web.url).ask({ method: 'GET', path: '/api/tools/toolsets', bot: null })
+    expect(web.urls.at(-1)).toBe('GET /api/tools/toolsets')
   })
 
   it('rejects a read for a sign-in Hermes ended', async () => {
     const web = await webapp('ok')
     const route = routeOf(await signedIn(web), web.url)
     web.signOut()
-    await expect(route.read(BOARD_PATH)).rejects.toMatchObject({ kind: 'signed-out' })
+    await expect(route.ask(GET_BOARD)).rejects.toMatchObject({ kind: 'signed-out' })
     expect(count(web, `GET ${BOARD_PATH}`), 'the refused bearer was tried once, and not again on a sign-in that is gone').toBe(1)
   })
 

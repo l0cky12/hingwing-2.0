@@ -1,8 +1,8 @@
-import type { HttpAnswer, ReadHermes } from '@highwing/hermes'
+import type { AskHermes, HttpAnswer } from '@highwing/hermes'
 import { describe, expect, it } from 'vitest'
 import { readTaskBoard, readTaskChat } from '../src/main/tasks'
 
-const answering = (answer: HttpAnswer | Error): ReadHermes => async () => {
+const answering = (answer: HttpAnswer | Error): AskHermes => async () => {
   if (answer instanceof Error) throw answer
   return answer
 }
@@ -40,9 +40,9 @@ describe('readTaskChat', () => {
   })
 
   it('asks for the card by its path', async () => {
-    const asked: string[] = []
-    await readTaskChat(async path => (asked.push(path), { status: 404, body: null }), 't_ab12')
-    expect(asked).toEqual(['/api/plugins/kanban/tasks/t_ab12'])
+    const asked: unknown[] = []
+    await readTaskChat(async request => (asked.push(request), { status: 404, body: null }), 't_ab12')
+    expect(asked).toEqual([{ method: 'GET', path: '/api/plugins/kanban/tasks/t_ab12', bot: null }])
   })
 
   it.each<[string, HttpAnswer | Error, keyof typeof REFUSALS]>([

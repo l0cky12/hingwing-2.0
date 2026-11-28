@@ -3,7 +3,7 @@ import { botPicture, describeBot, editBot, setBotPicture } from '../src/bot-admi
 import { pictureTypeOf, type BotId } from '../src/domain/bots'
 import { openHermes } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
-import { scriptedDialer, type Fixture } from '../src/testing/fixture'
+import { noAsk, scriptedDialer, type Fixture } from '../src/testing/fixture'
 import type { CanonicalProfilesResult } from '../src/wire/contract.generated'
 import { Offline, type Connection } from '../src/wire/link'
 import { parseBotRecord, parseConfigured, parseDetails, parsePicture } from '../src/wire/parse'
@@ -19,7 +19,7 @@ const UNSUPPORTED = { ok: false, refusal: { kind: 'unsupported', message: "This 
 async function launched(fixture: Fixture) {
   const clock = manualClock()
   const script = scriptedDialer(fixture, { clock })
-  const hermes = openHermes({ dial: script, clock, client: { name: 'highwing-test', version: '0.0.0' } })
+  const hermes = openHermes({ ask: noAsk, dial: script, clock, client: { name: 'highwing-test', version: '0.0.0' } })
   await clock.advance(0)
   const calls = (method: string) => callsIn(script.received).filter(call => call.method === method)
   const bot = (id: BotId) => {

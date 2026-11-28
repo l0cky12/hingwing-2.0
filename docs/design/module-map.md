@@ -42,7 +42,7 @@ highwing-2.0/
           contract.generated.ts                           copied from Hermes by `pnpm sync:contract`
           contract.openrpc.json                           copied with it; read only by testing/ for key sets
           link.ts                                         dial, handshake, heartbeat, JSON-RPC, backoff, and `as(bot)`, which adds a bot's profile to a call
-          tickets.ts                                      mintWith: probe, attach and the ticket that reaches every profile, for both routes; liveRoute, readWith (one ticketed GET of the HTTP API)
+          tickets.ts                                      mintWith: probe, attach and the ticket that reaches every profile, for both routes; liveRoute, askWith (one ticketed request to the HTTP API)
           ssh.ts                                          Hermes's SSH client contract: the locator, one hermes command over ssh, its replies, the stderr table, the relay
           remote.ts                                       remoteRoute: a Dialer to the gateway on another machine, and its processes
           check.ts                                        checkTarget: Tailscale, ssh and Hermes, one step at a time

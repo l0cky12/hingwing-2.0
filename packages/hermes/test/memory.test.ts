@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { openHermes } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
-import { scriptedDialer, type Fixture, type MemoryScript } from '../src/testing/fixture'
+import { noAsk, scriptedDialer, type Fixture, type MemoryScript } from '../src/testing/fixture'
 import { BOUND, callsIn, WITH_BOTS } from './support/errand'
 
 const HOME: MemoryScript = {
@@ -17,7 +17,7 @@ const CANT = { ok: false, refusal: { kind: 'unsupported', message: "This Hermes 
 async function launched(more: Partial<Fixture['header']>, fixture: Fixture = WITH_BOTS) {
   const clock = manualClock()
   const script = scriptedDialer({ ...fixture, header: { ...fixture.header, ...more } }, { clock })
-  const hermes = openHermes({ dial: script, clock, client: { name: 'highwing-test', version: '0.0.0' } })
+  const hermes = openHermes({ ask: noAsk, dial: script, clock, client: { name: 'highwing-test', version: '0.0.0' } })
   await clock.advance(0)
   const run: typeof hermes.run = async command => {
     const answer = hermes.run(command)

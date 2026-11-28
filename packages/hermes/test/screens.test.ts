@@ -5,7 +5,7 @@ import { controlOf, newerLease, type Lease } from '../src/domain/screen'
 import { openHermes } from '../src/hub'
 import { screenDesk, THUMBNAIL_MS } from '../src/screens'
 import { manualClock } from '../src/testing/clock'
-import { scriptedDialer, type Display, type Fixture } from '../src/testing/fixture'
+import { noAsk, scriptedDialer, type Display, type Fixture } from '../src/testing/fixture'
 import { parseEvent, parseObserved, parseThumbnail } from '../src/wire/parse'
 import { BOUND, callsIn, WITH_BOTS } from './support/errand'
 
@@ -58,7 +58,7 @@ describe('the screen events', () => {
 async function launched(display: Display | undefined, fixture: Fixture = WITH_BOTS) {
   const clock = manualClock()
   const script = scriptedDialer({ ...fixture, header: { ...fixture.header, ...(display === undefined ? {} : { display }) } }, { clock })
-  const hermes = openHermes({ dial: script, clock, client: { name: 'highwing-test', version: '0.0.0' } })
+  const hermes = openHermes({ ask: noAsk, dial: script, clock, client: { name: 'highwing-test', version: '0.0.0' } })
   await clock.advance(0)
   const run: typeof hermes.run = async command => {
     const answer = hermes.run(command)

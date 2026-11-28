@@ -33,8 +33,7 @@ export interface RoutineRun {
 
 export const RUNS_SHOWN = 20
 
-export const runsPath = (routine: RoutineId, bot: BotId): string =>
-  `/api/cron/jobs/${encodeURIComponent(routine)}/runs?profile=${encodeURIComponent(bot)}&limit=${RUNS_SHOWN}`
+export const runsPath = (routine: RoutineId): string => `/api/cron/jobs/${encodeURIComponent(routine)}/runs?limit=${RUNS_SHOWN}`
 
 export const NO_REASON = 'Hermes gave no reason.'
 

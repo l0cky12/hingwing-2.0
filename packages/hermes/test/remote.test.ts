@@ -4,7 +4,7 @@ import type { Link } from '../src/domain/session'
 import { DialError, openHermes, remoteRoute, type Hermes, type Route } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
 import { FAKE_HOST, type FakeHost, type ScenarioName } from '../src/testing/fake-host'
-import { playToEnd } from '../src/testing/fixture'
+import { noAsk, playToEnd } from '../src/testing/fixture'
 import type { Loopback } from '../src/testing/loopback'
 import { UPGRADE_MS } from '../src/wire/ssh'
 import { ERRAND } from './support/errand'
@@ -21,7 +21,7 @@ const routeTo = (held: FakeHost, options: Parameters<typeof remoteRoute>[1] = {}
   closing(remoteRoute(FAKE_HOST, { sshBin: held.ssh, ...options }), route => route.dispose())
 
 const open = (route: Route): Hermes =>
-  closing(openHermes({ dial: route.dial, client: { name: 'highwing-test', version: '0' } }), hermes => hermes.close())
+  closing(openHermes({ ask: noAsk, dial: route.dial, client: { name: 'highwing-test', version: '0' } }), hermes => hermes.close())
 
 const linkIs = (hermes: Hermes, state: Link['state']) => until(`the link to be ${state}`, () => hermes.link.get().state === state)
 

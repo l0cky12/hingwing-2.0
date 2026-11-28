@@ -1,7 +1,7 @@
 import { machineOf, type SshHost } from '../domain/reach'
-import { DialError, dialWith, type Clock, type Dialer, type Mint, type ReadHermes } from './link'
+import { ASK_MS, DialError, dialWith, type AskHermes, type Clock, type Dialer, type Mint } from './link'
 import { relay, sshExec } from './ssh'
-import { mintWith, readWith, transcribeWith, type RunHermes } from './tickets'
+import { askWith, mintWith, transcribeWith, type RunHermes } from './tickets'
 import { TRANSCRIBE_MS, type Transcribe } from './transcribe'
 
 /** A way to reach one gateway, and the processes that way holds. */
@@ -9,8 +9,8 @@ export interface Route {
   readonly dial: Dialer
   /** Speech to text by this gateway's Hermes. */
   readonly transcribe: Transcribe
-  /** Reads the gateway's HTTP API as this route's user. */
-  readonly read: ReadHermes
+  /** Asks the gateway's HTTP API as this route's user. */
+  readonly ask: AskHermes
   /** Ends every process and relay of this route, and refuses later dials. Call it after closing the `Hermes` that dials through it. */
   dispose(): void
 }
@@ -48,10 +48,10 @@ export function remoteRoute(host: SshHost, options: { readonly sshBin?: string; 
       return local
     }
   })
-  const read = readWith(run, async origin => {
+  const ask = askWith(run, async origin => {
     const tunnel = tunnelOf(origin, 'http:')
     if (tunnel === null) throw new Error('Hermes named an HTTP address Highwing cannot forward.')
-    return `http://127.0.0.1:${await relay(host, tunnel.port, { ...options, signal })}`
+    return `http://127.0.0.1:${await relay(host, tunnel.port, { ...options, signal, firstByteMs: ASK_MS })}`
   })
 
   /** A dial that a dispose cut short fails as `dropped`, whatever its killed ssh looked like. */
@@ -72,5 +72,5 @@ export function remoteRoute(host: SshHost, options: { readonly sshBin?: string; 
     return `http://127.0.0.1:${await relay(host, port, { ...options, signal, firstByteMs: TRANSCRIBE_MS })}`
   })
 
-  return { dial: dialWith(mint), read, transcribe, dispose: () => life.abort() }
+  return { dial: dialWith(mint), ask, transcribe, dispose: () => life.abort() }
 }

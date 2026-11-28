@@ -4,10 +4,10 @@
  * one on another machine. Nothing here outlives a dial: the `--serve` run is sent one line and ends.
  */
 import { CHECK_FAILURES } from '../domain/reach'
-import { DialError, dialWith, EXIT_KINDS, GATEWAY_PROTOCOL, TICKET_PREFIX, type Clock, type Mint, type ReadHermes } from './link'
+import { ASK_MS, DialError, dialWith, EXIT_KINDS, GATEWAY_PROTOCOL, pathFor, TICKET_PREFIX, type AskHermes, type Clock, type Mint } from './link'
 import type { Route } from './remote'
-import { ASK_INTERACTIVE, ASK_NATIVE_HTTP, ATTACH, attachedOf, httpTicketOf, NOT_FOUND, originOf, PROBE, probeOf, runTool, SERVE, servedOf, type HermesArgs, type ProbeFailure, type SshRun } from './ssh'
-import { CANT_REACH, CANT_TRANSCRIBE, postWithTicket, transcriptOf, type Transcribe } from './transcribe'
+import { ASK_INTERACTIVE, askNativeHttp, ATTACH, attachedOf, httpTicketOf, NOT_FOUND, originOf, PROBE, probeOf, runTool, SERVE, servedOf, type HermesArgs, type ProbeFailure, type SshRun } from './ssh'
+import { CANT_REACH, CANT_TRANSCRIBE, requestWithTicket, TRANSCRIBE_MS, TRANSCRIBE_PATH, transcribeBody, transcriptOf, type Transcribe } from './transcribe'
 
 /** How a hermes command runs on the gateway's machine: `runTool` here, `sshExec` on another. */
 export type RunHermes = (args: HermesArgs, options: { readonly deadlineMs: number; readonly input?: string }) => Promise<SshRun>
@@ -21,7 +21,6 @@ const PROBE_MS = 20_000
 /** attach's own `--timeout`, plus ssh's ConnectTimeout and room to exit. */
 const ATTACH_MS = { start: 90_000, retry: 35_000 } as const
 const SERVE_MS = 20_000
-const READ_MS = 10_000
 const ATTACH_ONLY = { windowsServiceSession: false, interactive: false } as const
 
 export interface MintOptions {
@@ -99,14 +98,14 @@ const EXIT_AS_LOCATOR: Readonly<Record<'missing' | 'cut', number>> = { missing: 
  */
 export function transcribeWith(run: RunHermes, reach: (origin: string) => Promise<string>): Transcribe {
   return async (recording, signal) => {
-    const result = await run(SERVE, { deadlineMs: SERVE_MS, input: ASK_NATIVE_HTTP }).catch(() => null)
+    const result = await run(SERVE, { deadlineMs: SERVE_MS, input: askNativeHttp(null) }).catch(() => null)
     if (result === null || !result.ok) return CANT_REACH
     const served = servedOf(result.code, result.stdout)
     if (served.is === 'unsupported') return CANT_TRANSCRIBE
     const origin = originOf(result.stdout)
     if (served.is === 'failed' || origin === null) return CANT_REACH
     try {
-      const { status, body } = await postWithTicket(await reach(origin), served.ticket, recording, signal)
+      const { status, body } = await requestWithTicket(await reach(origin), served.ticket, { method: 'POST', path: TRANSCRIBE_PATH, json: transcribeBody(recording), ms: TRANSCRIBE_MS }, signal)
       return transcriptOf(status, body)
     } catch {
       return CANT_REACH
@@ -114,19 +113,17 @@ export function transcribeWith(run: RunHermes, reach: (origin: string) => Promis
   }
 }
 
-/** A fresh ticket per GET: Hermes's ticket is single use and lives 30 seconds (gateway-ssh-clients.md, client rule 3). */
-export function readWith(run: RunHermes, forward: (origin: string) => Promise<string>, fetcher: typeof fetch = fetch): ReadHermes {
-  return async path => {
-    const serve = await run(SERVE, { deadlineMs: SERVE_MS, input: ASK_NATIVE_HTTP })
+/**
+ * A fresh ticket per ask: Hermes's ticket is single use and lives 30 seconds (gateway-ssh-clients.md, "Using an HTTP ticket"; gateway/runtime_bootstrap.py:26). A named bot
+ * gets a ticket bound to its profile, and its `profile` query, so a Hermes whose `--serve` ignores the line's profile mints a
+ * launch-profile ticket that Hermes then refuses with 403 (dashboard_auth/native_http.py:45-59).
+ */
+export function askWith(run: RunHermes, forward: (origin: string) => Promise<string>): AskHermes {
+  return async ask => {
+    const serve = await run(SERVE, { deadlineMs: SERVE_MS, input: askNativeHttp(ask.bot) })
     const minted = serve.ok ? httpTicketOf(serve.code, serve.stdout) : null
     if (minted === null) throw new Error('Hermes minted no ticket for its HTTP API.')
-    const response = await fetcher(`${await forward(minted.origin)}${path}`, {
-      // Never followed, so the ticket goes only to the address the gateway named.
-      redirect: 'manual',
-      signal: AbortSignal.timeout(READ_MS),
-      headers: { accept: 'application/json', 'x-hermes-gateway-ticket': minted.ticket }
-    })
-    return { status: response.status, body: await response.json().catch(() => null) }
+    return requestWithTicket(await forward(minted.origin), minted.ticket, { method: ask.method, path: pathFor(ask), ms: ASK_MS, ...(ask.method === 'PUT' ? { json: ask.json } : {}) })
   }
 }
 
@@ -139,5 +136,5 @@ export function liveRoute(options: { readonly hermesBin?: string; readonly clock
     return { ok: true, code: EXIT_AS_LOCATOR[tool.end], stdout: '' }
   }
   const here = async (url: string) => url
-  return { dial: dialWith(mintWith(run, { machine: null, forward: here, unprobed: 'attach' })), read: readWith(run, here), transcribe: transcribeWith(run, here), dispose: () => {} }
+  return { dial: dialWith(mintWith(run, { machine: null, forward: here, unprobed: 'attach' })), ask: askWith(run, here), transcribe: transcribeWith(run, here), dispose: () => {} }
 }

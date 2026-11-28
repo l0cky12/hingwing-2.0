@@ -4,7 +4,7 @@ import type { SessionId, SettledTurn, TurnId } from '../src/domain/session'
 import { cleanTitle, TITLE_INSTRUCTIONS, titleInput } from '../src/domain/title'
 import { openHermes } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
-import { scriptedDialer, type Fixture, type Oneshot } from '../src/testing/fixture'
+import { noAsk, scriptedDialer, type Fixture, type Oneshot } from '../src/testing/fixture'
 import { callsIn, DOWNLOADS, INVOICES, REMINDER, WITH_CHATS } from './support/errand'
 
 const RESEARCH = 'research' as BotId
@@ -64,7 +64,7 @@ describe('what Hermes reads to suggest a title', () => {
 async function launched(oneshot: Oneshot | undefined, more: Partial<Fixture['header']> = {}) {
   const clock = manualClock()
   const script = scriptedDialer({ ...WITH_CHATS, header: { ...WITH_CHATS.header, ...(oneshot === undefined ? {} : { oneshot }), ...more } }, { clock })
-  const hermes = openHermes({ dial: script, clock, client: { name: 'highwing-test', version: '0.0.0' } })
+  const hermes = openHermes({ ask: noAsk, dial: script, clock, client: { name: 'highwing-test', version: '0.0.0' } })
   await clock.advance(0)
   await hermes.run({ do: 'open', ref: { kind: 'bot', bot: RESEARCH } })
   await clock.advance(0)

@@ -5,7 +5,7 @@ import type { BotDraft, BotId } from '../src/domain/bots'
 import type { ModelOption } from '../src/domain/session'
 import { openHermes } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
-import { scriptedDialer, type Fixture } from '../src/testing/fixture'
+import { noAsk, scriptedDialer, type Fixture } from '../src/testing/fixture'
 import { Offline, RpcRefusal, type Connection } from '../src/wire/link'
 import { parseCreated } from '../src/wire/parse'
 import { BOUND, callsIn, ERRAND, WITH_BOTS } from './support/errand'
@@ -18,7 +18,7 @@ const PICTURE = `data:image/png;base64,${Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x
 async function launched(fixture: Fixture) {
   const clock = manualClock()
   const script = scriptedDialer(fixture, { clock })
-  const hermes = openHermes({ dial: script, clock, client: { name: 'highwing-test', version: '0.0.0' } })
+  const hermes = openHermes({ ask: noAsk, dial: script, clock, client: { name: 'highwing-test', version: '0.0.0' } })
   await clock.advance(0)
   const calls = (method: string) => callsIn(script.received).filter(call => call.method === method)
   const names = () => {
@@ -122,7 +122,7 @@ describe('createBot through the hub', () => {
 
   it('is offline, with nothing sent, while the link is down', async () => {
     const clock = manualClock()
-    const hermes = openHermes({ dial: () => Promise.reject(new Error('down')), clock, client: { name: 'highwing-test', version: '0.0.0' } })
+    const hermes = openHermes({ ask: noAsk, dial: () => Promise.reject(new Error('down')), clock, client: { name: 'highwing-test', version: '0.0.0' } })
     expect(await hermes.run({ do: 'createBot', draft: RAE, picture: null })).toEqual({ ok: false, refusal: { kind: 'offline', message: "Highwing isn't connected to Hermes right now." } })
   })
 })

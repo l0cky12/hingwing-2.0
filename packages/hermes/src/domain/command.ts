@@ -7,7 +7,7 @@ import type { ChatRef, Unstarted } from './open'
 import type { BotManagers, ManagerName } from './passwords'
 import type { PathMatch } from './path'
 import type { Plugin, PluginInstalled, PluginSwitched } from './plugins'
-import type { Toolset } from './toolsets'
+import type { ToolsetsRead, ToolsetSwitched } from './toolsets'
 import type { Added, ServerSetup, ToolServer } from './tool-servers'
 import type { Routine, RoutineAction, RoutineId } from './routines'
 import type { ChatVersions } from './versions'
@@ -211,8 +211,16 @@ export type Command =
    * at the commit the catalog pins, so Highwing never names a repository. A refused install answers Hermes's words.
    */
   | { readonly do: 'installPlugin'; readonly bot: BotId | null; readonly name: string }
-  /** The toolsets Hermes has, each on or off for the chat `sessionId` names, or for the launch profile when it is null or a chat Hermes does not hold. */
-  | { readonly do: 'tools'; readonly sessionId: SessionId | null }
+  /**
+   * The toolsets of `bot`, or of the launch profile for null, each on or off in that profile's config. A Hermes that cannot switch them
+   * answers the older read, the toolsets of the chat `sessionId` names or, when it is null or a chat Hermes does not hold, of the launch
+   * profile, with `locked` saying why none has a switch.
+   */
+  | { readonly do: 'tools'; readonly bot: BotId | null; readonly sessionId: SessionId | null }
+  /**
+   * Turns the toolset `name` on or off in the config of `bot`, or of the launch profile for null.
+   */
+  | { readonly do: 'setToolset'; readonly bot: BotId | null; readonly name: string; readonly enabled: boolean }
   /**
    * Makes the group chat, lists it in `groups` and shows it. The same draft sent again makes no second group: Hermes
    * answers a repeated id with the group it already made.
@@ -319,7 +327,8 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'plugins' } ? readonly Plugin[]
   : C extends { do: 'setPlugin' } ? PluginSwitched
   : C extends { do: 'installPlugin' } ? PluginInstalled
-  : C extends { do: 'tools' } ? readonly Toolset[]
+  : C extends { do: 'tools' } ? ToolsetsRead
+  : C extends { do: 'setToolset' } ? ToolsetSwitched
   : C extends { do: 'pickModel' } ? ModelConfirm | null
   : C extends { do: 'contextBreakdown' } ? ContextBreakdown
   : C extends { do: 'accountUsage' } ? AccountReport

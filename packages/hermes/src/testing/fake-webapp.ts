@@ -6,7 +6,7 @@
  * - `/auth/native/authorize` takes S256 only, and a redirect that is http to a loopback IP literal;
  * - a code works once, for 120 s, and only with the verifier of its challenge;
  * - a refresh token works once: each refresh returns a new pair and ends the old one;
- * - `/api/auth/ws-ticket` and the kanban board answer 401 without the bearer of a live sign-in;
+ * - `/api/auth/ws-ticket`, the kanban board and the toolset routes answer 401 without the bearer of a live sign-in;
  * - the socket is behind the loopback gate: one single-use ticket, no `Origin`.
  * It has no sign-in page. Its user is `browse`, which follows the authorize address as the browser
  * of a user who signs in at once.
@@ -77,6 +77,8 @@ export interface FakeWebapp {
   readonly pages: readonly string[]
   readonly secrets: readonly string[]
   readonly requests: readonly string[]
+  /** Each request as the server got it, with its query: `PUT /api/tools/toolsets/browser?profile=rae`. */
+  readonly urls: readonly string[]
   lapse(): void
   signOut(): void
   close(): Promise<void>
@@ -94,6 +96,8 @@ interface Asked {
   readonly bearer: string | null
   readonly body: Readonly<Record<string, unknown>>
 }
+
+const UNAUTHORIZED = { status: 401, json: { error: 'unauthenticated', detail: 'Unauthorized' } } as const
 
 type Reply =
   | { readonly status: number; readonly json: unknown }
@@ -156,6 +160,7 @@ export async function fakeWebapp(
   const prefix = options.prefix ?? ''
   const secrets: string[] = []
   const requests: string[] = []
+  const urls: string[] = []
   const opened: string[] = []
   const pages: string[] = []
   const pending = new Map<string, { readonly challenge: string; readonly redirect: string; readonly state: string; readonly expires: number }>()
@@ -177,6 +182,7 @@ export async function fakeWebapp(
     }
   }
 
+  const live = (bearer: string | null) => bearer !== null && [...signIns.values()].includes(bearer)
   const routes: Readonly<Record<string, (asked: Asked) => Reply>> = {
     'GET /api/status': () => {
       const status = STATUS[scenario.status]
@@ -234,15 +240,19 @@ export async function fakeWebapp(
       const audio = /^data:audio\/[^,]*;base64,(.+)$/.exec(String(body.data_url ?? ''))?.[1]
       return audio === undefined ? refused(400, 'Invalid audio payload') : { status: 200, json: { ok: true, transcript: `heard ${Buffer.from(audio, 'base64').byteLength} bytes`, provider: 'fake' } }
     },
+    /** Hermes's toolset routes (hermes_cli/web_routers/tools.py:224-336): a switch answers with the state it was sent. */
+    'GET /api/tools/toolsets': ({ bearer }) =>
+      live(bearer) ? { status: 200, json: [{ name: 'browser', label: 'Browser', description: 'Open pages.', platform: 'cli', platform_label: 'CLI', enabled: true, available: true, configured: true, tools: ['browser_open'] }] } : UNAUTHORIZED,
+    'PUT /api/tools/toolsets/browser': ({ bearer, body }) =>
+      !live(bearer) ? UNAUTHORIZED : { status: 200, json: { ok: true, name: 'browser', platform: 'cli', enabled: body.enabled === true, post_setup_started: false } },
     [`GET ${BOARD_PATH}`]: ({ bearer }) =>
-      bearer !== null && [...signIns.values()].includes(bearer)
-        ? { status: 200, json: { columns: [{ name: 'todo', tasks: [] }] } }
-        : { status: 401, json: { error: 'unauthenticated', detail: 'Unauthorized' } }
+      live(bearer) ? { status: 200, json: { columns: [{ name: 'todo', tasks: [] }] } } : UNAUTHORIZED
   }
 
   const serve = async (request: IncomingMessage, response: ServerResponse) => {
     const { pathname, searchParams } = new URL(request.url ?? '/', 'http://fake-webapp')
     requests.push(`${request.method} ${pathname}`)
+    urls.push(`${request.method} ${request.url}`)
     const route = pathname.startsWith(`${prefix}/`) ? routes[`${request.method} ${pathname.slice(prefix.length)}`] : undefined
     const bearer = /^Bearer (.+)$/.exec(request.headers.authorization ?? '')?.[1] ?? null
     const reply = route === undefined ? refused(404, 'Not Found') : route({ query: searchParams, bearer, body: await bodyOf(request) })
@@ -267,6 +277,7 @@ export async function fakeWebapp(
     pages,
     secrets,
     requests,
+    urls,
     browse: async url => {
       opened.push(url)
       if (scenario.user === 'signs-in') void fetch(url).then(page => page.text()).then(text => void pages.push(text), () => {})

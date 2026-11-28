@@ -1,5 +1,5 @@
 import {
-  APPROVAL_WORDS, BOT_TEMPLATES, botsIn, CONNECTOR_FILTERS, connectorsView, pluginsView, scheduleWords, shownBot, shownChat, STANDING_WORDS, TOOLSET_WORDS, type BotCreated, type BotTemplate, type TemplateAnswers, type CatalogPlugin, type CommandOutcome, type AppEntry, type AppsBoard, type BotId, type Bots, type ConnectorFilter, type ConnectorShelf, type ConnectorsQuery, type ConnectorsView, type ServerSetup, type Toolset, type ToolServer
+  APPROVAL_WORDS, BOT_TEMPLATES, botsIn, CONNECTOR_FILTERS, connectorsView, pluginsView, scheduleWords, shownBot, shownChat, STANDING_WORDS, TOOLSET_WORDS, type BotCreated, type BotTemplate, type TemplateAnswers, type CatalogPlugin, type CommandOutcome, type AppEntry, type AppsBoard, type BotId, type Bots, type ConnectorFilter, type ConnectorShelf, type ConnectorsQuery, type ConnectorsView, type ServerSetup, type SessionId, type Toolset, type ToolServer
 } from '@highwing/hermes/domain'
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { nameProblem } from '../bots/bot-form'
@@ -507,15 +507,48 @@ function PluginsPanel({ name, plugins }: { readonly name: string; readonly plugi
   )
 }
 
-function ToolsPanel({ read }: { readonly read: Listed<Toolset> }) {
+type ToolsetsState = { readonly at: 'reading' } | { readonly at: 'read'; readonly for: BotId | null; readonly toolsets: readonly Toolset[]; readonly locked: string | null } | { readonly at: 'refused'; readonly words: string }
+
+function useToolsets(bot: BotId | null, sessionId: SessionId | null) {
+  const [read, setRead] = useState<ToolsetsState>({ at: 'reading' })
+  useEffect(() => {
+    let stopped = false
+    setRead({ at: 'reading' })
+    void run({ do: 'tools', bot, sessionId }).then(outcome => {
+      if (!stopped) setRead(outcome.ok ? { at: 'read', for: bot, ...outcome.value } : { at: 'refused', words: outcome.refusal.message })
+    })
+    return () => { stopped = true }
+  }, [bot, sessionId])
+  const switches = useSwitches(bot, read.at === 'read' && read.locked === null ? read.toolsets : null, toolset => toolset.name, async (toolset, enabled) => {
+    const done = await run({ do: 'setToolset', bot, name: toolset.name, enabled })
+    if (done.ok) {
+      const { name, enabled: now } = done.value
+      setRead(held => (held.at === 'read' && held.for === bot ? { ...held, toolsets: held.toolsets.map(row => (row.name === name ? { ...row, enabled: now } : row)) } : held))
+    }
+    return done
+  })
+  return { read, ...switches }
+}
+
+interface ToolsetListProps {
+  readonly name: string
+  readonly toolsets: readonly Toolset[]
+  readonly locked: string | null
+  readonly of: (toolset: Toolset) => { readonly checked: boolean; readonly disabled: boolean; readonly onChange: () => void }
+}
+
+export function ToolsetList({ name, toolsets, locked, of }: ToolsetListProps) {
   return (
     <>
-      {read.at === 'reading' && <p className="hub-note" role="status">Asking Hermes…</p>}
-      {read.at === 'refused' && <p className="hub-note" role="alert">{read.words}</p>}
-      {read.at === 'read' && read.items.length === 0 && <p className="hub-note">Hermes has no toolsets.</p>}
-      {read.at === 'read' && read.items.length > 0 && (
+      {locked === null ? <p className="hub-lead">{`Changes reach each of ${name}'s chats from its next message. Group chats keep the tools they started with.`}</p> : <p className="hub-note">{locked}</p>}
+      {toolsets.length === 0 && <p className="hub-note">Hermes has no toolsets.</p>}
+      {toolsets.length > 0 && (
         <ul className="hub-grid">
-          {read.items.map(toolset => (
+          {toolsets.map(toolset => locked === null ? (
+            <Card key={toolset.name} name={toolset.label} {...(toolset.place === null ? {} : { kind: toolset.place })} detail={toolset.description}>
+              <input type="checkbox" role="switch" className="hub-switch" aria-label={`Use ${toolset.label}`} {...of(toolset)} />
+            </Card>
+          ) : (
             <Card
               key={toolset.name} name={toolset.name} detail={toolset.description} toolNames={namedTools(toolset.tools)}
               state={toolset.enabled ? { standing: 'on', words: `On · ${toolCount(toolset.toolCount)}` } : { standing: 'off', words: 'Off' }}
@@ -523,6 +556,17 @@ function ToolsPanel({ read }: { readonly read: Listed<Toolset> }) {
           ))}
         </ul>
       )}
+    </>
+  )
+}
+
+function ToolsPanel({ name, tools: { read, problem, of } }: { readonly name: string; readonly tools: ReturnType<typeof useToolsets> }) {
+  return (
+    <>
+      {read.at === 'reading' && <p className="hub-note" role="status">Asking Hermes…</p>}
+      {read.at === 'refused' && <p className="hub-note" role="alert">{read.words}</p>}
+      {read.at === 'read' && <ToolsetList name={name} toolsets={read.toolsets} locked={read.locked} of={of} />}
+      {problem !== null && <p className="hub-note" role="alert">{problem}</p>}
     </>
   )
 }
@@ -577,7 +621,7 @@ export function Connectors({ onClose }: { readonly onClose: () => void }) {
   const switches = useSkillSwitches()
   const sessionId = shownChat(open)?.sessionId ?? null
   const plugins = usePlugins(bot)
-  const [toolsets] = useListed(() => run({ do: 'tools', sessionId }), sessionId)
+  const toolsets = useToolsets(bot, sessionId)
   const apps = useApps(bot)
   const servers = useToolServers(bot)
   const [query, setQuery] = useState<ConnectorsQuery>({ text: '', filter: 'all' })
@@ -587,7 +631,7 @@ export function Connectors({ onClose }: { readonly onClose: () => void }) {
     skills: switches.library?.state === 'listed' ? switches.library.skills.length : null,
     plugins: plugins.read.at === 'read' ? plugins.read.items.length : null,
     connectors: reading ? null : view.total,
-    tools: toolsets.at === 'read' ? toolsets.items.length : null,
+    tools: toolsets.read.at === 'read' ? toolsets.read.toolsets.length : null,
     templates: BOT_TEMPLATES.length
   }
 
@@ -636,7 +680,7 @@ export function Connectors({ onClose }: { readonly onClose: () => void }) {
           <div role="tabpanel" id={`${ids}-skills-panel`} aria-labelledby={`${ids}-skills`} hidden={tab !== 'skills'}><SkillsPanel name={name} switches={switches} /></div>
           <div role="tabpanel" id={`${ids}-plugins-panel`} aria-labelledby={`${ids}-plugins`} hidden={tab !== 'plugins'}><PluginsPanel name={name} plugins={plugins} /></div>
           <div role="tabpanel" id={`${ids}-connectors-panel`} aria-labelledby={`${ids}-connectors`} hidden={tab !== 'connectors'}><ConnectorsPanel apps={apps} servers={servers} view={view} reading={reading} query={query} onQuery={setQuery} /></div>
-          <div role="tabpanel" id={`${ids}-tools-panel`} aria-labelledby={`${ids}-tools`} hidden={tab !== 'tools'}><ToolsPanel read={toolsets} /></div>
+          <div role="tabpanel" id={`${ids}-tools-panel`} aria-labelledby={`${ids}-tools`} hidden={tab !== 'tools'}><ToolsPanel name={name} tools={toolsets} /></div>
           <div role="tabpanel" id={`${ids}-templates-panel`} aria-labelledby={`${ids}-templates`} hidden={tab !== 'templates'}><TemplatesPanel /></div>
         </div>
       </main>

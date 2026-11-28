@@ -1,0 +1,6 @@
+[
+  { "name": "browser", "label": "Browser Automation", "description": "navigate, click, type, scroll", "platform": "cli", "platform_label": "CLI", "enabled": true, "available": true, "configured": true, "tools": ["browser_cdp", "browser_dialog", "browser_exec", "browser_vault"] },
+  { "name": "file", "label": "File Operations", "description": "read, write, patch, search", "platform": "cli", "platform_label": "CLI", "enabled": true, "available": true, "configured": true, "tools": ["patch", "read_file", "search_files", "write_file"] },
+  { "name": "image_gen", "label": "Image Generation", "description": "image_generate", "platform": "cli", "platform_label": "CLI", "enabled": false, "available": false, "configured": true, "tools": ["image_generate"] },
+  { "name": "discord", "label": "Discord (read/participate)", "description": "fetch messages, search members, create thread", "platform": "discord", "platform_label": "Discord", "enabled": false, "available": false, "configured": true, "tools": ["discord"] }
+]

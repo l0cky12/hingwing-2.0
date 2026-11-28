@@ -38,7 +38,7 @@ function ways(plans: ReadonlyMap<Target, Plan>, pick: PickMode = 'fastest', list
           sockets.set(target, state)
           return { reach: 'host', send: () => {}, close: () => { state.closed = true }, onText: null, onClose: null, name: name(target) } as WireSocket
         },
-        read: async () => ({ status: 200, body: name(target) }),
+        ask: async () => ({ status: 200, body: name(target) }),
         transcribe: async () => ({ ok: true, value: name(target) }),
         dispose: () => void log.push(`dispose ${name(target)}`)
       }
@@ -148,7 +148,7 @@ describe('pickedRoute', () => {
     await expect(first).rejects.toMatchObject({ kind: 'dropped' })
     expect(sockets.get(LAN)?.closed).toBe(true)
     expect(picks.map(({ using }) => using)).toEqual([TAILNET])
-    expect(await route.read('/api/x')).toEqual({ status: 200, body: 'tailnet' })
+    expect(await route.ask({ method: 'GET', path: '/api/x', bot: null })).toEqual({ status: 200, body: 'tailnet' })
   })
 
   it('picks again when the pick changed while a dial was in flight, and closes a socket the new pick would not take', async () => {
@@ -199,9 +199,9 @@ describe('pickedRoute', () => {
 
   it('reads and transcribes through the first way until one connects, then through the way in use', async () => {
     const { route, dial } = ways(planned([[TAILNET, { ms: 120 }], [LAN, { ms: 15 }]]))
-    expect(await route.read('/api/x')).toEqual({ status: 200, body: 'tailnet' })
+    expect(await route.ask({ method: 'GET', path: '/api/x', bot: null })).toEqual({ status: 200, body: 'tailnet' })
     await dial()
-    expect(await route.read('/api/x')).toEqual({ status: 200, body: 'lan' })
+    expect(await route.ask({ method: 'GET', path: '/api/x', bot: null })).toEqual({ status: 200, body: 'lan' })
     expect(await route.transcribe({ bytes: new Uint8Array(), type: 'audio/webm' } as never)).toEqual({ ok: true, value: 'lan' })
   })
 
@@ -214,7 +214,7 @@ describe('pickedRoute', () => {
     log.length = 0
     expect((await dial()).name).toBe('tailnet')
     expect(log).toEqual(['dial tailnet'])
-    expect(await route.read('/api/x')).toEqual({ status: 200, body: 'tailnet' })
+    expect(await route.ask({ method: 'GET', path: '/api/x', bot: null })).toEqual({ status: 200, body: 'tailnet' })
   })
 
   it('arrange disposes no way that stays, and the next dial takes a way it added', async () => {

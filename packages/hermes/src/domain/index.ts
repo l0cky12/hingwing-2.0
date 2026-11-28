@@ -22,7 +22,7 @@ export type { Added, Header, ServerSetup, ServerState, Tested, ToolServer } from
 export type { PathMatch } from './path'
 export { isManagerName, MANAGER_NAMES, MANAGERS, type BotManagers, type FirstTime, type Manager, type ManagerFacts, type ManagerName, type ManagerState } from './passwords'
 export { CATALOG_TIERS, parsePluginCatalog, pluginsView, type CatalogPlugin, type CatalogTier, type Plugin, type PluginInstalled, type PluginsView, type PluginSwitched } from './plugins'
-export type { Toolset } from './toolsets'
+export { parseBotToolsets, toolsetPath, TOOLSETS_PATH, type Toolset, type ToolsetsRead, type ToolsetSwitched } from './toolsets'
 export type { Skill, SkillLibrary } from './skills'
 export { ROUTINE_ACTIONS, type Routine, type RoutineAction, type RoutineId } from './routines'
 export { mentionedBots, mentionOf, typedMention } from './mention'

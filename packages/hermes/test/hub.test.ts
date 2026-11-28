@@ -6,7 +6,7 @@ import type { AttachmentId, BranchId, Item, PromptId, RequestId, Session, Sessio
 import { DialError, openHermes, RETAIN_MS, type Dialer, type HermesOptions, type WireSocket } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
 import { RELAY_POLL_MS } from '../src/relay'
-import { MASKED, play, scriptedDialer, type Fixture, type FixtureStep, type GroupsScript, type Moment, type ScriptOptions } from '../src/testing/fixture'
+import { MASKED, noAsk, play, scriptedDialer, type Fixture, type FixtureStep, type GroupsScript, type Moment, type ScriptOptions } from '../src/testing/fixture'
 import {
   BOUND, BRANCH, BRANCH_COMPACTED, BRANCH_OLD, callsIn, DOWNLOADS, EDIT_COMPACTED, ERRAND, INVOICES, LAUNCH, LAUNCH_GROUP, LAUNCH_NO_GROUPS, NO_HOME_CHAT, NO_TREE, paramsOf, PICK, PICK_ASK, PICK_DECLINED, PROFILES, RAE_SAID,
   REGENERATE_TEAM, REMINDER, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH, stepOf, SORTED, SORTED_2, SORTED_3, SUDO, SUDO_ASK, TEAM, TEAM_NO_RELAY, WITH_BOTS, WITH_CHATS, WITH_VERSIONS, withGroups, withSteps
@@ -26,7 +26,7 @@ function open(fixture: Fixture = ERRAND, options: ScriptOptions & Partial<Hermes
     starts.push(request.start)
     return state.failWith === null ? script(request) : Promise.reject(state.failWith)
   }
-  const client = (more: Partial<HermesOptions> = {}) => openHermes({ dial, clock, client: CLIENT, onDiagnostic: what => diagnostics.push(what), ...options, ...more })
+  const client = (more: Partial<HermesOptions> = {}) => openHermes({ ask: noAsk, dial, clock, client: CLIENT, onDiagnostic: what => diagnostics.push(what), ...options, ...more })
   const hermes = client()
   const seen: Session[] = []
   const sent = () => callsIn(script.received)
@@ -1088,7 +1088,7 @@ describe('sending a slash line', () => {
         set onClose(listener) { socket.onClose = listener }
       } satisfies WireSocket
     }
-    const hermes = openHermes({ dial: unanswered, clock, client: CLIENT })
+    const hermes = openHermes({ ask: noAsk, dial: unanswered, clock, client: CLIENT })
     await clock.advance(0)
     expect(await hermes.run({ do: 'send', sessionId: SESSION, text: 'hello' })).toEqual({ ok: true, value: null })
     let settled = false
@@ -1726,7 +1726,7 @@ describe('a group chat', () => {
     let socket: WireSocket | null = null
     let dials = 0
     const dial: Dialer = async request => (socket = await scripts[Math.min(dials++, scripts.length - 1)]!(request))
-    const hermes = openHermes({ dial, clock, client: CLIENT })
+    const hermes = openHermes({ ask: noAsk, dial, clock, client: CLIENT })
     const sent = () => scripts.flatMap(script => callsIn(script.received))
     return { clock, hermes, scripts, sent, drop: () => socket?.onClose?.(1006, 'dropped') }
   }
@@ -1850,7 +1850,7 @@ describe('a group chat', () => {
     const opened = dropping(withGroups({ change_events: false, rooms: [ROOM, STANDUP], turns: { default: [{ hold: true }] } }))
     await opened.clock.advance(0)
     expect(opened.hermes.groups.get()).toMatchObject({ rows: [{ id: PLAN, answering: [] }, { id: 'standup', answering: [] }] })
-    const other = openHermes({ dial: opened.scripts[0]!, clock: opened.clock, client: CLIENT })
+    const other = openHermes({ ask: noAsk, dial: opened.scripts[0]!, clock: opened.clock, client: CLIENT })
     await opened.clock.advance(0)
     expect(await other.run({ do: 'sendToGroup', group: PLAN, text: 'Ship it?' })).toEqual({ ok: true, value: undefined })
     await opened.clock.advance(60_000)
@@ -1900,7 +1900,7 @@ describe('a group chat', () => {
         set onClose(listener) { socket.onClose = listener }
       } satisfies WireSocket
     }
-    const hermes = openHermes({ dial, clock, client: CLIENT, mintId: () => `key-${++keys}` })
+    const hermes = openHermes({ ask: noAsk, dial, clock, client: CLIENT, mintId: () => `key-${++keys}` })
     await clock.advance(0)
     await hermes.run({ do: 'open', ref: { kind: 'group', group: PLAN } })
     await clock.advance(0)

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { openHermes, type Hermes } from '@highwing/hermes'
 import { shownChat, type BotId, type Command, type PromptId, type SessionId } from '@highwing/hermes/domain'
-import { loadFixture, scriptedDialer, type Fixture, type FixtureStep } from '@highwing/hermes/testing'
+import { loadFixture, noAsk, scriptedDialer, type Fixture, type FixtureStep } from '@highwing/hermes/testing'
 import { afterEach, describe, expect, it } from 'vitest'
 import { OFF, type Intro } from '../src/intro'
 import type { Notices, Setup } from '../src/ipc-contract'
@@ -32,7 +32,7 @@ afterEach(async () => {
 /** Main's notifications for a Hermes on the scripted gateway, reached over a real socket, with the window focused on whatever `open` shows. */
 function served(fixture: Fixture, kinds: Notices = ON) {
   const dial = scriptedDialer(fixture, { transport: 'loopback' })
-  const hermes = openHermes({ dial, client: { name: 'highwing-test', version: '0.0.0' } })
+  const hermes = openHermes({ ask: noAsk, dial, client: { name: 'highwing-test', version: '0.0.0' } })
   const shown: { notice: Notice; click: () => void }[] = []
   let raised = 0
   const setup = { get: (): Setup => ({ at: 'pinned' }), subscribe: () => () => {} }

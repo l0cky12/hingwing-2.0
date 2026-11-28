@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { BotId } from '../src/domain/bots'
 import { openHermes } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
-import { scriptedDialer, type CronScript, type Fixture } from '../src/testing/fixture'
+import { noAsk, scriptedDialer, type CronScript, type Fixture } from '../src/testing/fixture'
 import type { RoutineId } from '../src/domain/routines'
 import { parseControlled, parseRoutines } from '../src/wire/parse'
 import { BOUND, callsIn, SESSION, WITH_BOTS } from './support/errand'
@@ -23,7 +23,7 @@ const withCron = (cron: CronScript, base: Fixture = WITH_BOTS): Fixture => ({ ..
 async function launched(fixture: Fixture) {
   const clock = manualClock()
   const script = scriptedDialer(fixture, { clock })
-  const hermes = openHermes({ dial: script, clock, client: { name: 'highwing-test', version: '0.0.0' } })
+  const hermes = openHermes({ ask: noAsk, dial: script, clock, client: { name: 'highwing-test', version: '0.0.0' } })
   await clock.advance(0)
   return { clock, hermes, calls: (method: string) => callsIn(script.received).filter(call => call.method === method) }
 }

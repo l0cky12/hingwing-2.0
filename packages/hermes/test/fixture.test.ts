@@ -7,7 +7,7 @@ import type { BotId } from '../src/domain/bots'
 import type { RoutineId } from '../src/domain/routines'
 import { parseRoutineRuns, runsPath } from '../src/domain/runs'
 import { BOARD_PATH, taskPath } from '../src/domain/tasks'
-import { type FixtureStep, fixtureRead, loadFixture } from '../src/testing/fixture'
+import { type FixtureStep, fixtureAsk, loadFixture } from '../src/testing/fixture'
 import { checkParams } from '../src/testing/params'
 import { GATEWAY_EVENT_TYPES } from '../src/wire/contract.generated'
 
@@ -267,19 +267,21 @@ describe('loadFixture', () => {
     })
 
     it('answers the board, a card by its path, and a 404 for any other path', async () => {
-      const read = fixtureRead({ kanban })
-      expect(await read(BOARD_PATH)).toEqual({ status: 200, body: kanban.board })
-      expect(await read(taskPath('t_1'))).toEqual({ status: 200, body: kanban.tasks.t_1 })
-      expect(await read(taskPath('t_9'))).toMatchObject({ status: 404 })
-      expect(await read('/api/status')).toMatchObject({ status: 404 })
+      const get = (path: string) => fixtureAsk({ kanban })({ method: 'GET', path, bot: null })
+      expect(await get(BOARD_PATH)).toEqual({ status: 200, body: kanban.board })
+      expect(await get(taskPath('t_1'))).toEqual({ status: 200, body: kanban.tasks.t_1 })
+      expect(await get(taskPath('t_9'))).toMatchObject({ status: 404 })
+      expect(await get('/api/status')).toMatchObject({ status: 404 })
     })
 
     it('answers 404 to every path when the fixture has no kanban, as a Hermes without the plugin does', async () => {
-      expect(await fixtureRead({})(BOARD_PATH)).toMatchObject({ status: 404 })
+      expect(await fixtureAsk({})({ method: 'GET', path: BOARD_PATH, bot: null })).toMatchObject({ status: 404 })
     })
   })
 
   describe("a routine's run history", () => {
+    const reader = (held: Parameters<typeof fixtureAsk>[0]) => (path: string) => fixtureAsk(held)({ method: 'GET', path, bot: null })
+
     const fixtureFile = (name: string) => JSON.parse(readFileSync(fileURLToPath(new URL(`../../../fixtures/${name}`, import.meta.url)), 'utf8')) as Record<string, unknown>
 
     const cron = { jobs: [], profiles: { rae: [{ job_id: 'a1' }, { job_id: 'b2' }] }, history: { a1: { runs: [{ id: 's1' }], limit: 20 } } }
@@ -293,26 +295,26 @@ describe('loadFixture', () => {
     })
 
     it("answers a job's runs reply whatever profile and limit the path asks for, and 404 for a job with no history, as an older Hermes does", async () => {
-      const read = fixtureRead({ cron })
-      expect(await read(runsPath('a1' as RoutineId, 'rae' as BotId))).toEqual({ status: 200, body: cron.history.a1 })
+      const read = reader({ cron })
+      expect(await read(runsPath('a1' as RoutineId))).toEqual({ status: 200, body: cron.history.a1 })
       expect(await read('/api/cron/jobs/a1/runs')).toEqual({ status: 200, body: cron.history.a1 })
-      expect(await read(runsPath('b2' as RoutineId, 'rae' as BotId))).toMatchObject({ status: 404 })
-      expect(await read(runsPath('constructor' as RoutineId, 'rae' as BotId))).toMatchObject({ status: 404 })
+      expect(await read(runsPath('b2' as RoutineId))).toMatchObject({ status: 404 })
+      expect(await read(runsPath('constructor' as RoutineId))).toMatchObject({ status: 404 })
       expect(await read('/api/cron/jobs/%E0%A4%A/runs')).toMatchObject({ status: 404 })
       expect(await read('/api/cron/jobs/a1')).toMatchObject({ status: 404 })
-      expect(await fixtureRead({})(runsPath('a1' as RoutineId, 'rae' as BotId))).toMatchObject({ status: 404 })
+      expect(await reader({})(runsPath('a1' as RoutineId))).toMatchObject({ status: 404 })
     })
 
     it('serves the kanban and the history side by side', async () => {
       const kanban = { board: { columns: [] }, tasks: {} }
-      const read = fixtureRead({ kanban, cron })
+      const read = reader({ kanban, cron })
       expect(await read(BOARD_PATH)).toEqual({ status: 200, body: kanban.board })
-      expect(await read(runsPath('a1' as RoutineId, 'rae' as BotId))).toMatchObject({ status: 200 })
+      expect(await read(runsPath('a1' as RoutineId))).toMatchObject({ status: 200 })
     })
 
     it("keeps fixtures/cron/runs.json readable by the parser: one run of each kind, with none of a row's private columns", async () => {
       const loaded = loadFixture(write([{ ...header, cron: fixtureFile('cron/runs.json') }])).header.cron!
-      const answer = await fixtureRead({ cron: loaded })(runsPath('4f1c2a9e0b7d' as RoutineId, 'rae' as BotId))
+      const answer = await reader({ cron: loaded })(runsPath('4f1c2a9e0b7d' as RoutineId))
       const runs = parseRoutineRuns(answer.body)
       expect(runs?.map(run => [run.outcome.is, run.seconds, run.chat])).toEqual([
         ['running', null, 'local-0201'], ['succeeded', 42, 'local-0202'], ['failed', 180, 'local-0203'], ['cancelled', 7, 'local-0204'], ['failed', null, null]
@@ -322,9 +324,72 @@ describe('loadFixture', () => {
 
     it("gives every run that has a chat a chat of Rae's in fixtures/profiles/rae-runs.json, so Open run opens something", async () => {
       const loaded = loadFixture(write([{ ...header, cron: fixtureFile('cron/runs.json') }])).header.cron!
-      const answer = await fixtureRead({ cron: loaded })(runsPath('4f1c2a9e0b7d' as RoutineId, 'rae' as BotId))
+      const answer = await reader({ cron: loaded })(runsPath('4f1c2a9e0b7d' as RoutineId))
       const chats = (fixtureFile('profiles/rae-runs.json').chats as { rae: { id: string }[] }).rae.map(chat => chat.id)
       expect(parseRoutineRuns(answer.body)?.flatMap(run => (run.chat === null ? [] : [run.chat]))).toEqual(chats)
+    })
+  })
+
+  describe('toolsets', () => {
+    const rows = JSON.parse(readFileSync(fileURLToPath(new URL('../../../fixtures/tools/switches.json', import.meta.url)), 'utf8')) as readonly { readonly name: string; readonly enabled: boolean }[]
+    const RAE = 'rae' as BotId
+    const SAM = 'sam' as BotId
+    const put = (ask: ReturnType<typeof fixtureAsk>, bot: BotId | null, name: string, enabled: boolean) => ask({ method: 'PUT', path: `/api/tools/toolsets/${name}`, bot, json: { enabled } })
+    const read = async (ask: ReturnType<typeof fixtureAsk>, bot: BotId | null) => (await ask({ method: 'GET', path: '/api/tools/toolsets', bot })).body as typeof rows
+    const stateOf = (list: typeof rows) => list.map(({ name, enabled }) => `${name}:${enabled ? 'on' : 'off'}`)
+
+    it('reads the rows Hermes sends, and refuses a list that is not rows with a name and a state', () => {
+      expect(loadFixture(write([{ ...header, toolsets: rows }])).header.toolsets).toEqual(rows)
+      expect(loadFixture(write([header])).header).not.toHaveProperty('toolsets')
+      for (const bad of [{}, 'x', [{ name: 'web' }], [{ name: '', enabled: true }], [{ enabled: true }], ['web']]) {
+        const path = write([{ ...header, toolsets: bad }])
+        expect(() => loadFixture(path)).toThrow(`${path}:1: "toolsets" must be a list of the rows GET /api/tools/toolsets sends`)
+      }
+    })
+
+    it('lists the rows, and a switch flips the row it names and answers what Hermes does', async () => {
+      const ask = fixtureAsk({ toolsets: rows })
+      expect(stateOf(await read(ask, RAE))).toEqual(['browser:on', 'file:on', 'image_gen:off', 'discord:off'])
+      expect(await put(ask, RAE, 'image_gen', true)).toEqual({ status: 200, body: { ok: true, name: 'image_gen', platform: 'cli', enabled: true, post_setup_started: null } })
+      expect(await put(ask, RAE, 'discord', true)).toMatchObject({ status: 200, body: { platform: 'discord', enabled: true } })
+      expect(await put(ask, RAE, 'browser', false)).toMatchObject({ status: 200, body: { enabled: false } })
+      expect(stateOf(await read(ask, RAE))).toEqual(['browser:off', 'file:on', 'image_gen:on', 'discord:on'])
+    })
+
+    it('keeps each bot its own copy, taken from the header when the bot is first asked about', async () => {
+      const ask = fixtureAsk({ toolsets: rows })
+      await put(ask, RAE, 'file', false)
+      expect(stateOf(await read(ask, SAM))).toEqual(['browser:on', 'file:on', 'image_gen:off', 'discord:off'])
+      expect(stateOf(await read(ask, null))).toEqual(['browser:on', 'file:on', 'image_gen:off', 'discord:off'])
+      expect(stateOf(await read(ask, RAE))).toEqual(['browser:on', 'file:off', 'image_gen:off', 'discord:off'])
+      expect(rows.map(({ enabled }) => enabled), 'the header is left as it was').toEqual([true, true, false, false])
+    })
+
+    it('answers 400 for a toolset Hermes does not have, as Hermes does', async () => {
+      const ask = fixtureAsk({ toolsets: rows })
+      expect(await put(ask, RAE, 'nope', true)).toEqual({ status: 400, body: { detail: 'Unknown toolset: nope' } })
+      expect(stateOf(await read(ask, RAE))).toEqual(['browser:on', 'file:on', 'image_gen:off', 'discord:off'])
+    })
+
+    it('answers 404 to the list and to a switch when the fixture has no toolsets, as a Hermes without the route does', async () => {
+      const ask = fixtureAsk({})
+      expect(await ask({ method: 'GET', path: '/api/tools/toolsets', bot: RAE })).toMatchObject({ status: 404 })
+      expect(await put(ask, RAE, 'browser', false)).toMatchObject({ status: 404 })
+    })
+
+    it('hears every ask as the frame a gateway call would be, with the bot as its profile', async () => {
+      const heard: unknown[] = []
+      const ask = fixtureAsk({ toolsets: rows }, frame => heard.push(frame))
+      await read(ask, RAE)
+      await put(ask, RAE, 'browser', false)
+      await put(ask, null, 'nope', true)
+      await ask({ method: 'GET', path: BOARD_PATH, bot: null })
+      expect(heard).toEqual([
+        { jsonrpc: '2.0', method: 'GET /api/tools/toolsets', params: { profile: 'rae' } },
+        { jsonrpc: '2.0', method: 'PUT /api/tools/toolsets/browser', params: { profile: 'rae', enabled: false } },
+        { jsonrpc: '2.0', method: 'PUT /api/tools/toolsets/nope', params: { profile: null, enabled: true } },
+        { jsonrpc: '2.0', method: `GET ${BOARD_PATH}`, params: { profile: null } }
+      ])
     })
   })
 

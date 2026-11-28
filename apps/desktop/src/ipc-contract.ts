@@ -720,8 +720,13 @@ export const validators: Validators = {
     return (raw.bot !== null && bot === null) || !filled(raw.name) ? null : { do: 'installPlugin', bot, name: raw.name }
   },
   tools: raw => {
+    const bot = raw.bot === null ? null : botIdOf(raw.bot)
     const sessionId = sessionIdOf(raw)
-    return raw.sessionId !== null && sessionId === null ? null : { do: 'tools', sessionId }
+    return (raw.bot !== null && bot === null) || (raw.sessionId !== null && sessionId === null) ? null : { do: 'tools', bot, sessionId }
+  },
+  setToolset: raw => {
+    const bot = raw.bot === null ? null : botIdOf(raw.bot)
+    return (raw.bot === null || bot !== null) && filled(raw.name) && typeof raw.enabled === 'boolean' ? { do: 'setToolset', bot, name: raw.name, enabled: raw.enabled } : null
   },
   addToolServer: raw => {
     const bot = raw.bot === null ? null : botIdOf(raw.bot)
