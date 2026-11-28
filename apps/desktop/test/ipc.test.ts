@@ -126,6 +126,7 @@ describe('validators', () => {
     expect(parseCommand({ do: 'open', ref: { kind: 'chat', sessionId: 's9', bot: '' } })).toBeNull()
     expect(parseCommand({ do: 'open', ref: { kind: 'chat', sessionId: 's9', bot: 7 } })).toBeNull()
     expect(parseCommand({ do: 'open', ref: { kind: 'link', sessionId: 's9', bot: 'research' } })).toEqual({ do: 'open', ref: { kind: 'link', sessionId: 's9' } })
+    expect(parseCommand({ do: 'open', ref: { kind: 'run', bot: 'research', sessionId: 's9', x: 1 } })).toEqual({ do: 'open', ref: { kind: 'run', bot: 'research', sessionId: 's9' } })
     expect(parseCommand({ do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null, draftId: 'd1' }, text: 'hello', sessionId: 's9' }))
       .toEqual({ do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null }, text: 'hello', attachments: [] })
     expect(parseCommand({ do: 'start', chat: { kind: 'new', bot: null, draftId: 'd1', sessionId: null }, text: 'hello' }))
@@ -347,6 +348,8 @@ describe('validators', () => {
     ['an open that names no chat', { do: 'open' }],
     ['an open of a kind of chat Highwing does not know', { do: 'open', ref: { kind: 'session', sessionId: 's1' } }],
     ['an open of a bot with no name', { do: 'open', ref: { kind: 'bot', bot: ' ' } }],
+    ['an open of a run with no bot', { do: 'open', ref: { kind: 'run', sessionId: 's9' } }],
+    ['an open of a run with no session', { do: 'open', ref: { kind: 'run', bot: 'research' } }],
     ['an open of a new chat with no draft id', { do: 'open', ref: { kind: 'new', bot: 'research', draftId: ' ' } }],
     ['an open of a new chat whose bot is not a name or null', { do: 'open', ref: { kind: 'new', draftId: 'd1' } }],
     ['a first message with no chat', { do: 'start', text: 'hello' }],

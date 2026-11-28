@@ -398,6 +398,11 @@ const REFS: { readonly [K in ChatRef['kind']]: (raw: Obj) => Extract<ChatRef, { 
     if (sessionId === null || (raw.bot !== undefined && bot === null)) return null
     return { kind: 'chat', sessionId, ...(bot === null ? {} : { bot }) }
   },
+  run: raw => {
+    const sessionId = sessionIdOf(raw)
+    const bot = botIdOf(raw.bot)
+    return sessionId && bot && { kind: 'run', bot, sessionId }
+  },
   link: raw => {
     const sessionId = sessionIdOf(raw)
     return sessionId && { kind: 'link', sessionId }

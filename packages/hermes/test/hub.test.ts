@@ -488,6 +488,20 @@ describe('the open chat', () => {
     return opened
   }
 
+  it("opens a routine's run in its bot's profile and reads that chat, with no message sent to it", async () => {
+    const RUN = 'local-0301' as SessionId
+    const rows = [{ role: 'user' as const, text: 'Run the digest.' }, { role: 'assistant' as const, text: 'Three new messages.' }]
+    const opened = await launched({ ...WITH_BOTS, header: { ...WITH_BOTS.header, chats: { research: [{ id: RUN, title: 'Morning digest', last_active: 1795250000, rows }] } } })
+    expect(await opened.hermes.run({ do: 'open', ref: { kind: 'run', bot: RESEARCH, sessionId: RUN } })).toMatchObject({ ok: true })
+    expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'run', bot: RESEARCH, sessionId: RUN }, opening: null, missing: null })
+    const unwatch = opened.hermes.watch(RUN, () => {})
+    await opened.clock.advance(0)
+    unwatch()
+    expect(saidIn(opened, RUN)).toEqual([['Run the digest.', 'Three new messages.']])
+    expect(calls(opened, 'session.resume').map(call => call.params)).toMatchObject([{ session_id: RUN, profile: 'research' }])
+    expect(calls(opened, 'session.send')).toEqual([])
+  })
+
   it('is the newest chat, with no bot and no profile on any call, on a Hermes that lists no bots', async () => {
     const opened = await launched(ERRAND)
     expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'chat', bot: null, sessionId: SESSION }, opening: null, missing: null })

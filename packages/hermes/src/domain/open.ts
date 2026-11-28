@@ -16,6 +16,8 @@ export type ChatRef =
   | { readonly kind: 'new'; readonly bot: BotId | null; readonly draftId: string }
   /** A chat picked from the list of a bot's chats. `bot`: the bot whose profile it lives in, from a caller that knows it when no list does, as the Tasks view does for a kanban worker's chat. */
   | { readonly kind: 'chat'; readonly sessionId: SessionId; readonly bot?: BotId }
+  /** A routine's run, opened from its run history. Hermes refuses messages there, so it shows with no composer. */
+  | { readonly kind: 'run'; readonly bot: BotId; readonly sessionId: SessionId }
   /** A chat named from outside Highwing by its session id alone. Hermes is asked where it lives before it opens. */
   | { readonly kind: 'link'; readonly sessionId: SessionId }
   /** A group chat from the sidebar's Group chats section. */
@@ -43,6 +45,8 @@ export type Shown =
    * is open, it opens as a plain `chat`.
    */
   | { readonly kind: 'branch'; readonly bot: BotId | null; readonly sessionId: SessionId; readonly text: string }
+  /** A routine's run, read-only. It stays shown until the user opens another chat. */
+  | { readonly kind: 'run'; readonly bot: BotId; readonly sessionId: SessionId }
 
 /**
  * A group chat in the pane. It has no bot and no session of its own, so it has neither field, and code that reads
@@ -171,6 +175,11 @@ function asked(desk: Desk, ref: ChatRef): { readonly desk: Desk; readonly effect
       const { bot, sessionId } = ref
       const owned: Desk = bot === undefined || ownerOf(desk, sessionId) !== undefined ? desk : { ...desk, owners: { ...desk.owners, [sessionId]: bot } }
       return done(picking(owned, sessionId))
+    }
+    case 'run': {
+      const { bot, sessionId } = ref
+      const owned: Desk = ownerOf(desk, sessionId) === undefined ? { ...desk, owners: { ...desk.owners, [sessionId]: bot } } : desk
+      return done({ ...owned, open: { shown: { kind: 'run', bot, sessionId }, opening: null, missing: null } })
     }
     case 'link': {
       const { sessionId } = ref
