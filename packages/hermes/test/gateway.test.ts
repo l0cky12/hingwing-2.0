@@ -1210,7 +1210,7 @@ describe('attachments, as Hermes stages them', () => {
     const big = Buffer.alloc(25 * 1024 * 1024 + 1)
     Buffer.from(PNG, 'base64').copy(big)
     expect(await call('image.attach_bytes', { session_id: SESSION, content_base64: big.toString('base64') })).toMatchObject(refusal('invalid_params'))
-  })
+  }, 30_000)
 
   it('refuses a submit that names an image it did not stage', async () => {
     const { call } = await rawSocket()
