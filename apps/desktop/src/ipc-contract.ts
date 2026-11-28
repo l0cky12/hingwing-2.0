@@ -599,8 +599,9 @@ export const validators: Validators = {
   createFromTemplate: raw => {
     const answers = isObject(raw.answers) ? raw.answers : null
     const template = BOT_TEMPLATES.find(({ id }) => id === raw.template)
-    return template !== undefined && answers !== null && text(answers.name) && text(answers.folder) && text(answers.time)
-      ? { do: 'createFromTemplate', template: template.id, answers: { name: answers.name, folder: answers.folder, time: answers.time } }
+    const picture = pictureDataUrlOf(raw.picture, PICTURE_MAX_BYTES)
+    return template !== undefined && answers !== null && text(answers.name) && text(answers.folder) && text(answers.time) && picture !== null
+      ? { do: 'createFromTemplate', template: template.id, answers: { name: answers.name, folder: answers.folder, time: answers.time }, picture }
       : null
   },
   canGeneratePicture: () => ({ do: 'canGeneratePicture' }),

@@ -15,6 +15,12 @@ export type BotTone = typeof BOT_TONES[number]
 /** `ink` belongs to the default bot alone. */
 export type AvatarTone = BotTone | 'ink'
 
+/** The shapes and colours of a drawn face, a look a bot can take as its picture. `renderer/bots/look.ts` draws them. */
+export const FACE_SHAPES = ['circle', 'squircle', 'flower', 'cloud', 'sparkle', 'seal', 'blob', 'drop', 'pill', 'diamond', 'hexagon', 'triangle'] as const
+export type FaceShape = typeof FACE_SHAPES[number]
+export const FACE_COLOR_NAMES = ['ink', 'slate', 'teal', 'moss', 'olive', 'amber', 'coral', 'brick', 'rose', 'plum', 'umber', 'graphite'] as const
+export type FaceColor = typeof FACE_COLOR_NAMES[number]
+
 /** What Hermes says about one bot, before Highwing decides where and how to draw it. */
 export interface BotFacts {
   readonly id: BotId

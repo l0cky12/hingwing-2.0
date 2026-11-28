@@ -1,10 +1,11 @@
 import {
-  APPROVAL_WORDS, BOT_TEMPLATES, botsIn, CONNECTOR_FILTERS, connectorsView, pluginsView, scheduleWords, shownBot, shownChat, STANDING_WORDS, TOOLSET_WORDS, type BotTemplate, type BotTemplateId, type TemplateAnswers, type CatalogPlugin, type CommandOutcome, type AppEntry, type AppsBoard, type BotId, type Bots, type ConnectorFilter, type ConnectorShelf, type ConnectorsQuery, type ConnectorsView, type ServerSetup, type Toolset, type ToolServer
+  APPROVAL_WORDS, BOT_TEMPLATES, botsIn, CONNECTOR_FILTERS, connectorsView, pluginsView, scheduleWords, shownBot, shownChat, STANDING_WORDS, TOOLSET_WORDS, type BotCreated, type BotTemplate, type TemplateAnswers, type CatalogPlugin, type CommandOutcome, type AppEntry, type AppsBoard, type BotId, type Bots, type ConnectorFilter, type ConnectorShelf, type ConnectorsQuery, type ConnectorsView, type ServerSetup, type Toolset, type ToolServer
 } from '@highwing/hermes/domain'
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { nameProblem } from '../bots/bot-form'
+import { pictureOf } from '../bots/look'
+import { FaceArt } from '../bots/LookPicker'
 import { useImage } from '../chat/Image'
-import { ICON } from '../chrome/PopupMenu'
 import { connectorsKeys } from '../keys'
 import { line } from '../setup/ConnectionCard'
 import { run, useTopic } from '../store'
@@ -526,13 +527,7 @@ function ToolsPanel({ read }: { readonly read: Listed<Toolset> }) {
   )
 }
 
-const TILE = { ...ICON, width: 18, height: 18 } as const
-
-const TEMPLATE_TILES: { readonly [T in BotTemplateId]: ReactNode } = {
-  'bot-builder': <svg {...TILE}><rect x="4" y="8" width="16" height="12" rx="2" /><path d="M12 8V5M9 13v2M15 13v2" /><circle cx="12" cy="4" r="1" /></svg>,
-  'deep-researcher': <svg {...TILE}><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>,
-  'nightly-repo-auditor': <svg {...TILE}><path d="M12 3 5 6v6c0 4 3 7 7 9 4-2 7-5 7-9V6z" /><path d="m9 12 2 2 4-4" /></svg>
-}
+const UNDRAWN: CommandOutcome<BotCreated> = { ok: false, refusal: { kind: 'rejected', message: "Highwing couldn't draw this template's picture." } }
 
 const turnsOn = (template: BotTemplate) => (
   <>Turns on: {template.toolsets.map((toolset, at) => <Fragment key={toolset}>{at > 0 && ', '}<span className="hub-whole">{TOOLSET_WORDS[toolset]}</span></Fragment>)}</>
@@ -542,7 +537,10 @@ function TemplatesPanel() {
   const [chosen, setChosen] = useState<BotTemplate | null>(null)
   const opener = useRef<HTMLElement | null>(null)
   const bots = useTopic('bots')
-  const create = (template: BotTemplate, answers: TemplateAnswers) => run({ do: 'createFromTemplate', template: template.id, answers })
+  const create = async (template: BotTemplate, answers: TemplateAnswers) => {
+    const picture = await pictureOf({ from: 'face', ...template.face }, answers.name).catch(() => null)
+    return picture === null ? UNDRAWN : run({ do: 'createFromTemplate', template: template.id, answers, picture })
+  }
   const close = () => {
     setChosen(null)
     opener.current?.focus()
@@ -553,7 +551,7 @@ function TemplatesPanel() {
       <ul className="hub-grid">
         {BOT_TEMPLATES.map(template => (
           <Card
-            key={template.id} name={template.name} kind="Template" detail={template.summary} tile={TEMPLATE_TILES[template.id]}
+            key={template.id} name={template.name} kind="Template" detail={template.summary} tile={<FaceArt {...template.face} size={30} />}
             lines={[turnsOn(template), `Approval: ${APPROVAL_WORDS[template.approval].name}`, ...(template.schedule === null ? [] : [scheduleWords(template.schedule.defaultTime)])]}
           >
             <div className="hub-actions">

@@ -1,3 +1,4 @@
+import type { FaceColor, FaceShape } from './bots'
 import type { ApprovalMode } from './session'
 
 /** Hermes toolset names (hermes-agent/toolsets.py) a template turns on, which `profiles.configure` takes as `enabled_toolsets`. */
@@ -15,6 +16,8 @@ export interface BotTemplate {
   /** The card's title. The bot's own name starts as `id`, because Hermes takes only lowercase letters, numbers, `-` and `_` for a profile's name. */
   readonly name: string
   readonly summary: string
+  /** The face its card shows, which a bot made from it keeps as its picture. No two templates share a shape or a colour. */
+  readonly face: { readonly shape: FaceShape; readonly color: FaceColor }
   /** Becomes the bot's SOUL.md. Its first sentence says what the bot is. */
   readonly persona: string
   readonly toolsets: readonly TemplateToolset[]
@@ -33,6 +36,7 @@ export const BOT_TEMPLATES: readonly BotTemplate[] = [
     id: 'bot-builder',
     name: 'Bot Builder',
     summary: 'Describe a bot, and it makes the bot for you.',
+    face: { shape: 'hexagon', color: 'amber' },
     persona: [
       'You help people make new Hermes bots.',
       'Start by asking what the new bot is for, who will use it, which tools it needs, and whether it should run on a schedule. Ask one short round of questions, then stop and wait.',
@@ -48,6 +52,7 @@ export const BOT_TEMPLATES: readonly BotTemplate[] = [
     id: 'deep-researcher',
     name: 'Deep Researcher',
     summary: 'Researches a question across many sources and writes a report with sources.',
+    face: { shape: 'seal', color: 'teal' },
     persona: [
       'You research questions in depth and write reports people can trust.',
       'Split the question into smaller questions and send helpers (subagents) to work on them at the same time.',
@@ -63,6 +68,7 @@ export const BOT_TEMPLATES: readonly BotTemplate[] = [
     id: 'nightly-repo-auditor',
     name: 'Nightly Repo Auditor',
     summary: 'Checks a code repository every night and reports problems.',
+    face: { shape: 'cloud', color: 'plum' },
     persona: [
       'You audit one code repository each night and report what needs attention.',
       "Fetch the latest changes with `git fetch`. Never pull or merge. Review the last 24 hours of commits. Run the project's tests and lint if you find them. Check its dependencies for known security problems with the tools it already uses (npm audit, pnpm audit, pip-audit and so on). Look for passwords or keys committed by mistake.",

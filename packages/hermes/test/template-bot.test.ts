@@ -7,8 +7,9 @@ import { parseAdded } from '../src/wire/parse'
 import { scriptedDialer, type Fixture } from '../src/testing/fixture'
 import { BOUND, callsIn, WITH_BOTS } from './support/errand'
 
-const AUDITOR = { do: 'createFromTemplate', template: 'nightly-repo-auditor', answers: { name: 'billing-auditor', folder: '/srv/billing', time: '03:30' } } as const
-const BUILDER = { do: 'createFromTemplate', template: 'bot-builder', answers: { name: 'builder', folder: '', time: '' } } as const
+const PICTURE = `data:image/png;base64,${Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 7, 7, 7, 7]).toString('base64')}`
+const AUDITOR = { do: 'createFromTemplate', template: 'nightly-repo-auditor', answers: { name: 'billing-auditor', folder: '/srv/billing', time: '03:30' }, picture: PICTURE } as const
+const BUILDER = { do: 'createFromTemplate', template: 'bot-builder', answers: { name: 'builder', folder: '', time: '' }, picture: PICTURE } as const
 
 const WITH_SETUP: Fixture = { ...WITH_BOTS, header: { ...WITH_BOTS.header, yolo: false, approvals: 'smart', cron: { jobs: [] } } }
 
@@ -34,6 +35,15 @@ describe('createFromTemplate through the hub', () => {
     await clock.advance(0)
     expect(hermes.open.get().shown).toMatchObject({ kind: 'bot', bot: 'billing-auditor' })
     expect(await hermes.run({ do: 'listRoutines', bot: 'billing-auditor' as BotId })).toMatchObject({ ok: true, value: [{ name: 'Nightly audit', schedule: '30 3 * * *' }] })
+  })
+
+  it("stores the template's face as the new bot's picture, and lists the bot with that picture", async () => {
+    const { clock, hermes, calls } = await launched(WITH_SETUP)
+    expect(await hermes.run(BUILDER)).toEqual({ ok: true, value: { bot: 'builder', warnings: [] } })
+    expect(calls('profiles.set_asset')).toEqual([{ method: 'profiles.set_asset', params: { name: 'builder', asset: 'avatar', data: PICTURE } }])
+    await clock.advance(0)
+    const bots = hermes.bots.get()
+    expect(bots.state === 'listed' && bots.roster.sections.flatMap(section => section.bots).find(bot => bot.id === 'builder')?.picture).toBe(true)
   })
 
   it('sends no job for a template with no schedule', async () => {

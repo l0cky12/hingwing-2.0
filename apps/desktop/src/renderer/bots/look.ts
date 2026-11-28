@@ -1,16 +1,11 @@
-import { canonicalBotId, type AvatarTone, type Bot } from '@highwing/hermes/domain'
+import { canonicalBotId, FACE_COLOR_NAMES, FACE_SHAPES, type AvatarTone, type Bot, type FaceColor, type FaceShape } from '@highwing/hermes/domain'
 import { blobUrlOf } from './pictures'
 
-export const FACE_SHAPES = ['circle', 'squircle', 'flower', 'cloud', 'sparkle', 'seal', 'blob', 'drop', 'pill', 'diamond', 'hexagon', 'triangle'] as const
-export type FaceShape = typeof FACE_SHAPES[number]
-
-export const FACE_COLORS = {
+export const FACE_COLORS: { readonly [C in FaceColor]: string } = {
   ink: '#1F2A26', slate: '#4F7396', teal: '#1E8A76', moss: '#5B8A4E', olive: '#8A9440', amber: '#D49A2A',
   coral: '#D96A4E', brick: '#B04A34', rose: '#C26A86', plum: '#7A68A8', umber: '#8C6A4C', graphite: '#7C8783'
-} as const
-export type FaceColor = keyof typeof FACE_COLORS
+}
 export const rimOf = (color: FaceColor): string | null => (color === 'ink' ? FACE_COLORS.graphite : null)
-export const FACE_COLOR_NAMES = Object.keys(FACE_COLORS) as readonly FaceColor[]
 
 export type Face = { readonly from: 'face'; readonly shape: FaceShape | 'auto'; readonly color: FaceColor }
 
