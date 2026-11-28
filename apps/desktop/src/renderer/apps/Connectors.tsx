@@ -3,7 +3,6 @@ import {
 } from '@highwing/hermes/domain'
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { nameProblem } from '../bots/bot-form'
-import { setMade } from '../bots/made'
 import { ICON } from '../chrome/PopupMenu'
 import { connectorsKeys } from '../keys'
 import { line } from '../setup/ConnectionCard'
@@ -498,11 +497,7 @@ function TemplatesPanel() {
   const [chosen, setChosen] = useState<BotTemplate | null>(null)
   const opener = useRef<HTMLElement | null>(null)
   const bots = useTopic('bots')
-  const create = async (template: BotTemplate, answers: TemplateAnswers) => {
-    const outcome = await run({ do: 'createFromTemplate', template: template.id, answers })
-    setMade(outcome.ok ? outcome.value : null)
-    return outcome
-  }
+  const create = (template: BotTemplate, answers: TemplateAnswers) => run({ do: 'createFromTemplate', template: template.id, answers })
   const close = () => {
     setChosen(null)
     opener.current?.focus()
@@ -523,7 +518,7 @@ function TemplatesPanel() {
         ))}
       </ul>
       {chosen !== null && (
-        <TemplateDialog key={chosen.id} template={chosen} problemOf={name => nameProblem(name, bots)} onCreate={answers => create(chosen, answers)} onClose={close} />
+        <TemplateDialog key={chosen.id} template={chosen} problemOf={name => nameProblem(name, bots)} onCreate={answers => create(chosen, answers)} onOpen={bot => run({ do: 'open', ref: { kind: 'bot', bot } })} onClose={close} />
       )}
     </>
   )

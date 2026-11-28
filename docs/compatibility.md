@@ -1106,7 +1106,7 @@ new bot, in this order, and each is safe to send again.
 | --- | --- | --- |
 | `profiles.create` | `{name, description, soul}`, with the template's summary as `description` and its persona as `soul` | Refused as it is for New bot, so a name Hermes refuses is shown at the Bot name field and nothing else is sent. A bare `-32601` reads "This Hermes can't create bots from Highwing." |
 | `profiles.configure` | `{name, enabled_toolsets}` | Hermes replaces the profile's toolset list. The answer's `applied.toolsets` must be true (`tui_gateway/methods_profiles.py:724-746`). |
-| `config.set` | `{key: "approval_mode", value}`, with the new bot's `profile` and no `session_id` | Writes the bot's approval mode (`tui_gateway/methods_config_set.py:507-522`). |
+| `config.set` | `{key: "approval_mode", value}`, with the new bot's `profile` and no `session_id` | On the per-profile route, `@_profile_scoped` binds the frame's `profile` before the write, so it sets the bot's approval mode (`tui_gateway/methods_config_set.py:342`, `:589`). The shared gateway refuses a `profile` other than its own connection's with `profile_mismatch` (`gateway/session_config.py:16-28`). That refusal is a warning, and no other bot's setting changes. |
 | `cron.manage` | `{action: "list", include_disabled: true}`, then `{action: "add", name, schedule, prompt, deliver: "bot-chat"}`, both with the new bot's `profile` | Adds the nightly job only when the list holds no job of that name. `schedule` is a cron line such as `0 2 * * *`. `deliver: "bot-chat"` puts the report in the bot's own chat. A `success: false` answer is refused in its `error` words (`tui_gateway/methods_tools.py:1311-1325`). |
 
 Once the bot exists, a step that fails does not stop the ones after it. The bot

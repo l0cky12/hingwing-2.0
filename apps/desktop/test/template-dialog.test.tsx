@@ -5,7 +5,7 @@ import { TemplateDialog } from '../src/renderer/apps/Templates'
 
 const dialog = (id: string, problemOf: (name: string) => string | null = () => null) =>
   renderToStaticMarkup(
-    <TemplateDialog template={BOT_TEMPLATES.find(item => item.id === id)!} problemOf={problemOf} onCreate={async () => ({ ok: true, value: { bot: 'rae' as BotId, warnings: [] } })} onClose={() => {}} />
+    <TemplateDialog template={BOT_TEMPLATES.find(item => item.id === id)!} problemOf={problemOf} onCreate={async () => ({ ok: true, value: { bot: 'rae' as BotId, warnings: [] } })} onOpen={async () => {}} onClose={() => {}} />
   )
 const createButton = (html: string) => /<button[^>]*>(?:Create bot|Creating…)<\/button>/.exec(html)?.[0]
 

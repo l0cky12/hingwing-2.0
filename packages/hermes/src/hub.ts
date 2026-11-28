@@ -646,7 +646,8 @@ export function openHermes(options: HermesOptions): Hermes {
       if (plan === null) return refused('rejected', 'Fill in every field to make this bot.')
       const made = await createFromTemplate(conn, plan)
       roster.ask()
-      if (made.ok) await desk.ask({ kind: 'bot', bot: made.value.bot })
+      // With warnings the setup dialog stays open to show them, and its Open button opens the bot.
+      if (made.ok && made.value.warnings.length === 0) await desk.ask({ kind: 'bot', bot: made.value.bot })
       return made
     }
     if (command.do === 'createGroup') {

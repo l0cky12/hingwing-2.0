@@ -1736,7 +1736,7 @@ export class ScriptedGateway {
 
   /**
    * `config.set` for key `approval_mode`, as `/approvals <mode>` writes it (gateway/session_tui_config.py:202-203,337-350). It sends no session.info.
-   * With no session it writes the profile the frame names, which is how a bot with no chat yet is set (tui_gateway/methods_config_set.py:507-522).
+   * With no session it writes the profile the frame names, as the per-profile route's `@_profile_scoped` config.set does (tui_gateway/methods_config_set.py:342, :589).
    */
   setApprovals(params: Obj, routed: string, chat: EchoChat | null): unknown {
     if (this.approvals === null) throw this.noApprovals('config.set', chat)

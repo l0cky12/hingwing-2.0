@@ -58,14 +58,14 @@ describe('createFromTemplate through the hub', () => {
     expect(calls('profiles.create')).toEqual([])
   })
 
-  it("keeps the bot and goes on with the other steps when Hermes can't schedule jobs, naming the one that failed", async () => {
+  it("keeps the bot and goes on with the other steps when Hermes can't schedule jobs, naming the one that failed, and leaves it to the dialog to open", async () => {
     const { hermes, calls } = await launched({ ...WITH_BOTS, header: { ...WITH_BOTS.header, yolo: false, approvals: 'smart' } })
     expect(await hermes.run(AUDITOR)).toEqual({
       ok: true,
       value: { bot: 'billing-auditor', warnings: ["the nightly job wasn't added. This Hermes can't schedule jobs from Highwing."] }
     })
     expect(calls('config.set')).toHaveLength(1)
-    expect(hermes.open.get().shown).toMatchObject({ bot: 'billing-auditor' })
+    expect(hermes.open.get().shown).not.toMatchObject({ bot: 'billing-auditor' })
   })
 
   it("warns for each step a Hermes without them can't do, and still makes the bot", async () => {
