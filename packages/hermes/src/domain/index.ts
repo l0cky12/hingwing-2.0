@@ -40,4 +40,4 @@ export { label as versionLabel, type ChatVersions, type Landing, type Version, t
 export { hermesVersionOf, type About, type HermesRelease } from './about'
 export { modelViewOf, sameModel, type ModelView } from './model'
 export { CHECK_FAILURES, STEP_WORDS, URL_FAILURES, URL_PROBLEMS, byKind, failureOf, firstStep, gatewayHost, isPlainHttp, machineOf, onThisComputer, parseGatewayUrl, hostPart, parseSshHost, sameTarget, targetOf, type CheckFailure, type CheckStep, type Failure, type GatewayUrl, type ParsedUrl, type SetupFailure, type SshHost, type Target, type UrlFailure, type UrlProblem } from './reach'
-export { PICK_MODES, currentServer, isPrivateHost, nextServers, rankWays, serverName, serversOf, wayLabel, type PickMode, type Server, type ServerEdit, type ServerId, type Servers, type Timed, type WayLabel } from './servers'
+export { PICK_MODES, currentServer, hermesName, isPrivateHost, nextServers, rankWays, serverName, serversOf, wayLabel, type PickMode, type Server, type ServerEdit, type ServerId, type Servers, type Timed, type WayLabel } from './servers'

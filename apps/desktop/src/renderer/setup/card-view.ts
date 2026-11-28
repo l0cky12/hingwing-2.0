@@ -1,4 +1,4 @@
-import { byKind, failureOf, machineOf, sameTarget, serverName, STEP_WORDS, wayLabel, type Link, type PickMode, type Server, type ServerId, type Target, type WayLabel } from '@highwing/hermes/domain'
+import { byKind, failureOf, hermesName, machineOf, sameTarget, serverName, STEP_WORDS, wayLabel, type Link, type PickMode, type Server, type ServerId, type Target, type WayLabel } from '@highwing/hermes/domain'
 import { NO_SERVERS, type Into, type ServerBook } from '../../ipc-contract'
 import { bannerOf, type BannerAction } from '../chrome/Chrome'
 import { KINDS, SIGN_IN_HINT, type Kind } from './form'
@@ -165,8 +165,7 @@ export function cardOf(setup: CardSetup, link: Link | undefined, editing: Into |
     case 'form': return shown(atRest(), summary, null)
     case 'saved': {
       const added = checked ?? server?.ways.at(-1) ?? setup.live.target
-      // A server with several ways is the same server whichever way is in use, so the news names the server.
-      const machine = server !== undefined && server.ways.length > 1 ? server.name : machineOf(setup.live.target)
+      const machine = hermesName(server, setup.live.target)
       const news = setup.into === 'addWay' ? `${named} can now be reached over ${wayLabel(added)}.` : `Highwing now uses the Hermes on ${machine}.`
       return shown(atRest(), summary, news)
     }

@@ -62,6 +62,13 @@ export function wayLabel(target: Target): WayLabel {
 /** What a server made from `target` is called: the machine, as the Connection card's title names it. */
 export const serverName = (target: Target): string => byKind(target, { local: () => 'This computer', remote: machineOf, ssh: machineOf, url: machineOf })
 
+/**
+ * What a sentence calls the Hermes that `target` leads to, after "on". A server with several ways goes by its name,
+ * since the way in use is only a route to it and can change with each dial. One way is named by its machine.
+ */
+export const hermesName = (server: Server | undefined, target: Target): string =>
+  (server !== undefined && server.ways.length > 1 ? server.name : machineOf(target))
+
 type Obj = Readonly<Record<string, unknown>>
 const isObject = (value: unknown): value is Obj => value !== null && typeof value === 'object' && !Array.isArray(value)
 const filled = (value: unknown): value is string => typeof value === 'string' && value !== ''
