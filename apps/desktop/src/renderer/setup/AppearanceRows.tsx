@@ -53,7 +53,6 @@ function Reset({ label, onReset }: { readonly label: string; readonly onReset: (
   return <button type="button" className="reset" aria-label={label} title={label} onClick={onReset}><Undo /></button>
 }
 
-/** A row's text column: its label, a reset button while it differs from the default, and its description. */
 function RowText({ id, label, desc, reset }: { readonly id: string; readonly label: string; readonly desc: string; readonly reset: (() => void) | null }) {
   return (
     <div className="text">
