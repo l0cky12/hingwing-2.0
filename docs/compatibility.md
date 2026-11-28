@@ -1103,17 +1103,18 @@ reason as a warning. The picker reads three more calls:
 | `pet.thumb` | `{slug}`, plus `url` for a pet Hermes fetches | Shows the idle frame. Hermes answers `{ok: false}` alike for a pet with no picture and for a fetch that failed (`agent/pet/store.py:224-253`), so an empty answer is asked again the next time the tile shows. |
 
 Highwing sends `pet.thumb` only a slug with no `/`, `\`, `:`, `.` or `..`.
+Hermes builds the thumb's cache path from the raw slug (`agent/pet/store.py:68-70`).
 
-A new bot left on its default look also gets a pet picture. Right after
-`profiles.create`, Highwing calls `image.generate {prompt, aspect_ratio:
-"square", max_bytes: 8000000}` in the background, draws the answer onto a 512 px
-square, and stores it with `profiles.set_asset {name, asset: "avatar", data}`.
+A new bot left on its default look, and a bot made from a template, also gets
+a pet picture. Once the bot is made, Highwing calls `image.generate {prompt,
+aspect_ratio: "square", max_bytes: 8000000}` in the background, draws the
+answer onto a 512 px square, and stores it with `profiles.set_asset {name,
+asset: "avatar", data}`.
 The bot shows its face until the pet arrives. A look the person picked is never
 replaced. The same two calls run when someone presses Generate pet picture in a
 bot's Edit dialog, for any bot, including the default one. On a Hermes without
 `image.generate`, or with no image model, a new bot keeps its face and shows no
 message, and the button shows the words Hermes or Highwing gave for the refusal.
-Hermes builds the thumb's cache path from the raw slug (`agent/pet/store.py:68-70`).
 
 On an older Hermes:
 
