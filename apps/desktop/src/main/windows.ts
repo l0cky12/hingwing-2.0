@@ -26,6 +26,9 @@ export function openWindow(opener: Pick<Opener, 'browse'>, pane: Pick<PreviewPan
     title: 'Highwing', backgroundColor: paper(),
     webPreferences: { preload: join(import.meta.dirname, '../preload/index.cjs'), sandbox: true, contextIsolation: true, nodeIntegration: false, spellcheck: true }
   })
+  // Hidden rather than removed, so the default menu's keys such as Ctrl+Q still work. The window was sized with the bar, so its content is put back to the design size.
+  window.setMenuBarVisibility(false)
+  window.setContentSize(DESIGN_SIZE.width, DESIGN_SIZE.height)
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (isWebLink(url)) void opener.browse(url)
     return { action: 'deny' }

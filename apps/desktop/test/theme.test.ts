@@ -19,6 +19,8 @@ vi.mock('electron', () => ({
       electron.windows.push(this)
     }
     setBackgroundColor(color: string) { this.background = color }
+    setMenuBarVisibility() {}
+    setContentSize() {}
     once(event: string, listener: () => void) { if (event === 'closed') this.closed.push(listener) }
     loadFile = async () => {}
     loadURL = async () => {}
