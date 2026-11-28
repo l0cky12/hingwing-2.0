@@ -157,7 +157,7 @@ app.whenReady().then(async () => {
     ? pinnedConnection(open(scriptedDialer(fixture, {
       timing: 'recorded', latencyMs: fixtureLatency(HIGHWING_FIXTURE_LATENCY_MS),
       ...(HIGHWING_FIXTURE_CALLS ? { onReceived: (frame: unknown) => appendFileSync(HIGHWING_FIXTURE_CALLS, `${JSON.stringify(maskedFrame(frame))}\n`) } : {})
-    }), 'fixture'), fixtureRead(fixture.header.kanban), fixtureTranscribe(fixture.header.transcribe))
+    }), 'fixture'), fixtureRead(fixture.header), fixtureTranscribe(fixture.header.transcribe))
     : await savedConnection(settingsDir, opener, open, intro.armIntro)
   pane.follow(owner.setup)
   const pictureDeps = { choose: pictureFile, read: readHead, set: (bot: BotId, data: string) => owner.run({ do: 'setBotPicture', bot, data }) }

@@ -3,6 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import type { BotId } from '../src/domain/bots'
+import type { RoutineId } from '../src/domain/routines'
+import { parseRoutineRuns, runsPath } from '../src/domain/runs'
 import { BOARD_PATH, taskPath } from '../src/domain/tasks'
 import { type FixtureStep, fixtureRead, loadFixture } from '../src/testing/fixture'
 import { checkParams } from '../src/testing/params'
@@ -264,7 +267,7 @@ describe('loadFixture', () => {
     })
 
     it('answers the board, a card by its path, and a 404 for any other path', async () => {
-      const read = fixtureRead(kanban)
+      const read = fixtureRead({ kanban })
       expect(await read(BOARD_PATH)).toEqual({ status: 200, body: kanban.board })
       expect(await read(taskPath('t_1'))).toEqual({ status: 200, body: kanban.tasks.t_1 })
       expect(await read(taskPath('t_9'))).toMatchObject({ status: 404 })
@@ -272,7 +275,56 @@ describe('loadFixture', () => {
     })
 
     it('answers 404 to every path when the fixture has no kanban, as a Hermes without the plugin does', async () => {
-      expect(await fixtureRead(undefined)(BOARD_PATH)).toMatchObject({ status: 404 })
+      expect(await fixtureRead({})(BOARD_PATH)).toMatchObject({ status: 404 })
+    })
+  })
+
+  describe("a routine's run history", () => {
+    const fixtureFile = (name: string) => JSON.parse(readFileSync(fileURLToPath(new URL(`../../../fixtures/${name}`, import.meta.url)), 'utf8')) as Record<string, unknown>
+
+    const cron = { jobs: [], profiles: { rae: [{ job_id: 'a1' }, { job_id: 'b2' }] }, history: { a1: { runs: [{ id: 's1' }], limit: 20 } } }
+
+    it('reads the history of a listed job, and refuses one of a job no store lists or one that is not an object', () => {
+      expect(loadFixture(write([{ ...header, cron }])).header.cron).toEqual(cron)
+      for (const history of [{ zz: {} }, [], 'x']) {
+        const path = write([{ ...header, cron: { ...cron, history } }])
+        expect(() => loadFixture(path)).toThrow(`${path}:1: "cron" must be { jobs, profiles?, unscoped?, runs?, history? }`)
+      }
+    })
+
+    it("answers a job's runs reply whatever profile and limit the path asks for, and 404 for a job with no history, as an older Hermes does", async () => {
+      const read = fixtureRead({ cron })
+      expect(await read(runsPath('a1' as RoutineId, 'rae' as BotId))).toEqual({ status: 200, body: cron.history.a1 })
+      expect(await read('/api/cron/jobs/a1/runs')).toEqual({ status: 200, body: cron.history.a1 })
+      expect(await read(runsPath('b2' as RoutineId, 'rae' as BotId))).toMatchObject({ status: 404 })
+      expect(await read(runsPath('constructor' as RoutineId, 'rae' as BotId))).toMatchObject({ status: 404 })
+      expect(await read('/api/cron/jobs/%E0%A4%A/runs')).toMatchObject({ status: 404 })
+      expect(await read('/api/cron/jobs/a1')).toMatchObject({ status: 404 })
+      expect(await fixtureRead({})(runsPath('a1' as RoutineId, 'rae' as BotId))).toMatchObject({ status: 404 })
+    })
+
+    it('serves the kanban and the history side by side', async () => {
+      const kanban = { board: { columns: [] }, tasks: {} }
+      const read = fixtureRead({ kanban, cron })
+      expect(await read(BOARD_PATH)).toEqual({ status: 200, body: kanban.board })
+      expect(await read(runsPath('a1' as RoutineId, 'rae' as BotId))).toMatchObject({ status: 200 })
+    })
+
+    it("keeps fixtures/cron/runs.json readable by the parser: one run of each kind, with none of a row's private columns", async () => {
+      const loaded = loadFixture(write([{ ...header, cron: fixtureFile('cron/runs.json') }])).header.cron!
+      const answer = await fixtureRead({ cron: loaded })(runsPath('4f1c2a9e0b7d' as RoutineId, 'rae' as BotId))
+      const runs = parseRoutineRuns(answer.body)
+      expect(runs?.map(run => [run.outcome.is, run.seconds, run.chat])).toEqual([
+        ['running', null, 'local-0201'], ['succeeded', 42, 'local-0202'], ['failed', 180, 'local-0203'], ['cancelled', 7, 'local-0204'], ['failed', null, null]
+      ])
+      expect(JSON.stringify(runs)).not.toMatch(/chat-77c1|user-4821|origin|You are Rae/)
+    })
+
+    it("gives every run that has a chat a chat of Rae's in fixtures/profiles/rae-runs.json, so Open run opens something", async () => {
+      const loaded = loadFixture(write([{ ...header, cron: fixtureFile('cron/runs.json') }])).header.cron!
+      const answer = await fixtureRead({ cron: loaded })(runsPath('4f1c2a9e0b7d' as RoutineId, 'rae' as BotId))
+      const chats = (fixtureFile('profiles/rae-runs.json').chats as { rae: { id: string }[] }).rae.map(chat => chat.id)
+      expect(parseRoutineRuns(answer.body)?.flatMap(run => (run.chat === null ? [] : [run.chat]))).toEqual(chats)
     })
   })
 
