@@ -18,15 +18,15 @@ const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/&#x27;/g, 
 describe('a catalog plugin’s card', () => {
   it('offers Install, and holds it while another plugin installs', () => {
     expect(buttons(card(offered(), null))).toEqual(['Install mem0'])
-    expect(buttons(card(offered(), { name: 'spotify', at: 'asking' }))).toEqual(['Install mem0'])
+    expect(buttons(card(offered(), { name: 'spotify', at: 'confirming' }))).toEqual(['Install mem0'])
     expect(buttons(card(offered(), { name: 'spotify', at: 'installing' }))).toEqual(['Install mem0 (disabled)'])
   })
 
   it('asks before an install, naming the repository and where it runs, and warns that a community plugin is unreviewed', () => {
-    const asking = card(offered(), { name: 'mem0', at: 'asking' })
-    expect(buttons(asking)).toEqual(['Cancel installing mem0', 'Install mem0'])
-    expect(text(asking)).toContain("https://github.com/mem0ai/mem0 It runs on Hermes's computer. Community plugins aren't reviewed by Nous Research.")
-    const official = text(card(offered({ tier: 'official' }), { name: 'mem0', at: 'asking' }))
+    const confirming = card(offered(), { name: 'mem0', at: 'confirming' })
+    expect(buttons(confirming)).toEqual(['Cancel installing mem0', 'Install mem0'])
+    expect(text(confirming)).toContain("https://github.com/mem0ai/mem0 It runs on Hermes's computer. Community plugins come from independent developers.")
+    const official = text(card(offered({ tier: 'official' }), { name: 'mem0', at: 'confirming' }))
     expect(official).toContain("It runs on Hermes's computer.")
     expect(official).not.toContain('reviewed')
     expect(text(card(offered(), null))).not.toContain("Hermes's computer")

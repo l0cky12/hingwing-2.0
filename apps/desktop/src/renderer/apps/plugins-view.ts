@@ -1,7 +1,6 @@
 import type { CatalogPlugin, CatalogTier, Plugin, PluginInstalled } from '@highwing/hermes/domain'
 
-/** How many Available cards show at first, and how many more each Show more adds. */
-export const PAGE = 60
+export const AVAILABLE_PAGE = 60
 
 const TIER_WORDS: { readonly [T in CatalogTier]: string } = { official: 'Official', verified: 'Verified', community: 'Community' }
 const PLATFORM_WORDS: Readonly<Record<string, string>> = { linux: 'Linux', macos: 'macOS', windows: 'Windows' }
@@ -15,7 +14,7 @@ export const catalogKind = (plugin: CatalogPlugin) =>
   [TIER_WORDS[plugin.tier], plugin.category, plugin.platforms.map(platform => PLATFORM_WORDS[platform] ?? platform).join(', ')].filter(Boolean).join(' · ')
 
 export const askWords = (plugin: CatalogPlugin) =>
-  plugin.tier === 'community' ? "It runs on Hermes's computer. Community plugins aren't reviewed by Nous Research." : "It runs on Hermes's computer."
+  plugin.tier === 'community' ? "It runs on Hermes's computer. Community plugins come from independent developers." : "It runs on Hermes's computer."
 
 export function installedWords({ name, restartRequired, missingEnv }: PluginInstalled): string {
   return [
