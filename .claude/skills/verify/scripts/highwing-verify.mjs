@@ -178,7 +178,7 @@ const STEPS = {
   flush: { arity: 2, run: async (ctx, css, otherCss) => checkFlush(ctx, css, otherCss) },
   ring: { arity: 2, run: async (ctx, role, name) => checkRing(ctx, role, name) },
   reveal: { arity: 2, run: async (ctx, role, name) => byRole(ctx.page, role, name).scrollIntoViewIfNeeded({ timeout: ctx.timeout }) },
-  shot: { arity: 1, run: async (ctx, name) => shoot(ctx, name) },
+  shot: { arity: 1, run: async (ctx, name, state) => state === undefined ? shoot(ctx, name) : shootHeld(ctx, state, name) },
   field: {
     arity: 3,
     run: async (ctx, label, lines, outcome) => {
@@ -880,7 +880,7 @@ function parseOptions(argv, known) {
   const rest = []
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index]
-    if (!arg.startsWith('--')) { rest.push(arg); continue }
+    if (!arg.startsWith('--') || (arg === '--wait' && argv[index - 1] === 'shot')) { rest.push(arg); continue }
     const [key, inline] = arg.slice(2).split(/=(.*)/s)
     if (!(key in known)) fail(`unknown option --${key}`)
     options[key] = known[key] === 'flag' ? true : inline ?? argv[++index]
@@ -1296,6 +1296,50 @@ async function shoot(ctx, name) {
   log(ctx, `  saved ${path} (state "${ctx.holding ?? 'none'}" still held)`)
 }
 
+/**
+ * A shot can take longer than a brief state lasts, and under load a poll can miss it, so main holds the window's
+ * pushes and lets them through one at a time, each drawn before the next, until the state shows. The rest wait for the shot.
+ */
+async function shootHeld(ctx, state, name) {
+  const locator = (STATES[state] ?? fail(`unknown state "${state}". Known: ${Object.keys(STATES).join(', ')}`))(ctx.page)
+  const deadline = Date.now() + ctx.timeout
+  await pushes(ctx, 'hold')
+  try {
+    while (!(await locator.isVisible())) {
+      if (Date.now() > deadline) throw new Error(`state "${state}" did not appear within ${ctx.timeout} ms`)
+      await pushes(ctx, 'one')
+      await ctx.page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve))))
+    }
+    log(ctx, `  ${state} ${Date.now() - ctx.launched} ms after launch`)
+    ctx.holding = state
+    await shoot(ctx, name)
+  } finally {
+    log(ctx, `  released ${await pushes(ctx, 'all')} push(es) held during the shot`)
+  }
+}
+
+/** `hold` keeps every window's `highwing:push` sends in main. `one` sends the oldest held, `all` sends the rest and stops holding. Returns how many it sent. */
+async function pushes(ctx, act) {
+  return ctx.app.evaluate(({ webContents }, { act, channel }) => {
+    let sent = 0
+    for (const contents of webContents.getAllWebContents()) {
+      if (act === 'hold') {
+        const send = contents.send
+        const held = []
+        contents.send = (...args) => void (args[0] === channel ? held.push(args) : send.apply(contents, args))
+        contents.held = { send, held }
+      } else if (contents.held) {
+        const { send, held } = contents.held
+        const out = held.splice(0, act === 'one' ? 1 : held.length)
+        for (const args of out) send.apply(contents, args)
+        sent += out.length
+        if (act === 'all') { contents.send = send; delete contents.held }
+      }
+    }
+    return sent
+  }, { act, channel: 'highwing:push' })
+}
+
 /** A page screenshot cannot see the view main draws the previewed page in, so the view's own capture goes on top at its place. */
 async function drawPreview(ctx, path) {
   const view = await inPreview(ctx, 'capture')
@@ -1329,6 +1373,13 @@ function parseSteps(words) {
   for (let index = 0; index < words.length;) {
     const verb = words[index]
     const step = STEPS[verb] ?? fail(`unknown step "${verb}". Known: ${Object.keys(STEPS).join(', ')}`)
+    if (verb === 'shot' && words[index + 1] === '--wait') {
+      const [state, name] = words.slice(index + 2, index + 4)
+      if (name === undefined) fail('"shot --wait" needs a state and a file stem')
+      steps.push({ verb, args: [name, state] })
+      index += 4
+      continue
+    }
     const args = words.slice(index + 1, index + 1 + step.arity)
     if (args.length < step.arity) fail(`"${verb}" needs ${step.arity} argument(s)`)
     steps.push({ verb, args })

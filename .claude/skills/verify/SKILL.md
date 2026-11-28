@@ -142,6 +142,7 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `right-click-words <text>` | text | right-clicks that text in the thread. Right after `select-words` on it, main records a menu with Copy |
 | `click-at <role> <name> <n>` | ARIA role, exact accessible name, a number | clicks the `n`th such control in page order, counting from 1, for a control the thread repeats on every turn |
 | `shot <name>` | file stem | moves the pointer off the page, then saves `<name>.png` and `<name>.aria.txt` |
+| `shot --wait <state> <name>` | a named state, file stem | has main hold every push to the window, then lets them through one at a time, each drawn before the next, until the state shows. It saves the shot as `shot` does with the rest still held, so the state cannot end during it, then sends them in order and logs how many. The fixture keeps its recorded timing, and the window gets its pushes late only during this step |
 | `disabled <role> <name>` | ARIA role, exact accessible name or `/regex/` | fails unless that control is disabled now |
 | `value <label> <text>` | exact label, text | waits two frames, then fails unless the field holds exactly that text |
 | `placeholder <label> <text>` | exact label, text | waits until the field's placeholder is exactly that text, and fails at the timeout. An ARIA snapshot does not print it |
@@ -239,7 +240,7 @@ Named states live in the `STATES` table in the helper. Add a state there, not a 
 | `group-replied` | an open group chat's thread holds a member's reply and no live end, so no member is answering |
 | `pet` | under Replies only, a running turn's end is the bot's working face (`#transcript .tip.pet .face[data-mood="working"]`) |
 
-`wait` polls with no backoff. The errand's listing step lives about 144 ms at recorded timing. Playwright's own `waitFor` spaces its polls up to 500 ms apart and missed it 3 times out of 3, while this loop caught it 5 times out of 5. A `shot` of it took 80 to 440 ms while other verify runs shared the machine, and failed the state check in 16 of 30 such runs. A recipe that shoots a state this brief passes `--stretch 6`, which keeps the listing step on screen about 864 ms.
+`wait` polls with no backoff. The errand's listing step lives about 144 ms at recorded timing. Playwright's own `waitFor` spaces its polls up to 500 ms apart and missed it 3 times out of 3, while this loop caught it 5 times out of 5. A `shot` of it took 80 to 440 ms while other verify runs shared the machine, and failed the state check in 16 of 30 such runs. A recipe that shoots a state this brief uses `shot --wait <state> <name>`, which holds the window's pushes while it shoots. `--stretch 6` (keeps the listing step on screen about 864 ms) slows the whole story instead.
 
 Main draws the preview pane's page in a view of its own, over the window, and a page screenshot cannot see it. When that view is shown, `shot` captures it from main and draws it onto the PNG at its place, and logs that it did. A shot with no pane shown is the page screenshot alone, as before. The ARIA snapshot never holds the page's text: use `page-says`.
 
