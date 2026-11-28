@@ -9,6 +9,8 @@ import { ThreadImage } from './Image'
 import { WebLink } from './WebLink'
 
 export const MentionHandles = createContext<ReadonlySet<string> | null>(null)
+/** Settings → Appearance → Render math. Off shows the TeX as written, between its delimiters. */
+export const TypesetMath = createContext(true)
 
 /** `_MENTION_RE` (gateway/hosted_room_discussion.py:43), so a word is set apart exactly when Hermes would route on it. */
 const MENTION = /@([A-Za-z0-9][A-Za-z0-9._:-]*)/g
@@ -27,6 +29,12 @@ function Words({ text }: { readonly text: string }) {
   return parts
 }
 
+function MathText({ tex, display }: { readonly tex: string; readonly display: boolean }) {
+  if (useContext(TypesetMath)) return <Formula tex={tex} display={display} />
+  const fence = display ? '$$' : '$'
+  return <span className="tex" data-find-text={tex}>{fence}{tex}{fence}</span>
+}
+
 export function PhraseText({ words }: { readonly words: Phrase }) {
   return words.map((piece, index) => (piece.t === 'code' ? <code key={index}>{piece.v}</code> : <Fragment key={index}>{piece.v}</Fragment>))
 }
@@ -40,7 +48,7 @@ function inline(nodes: readonly Inline[]): ReactNode[] {
       case 'em': return <em key={index}>{inline(node.children)}</em>
       case 'del': return <del key={index}>{inline(node.children)}</del>
       case 'break': return <br key={index} />
-      case 'math': return <Formula key={index} tex={node.tex} display={node.display} />
+      case 'math': return <MathText key={index} tex={node.tex} display={node.display} />
       case 'image': return <ThreadImage key={index} request={{ kind: 'web', url: node.src }} alt={node.alt} />
       case 'link':
         if (isWebPage(node.href)) return <WebLink key={index} href={node.href}>{inline(node.children)}</WebLink>
