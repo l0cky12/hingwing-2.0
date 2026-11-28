@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import {
-  CHAT_WIDTHS, CONTRAST, DEFAULT_APPEARANCE, FONT_ROLES, fontChoices, isDefaultRole, MOTION, ROLE_ORDER, WIDTH_ORDER,
+  CHAT_WIDTHS, CONTRAST, DEFAULT_APPEARANCE, FONT_ROLES, fontChoices, isDefaultRole, MOTION, ROLE_ORDER, WIDTH_ORDER, WRAP_LABELS,
   type Appearance, type ChatWidth, type FontRole
 } from '../../appearance'
 import { run, useTopic } from '../store'
@@ -93,7 +93,7 @@ function FontRow({ role, appearance, installed, hidden, pick }: { readonly role:
       {wrap !== null && (
         <label className="sample-wrap">
           <input type="checkbox" role="switch" checked={appearance.wrap[wrap]} onChange={event => { const on = event.target.checked; pick(from => ({ ...from, wrap: { ...from.wrap, [wrap]: on } })) }} />
-          Wrap long {role} lines
+          {WRAP_LABELS[wrap]}
         </label>
       )}
     </div>

@@ -233,7 +233,7 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .thread > :first-child::after { top: 8px; }
 .thread > :last-child::after { bottom: auto; height: 18px; }
 .thread > :is(.notice, .err) { margin: 0; }
-.thread > .steer { margin: 0; padding-left: 10px; border-left: 2px solid var(--rule); color: var(--graphite); font-size: var(--text-md); white-space: pre-wrap; overflow-wrap: anywhere; }
+.thread > .steer { margin: 0; padding-left: 10px; border-left: 2px solid var(--rule); color: var(--graphite); font-family: var(--prompt-font); font-size: calc(var(--text-md) * var(--prompt-scale)); white-space: pre-wrap; overflow-wrap: anywhere; }
 .turn.interlude .thread > *::after { display: none; }
 .thread > .step::before, .thread > .group::before, .thread > .approval::before {
   content: ""; position: absolute; z-index: 1; left: calc(var(--thread-x) - var(--col) - 4px); top: 13px;

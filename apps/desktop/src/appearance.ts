@@ -39,7 +39,7 @@ export const FONT_ROLES: { readonly [R in FontRole]: FontRoleSpec } = {
   },
   code: {
     label: 'Code font', desc: 'Code blocks, changes to files and file paths.', face: 'JetBrains Mono', stack: MONO, size: 13, min: 10, max: 20, wrap: 'code',
-    sample: 'function greet(name) {\n-  return "Hi " + name\n+  return `Hello, ${name}! Welcome back, it has been a while since we last saw you.`\n}',
+    sample: 'function greet(name) {\n  return `Hello, ${name}! Welcome back, it has been a while since we last saw you here.`\n}',
     vars: { family: '--mono', scale: '--code-scale' }
   },
   terminal: {
@@ -48,6 +48,7 @@ export const FONT_ROLES: { readonly [R in FontRole]: FontRoleSpec } = {
     vars: { family: '--terminal-font', scale: '--terminal-scale' }
   }
 }
+export const WRAP_LABELS: { readonly [W in WrapRole]: string } = { code: 'Wrap long lines in code blocks', terminal: 'Wrap long terminal lines' }
 export const ROLE_ORDER: readonly FontRole[] = ['interface', 'prompt', 'code', 'terminal']
 
 export const CHAT_WIDTHS: { readonly [W in ChatWidth]: { readonly label: string; readonly column: string; readonly measure: string; readonly request: string } } = {

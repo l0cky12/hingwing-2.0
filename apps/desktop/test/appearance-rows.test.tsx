@@ -1,6 +1,6 @@
 import { isValidElement, type ReactElement, type ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_APPEARANCE, type Appearance } from '../src/appearance'
+import { DEFAULT_APPEARANCE, WRAP_LABELS, type Appearance } from '../src/appearance'
 import type { WindowCommand } from '../src/ipc-contract'
 
 const seen = vi.hoisted(() => ({ commands: [] as WindowCommand[], appearance: undefined as unknown }))
@@ -46,7 +46,7 @@ const select = (label: string) => rows().find(({ type, props }) => type === 'sel
 const optionsOf = (label: string) => drawn(select(label).props.children).filter(({ type }) => type === 'option').map(({ props }) => [props.value, textOf(props.children)])
 const button = (label: string) => rows().find(({ type, props }) => type === 'button' && props['aria-label'] === label)
 const wrapSwitch = (role: string) => {
-  const label = rows().find(({ type, props }) => type === 'label' && textOf(props.children) === `Wrap long ${role} lines`)!
+  const label = rows().find(({ type, props }) => type === 'label' && textOf(props.children) === WRAP_LABELS[role as 'code' | 'terminal'])!
   return drawn(label.props.children).find(({ type }) => type === 'input')!
 }
 const sent = () => seen.commands.map(command => (command as { appearance: Appearance }).appearance)

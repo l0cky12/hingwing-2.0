@@ -1,4 +1,4 @@
-import { FONT_ROLES, ROLE_ORDER, type FontRole } from '../../appearance'
+import { FONT_ROLES, ROLE_ORDER, WRAP_LABELS, type FontRole } from '../../appearance'
 import { SHORTCUTS, type Shortcut, type ShortcutId } from '../shortcuts'
 
 export type Page = 'connection' | 'models' | 'appearance' | 'composer' | 'window' | 'notifications' | 'passwords' | 'skills' | 'permissions' | 'keys' | 'usage' | 'about'
@@ -41,7 +41,7 @@ const fontRows: readonly Row[] = ROLE_ORDER.map(role => {
   const words = [
     `${label}. ${desc} Default, ${face}. Size. font typeface face family size text bigger smaller larger`,
     ...(stack.endsWith('monospace') ? ['monospace mono'] : []),
-    ...(wrap === null ? [] : [`Wrap long ${role} lines. wrap scroll overflow`])
+    ...(wrap === null ? [] : [`${WRAP_LABELS[wrap]}. wrap scroll overflow`])
   ]
   return { id: `font-${role}` as const, page: 'appearance' as const, searchText: words.join(' ') }
 })
