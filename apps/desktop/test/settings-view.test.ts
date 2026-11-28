@@ -123,7 +123,7 @@ describe('settingsViewOf with a search', () => {
     ['contrast', ['contrast']],
     ['math', ['math']],
     ['latex', ['math']],
-    ['animation', ['motion']],
+    ['animation', ['show-work', 'motion']],
     ['motion', ['motion']]
   ] as const)('finds %j by each of its words, wherever they sit in a row', (query, rows) => {
     expect([...settingsViewOf('appearance', query, 'idle').rows]).toEqual(rows)
