@@ -680,7 +680,8 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 /* The profile waits, hidden, under a New bot form opened from it. */
 .bot-panel:has(+ .bot-form[open]), .bot-panel:has(+ .bot-form[open])::backdrop { display: none; }
 .bot-panel.on-routines .bot-form-body > :not(.bot-tabs, .bot-new, .bots-warned, .routines-tab), .bot-panel.on-routines form > :is(.form-refused, .form-choices) { display: none; }
-.routines-tab > .form-choices { padding-top: 14px; }
+.bot-panel.on-memory .bot-form-body > :not(.bot-tabs, .bot-new, .bots-warned, .memory-tab), .bot-panel.on-memory form > :is(.form-refused, .form-choices) { display: none; }
+.routines-tab > .form-choices, .memory-tab > .form-choices { padding-top: 14px; }
 .look-row { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
 .look-button { position: relative; flex: none; width: 64px; height: 64px; padding: 0; border: 0; border-radius: var(--radius-round); background: none; color: var(--ink); }
 .look-button:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; }
@@ -1780,3 +1781,18 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .run > button:hover:not(:disabled) { border-color: var(--ink); }
 .routines-note { margin: 0; padding: 14px 0; font-size: var(--text-sm); color: var(--graphite); }
 .routines-refused { color: var(--brick); }
+.memory-note { margin: 0; padding: 14px 0; font-size: var(--text-sm); color: var(--graphite); }
+.memory-refused { color: var(--brick); }
+.memory-file { padding-bottom: 8px; }
+.memory-file h3 { margin: 12px 0 2px; font-size: var(--text-md); }
+.memory-about, .memory-size { margin: 0; font-size: var(--text-sm); color: var(--graphite); }
+.memory-meter { display: block; width: 100%; height: 8px; margin: 8px 0 4px; appearance: none; border: 0; border-radius: var(--radius-pill); background: var(--rule); overflow: hidden; }
+.memory-meter::-webkit-meter-bar { height: 8px; border: 0; background: var(--rule); }
+.memory-meter::-webkit-meter-optimum-value { background: var(--signal); }
+.memory-meter::-webkit-meter-suboptimum-value, .memory-meter::-webkit-meter-even-less-good-value { background: var(--caution); }
+.memory-entries { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.memory-entries li { padding: 8px 10px; border: 1px solid var(--rule); border-radius: var(--radius-md); background: var(--paper); white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (forced-colors: active) {
+  .memory-meter { appearance: auto; }
+  .memory-entries li { border-color: CanvasText; }
+}
