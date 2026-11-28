@@ -1282,7 +1282,16 @@ async function sizeWindow(ctx, options) {
 async function shoot(ctx, name) {
   const path = join(ctx.evidence, `${name}.png`)
   await ctx.page.mouse.move(0, 0)
+  // Forced colors reverts the caret-color that caret: 'hide' sets, so a field showing a caret leaves forced colors for the capture, with its forced colors pinned (#307).
+  await ctx.page.evaluate(() => {
+    const field = document.activeElement
+    if (!matchMedia('(forced-colors: active)').matches || field?.selectionStart == null || field.selectionStart !== field.selectionEnd) return
+    const shown = getComputedStyle(field)
+    const pinned = ['color', 'background-color', 'border-color', 'outline-color', 'box-shadow', 'text-shadow'].map(name => `${name}: ${shown.getPropertyValue(name)} !important;`).join(' ')
+    document.head.insertAdjacentHTML('beforeend', `<style id="highwing-verify-caret">:focus { ${pinned} forced-color-adjust: none; } :focus::placeholder { forced-color-adjust: auto; }</style>`)
+  })
   await capture(ctx, path, { animations: 'disabled', caret: 'hide', ...(ctx.clip && { clip: ctx.clip }) })
+  await ctx.page.evaluate(() => document.getElementById('highwing-verify-caret')?.remove())
   await drawPreview(ctx, path)
   const fields = await ctx.page.locator(PRIVATE_FIELDS).evaluateAll(inputs => inputs.map(input => ({ label: input.getAttribute('aria-label') ?? '', value: input.value })))
   for (const { value } of fields) if (value !== '') ctx.secrets.add(value)

@@ -32,7 +32,7 @@ Preconditions:
 ## Gotchas
 
 - Chromium replaces author backgrounds, box-shadows and non-system border colors in this mode, so every state is a border in a system color. A `transparent` border is forced to a visible color, so diff lines align with padding instead.
-- The whole story passes `--stretch 6` because `tool-running` lives about 144 ms at recorded timing, and with other verify runs going the shot often took longer than that and failed. Stretched, the step lasts about 864 ms. The shots are the same, except that the message box's caret can show in `approval` (#307).
+- The whole story passes `--stretch 6` because `tool-running` lives about 144 ms at recorded timing, and with other verify runs going the shot often took longer than that and failed. Stretched, the step lasts about 864 ms, and the shots are the same.
 - Chromium snaps border widths to whole pixels. A 1.5px border draws 1px wide.
 - The universal `box-sizing: border-box` rule does not reach pseudo-elements. The thread nodes set it themselves.
 - `settled-expanded` shows the top of the turn, as the design C reference does, so the Done ring is below the fold. The checker reports `n/a` for its end mark. The `settled` shot shows the same end mark.
