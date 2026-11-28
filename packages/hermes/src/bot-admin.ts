@@ -2,7 +2,7 @@ import { refusalOf } from './actor'
 import { GENERATED_MAX_BYTES, MARK_SETS, PICTURE_RULE, type BotCreated, type BotDetails, type BotDraft, type BotEdit, type BotId, type BotMark, type PetChoice } from './domain/bots'
 import type { Command, ModelMenu, Outcome, Refusal } from './domain/command'
 import type { BotManagers } from './domain/passwords'
-import type { Plugin, PluginSwitched } from './domain/plugins'
+import type { Plugin, PluginInstalled, PluginSwitched } from './domain/plugins'
 import type { Toolset } from './domain/toolsets'
 import type { SessionId } from './domain/session'
 import type { Skill } from './domain/skills'
@@ -11,7 +11,7 @@ import { NOT_CONNECTED } from './open'
 import { METHOD_NOT_FOUND, Offline, RpcRefusal, type Connection } from './wire/link'
 import {
   descriptionOf, parseBotAt, parseBotManagers, parseBotRecord, parseCatalog, parseConfigured, parseCreated, parseDenyRules, parseDetails, parseGenerated, parseImageProbe, parseModelMenu, parsePetPicture, parsePets,
-  parsePicture, parsePlugins, parseRestartNeeded, parseSkillStates, parseSkillText, parseTested, parseToolsets, parseToolServers, type Configured
+  parsePicture, parsePluginInstalled, parsePlugins, parseRestartNeeded, parseSkillStates, parseSkillText, parseTested, parseToolsets, parseToolServers, type Configured
 } from './wire/parse'
 
 export type Wire = Pick<Connection, 'call' | 'as'>
@@ -359,6 +359,14 @@ export const setPlugin = (conn: Wire, bot: BotId | null, key: string, enabled: b
     const restart = parseRestartNeeded(await hermes.call('plugins.manage', { action: 'toggle', key, enable: enabled }))
     return { ok: true, value: { plugins: parsePlugins(await hermes.call('plugins.manage', { action: 'list' })), restart } }
   })
+
+const INSTALL_REASONS: Reasons = {
+  [METHOD_NOT_FOUND]: () => ({ kind: 'unsupported', message: "This Hermes can't install plugins." }),
+  5026: message => ({ kind: 'rejected', message })
+}
+
+export const installPlugin = (conn: Wire, bot: BotId | null, name: string): Promise<Outcome<PluginInstalled>> =>
+  guarded(INSTALL_REASONS, async () => parsePluginInstalled(await scoped(conn, bot).call('plugins.manage', { action: 'install', catalog_name: name, enable: true }), name))
 
 const TOOLSET_REASONS: Reasons = { [METHOD_NOT_FOUND]: () => ({ kind: 'unsupported', message: "This Hermes can't list its tools." }) }
 

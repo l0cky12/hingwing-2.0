@@ -14,6 +14,7 @@ import { desktopOpener, recordingOpener, type Opener } from './files'
 import { desktopImageDeps, fixtureImageDeps, imageLoader } from './images'
 import { draftStore, DRAFTS_DIR } from './drafts'
 import { serveWindows } from './ipc'
+import { desktopCatalogDeps, fixtureCatalogDeps, pluginCatalog } from './plugin-catalog'
 import { serveScreen } from './screen'
 import { dbusSend, hasSecretService } from './keyring'
 import { chatLinks } from './links'
@@ -158,7 +159,8 @@ app.whenReady().then(async () => {
   const saver = HIGHWING_SAVE_DIR ? folderSaver(HIGHWING_SAVE_DIR) : dialogSaver(dialog, () => app.getPath('downloads'))
   const served = serveWindows(
     owner, ipcMain, isAppUrl, opener, images, drafts, pane, { pick: (bot, live) => pickPicture(pictureDeps, bot, live), choose: () => choosePicture(pictureDeps) },
-    { store: attachments, sources }, saver, { mode, theme, accent, sidebarWidth, sendKey, spellCheck, snoozes, notices, onClose }, intro
+    { store: attachments, sources }, saver, { mode, theme, accent, sidebarWidth, sendKey, spellCheck, snoozes, notices, onClose }, intro,
+    pluginCatalog(fixture ? fixtureCatalogDeps(fixture.header.pluginCatalog) : desktopCatalogDeps(net))
   )
   const stopScreen = serveScreen(owner, ipcMain, isAppUrl)
   const stopNotices = notify(owner, intro.intro, {

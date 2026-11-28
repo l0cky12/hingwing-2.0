@@ -1,12 +1,13 @@
 import {
-  CONNECTOR_FILTERS, connectorsView, shownBot, shownChat, STANDING_WORDS, type CommandOutcome, type AppEntry, type AppsBoard, type BotId, type ConnectorFilter, type ConnectorShelf, type ConnectorsQuery, type ConnectorsView, type ServerSetup, type Toolset, type ToolServer
+  CONNECTOR_FILTERS, connectorsView, pluginsView, shownBot, shownChat, STANDING_WORDS, type CatalogPlugin, type CommandOutcome, type AppEntry, type AppsBoard, type BotId, type ConnectorFilter, type ConnectorShelf, type ConnectorsQuery, type ConnectorsView, type ServerSetup, type Toolset, type ToolServer
 } from '@highwing/hermes/domain'
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { connectorsKeys } from '../keys'
 import { line } from '../setup/ConnectionCard'
 import { nameOf, useSkillSwitches } from '../setup/Skills'
 import { run, useTopic } from '../store'
 import { useSwitches } from '../switches'
+import { askWords, catalogKind, installedKind, installedWords, AVAILABLE_PAGE } from './plugins-view'
 import { ToolServerForm, useToolServers } from './ToolServers'
 import { namedTools, STATES, toolCount } from './tool-servers-view'
 
@@ -152,6 +153,8 @@ function useListed<T>(ask: () => Promise<CommandOutcome<readonly T[]>>, key: str
   return [read, (items: readonly T[]) => setRead({ at: 'read', items })] as const
 }
 
+type Installing = { readonly name: string; readonly at: 'confirming' | 'installing' } | null
+
 function usePlugins(bot: BotId | null) {
   const [read, setRead] = useListed(() => run({ do: 'plugins', bot }), bot)
   const [restart, setRestart] = useState<ReadonlySet<string>>(new Set())
@@ -163,7 +166,44 @@ function usePlugins(bot: BotId | null) {
     }
     return done
   })
-  return { read, restart, ...switches }
+  const [catalog, setCatalog] = useState<Listed<CatalogPlugin>>({ at: 'reading' })
+  const [installing, setInstalling] = useState<Installing>(null)
+  const [said, setSaid] = useState<{ readonly ok: boolean; readonly words: string } | null>(null)
+  const openRef = useRef(true)
+
+  useEffect(() => {
+    openRef.current = true
+    return () => { openRef.current = false }
+  }, [])
+
+  const readCatalog = () => {
+    setCatalog({ at: 'reading' })
+    void run({ do: 'pluginCatalog' }).then(outcome => {
+      if (openRef.current) setCatalog(outcome.ok ? { at: 'read', items: outcome.value } : { at: 'refused', words: outcome.refusal.message })
+    })
+  }
+  useEffect(readCatalog, [])
+
+  const ask = (name: string) => {
+    if (installing?.at === 'installing') return
+    setInstalling({ name, at: 'confirming' })
+    setSaid(null)
+  }
+
+  const install = async (name: string) => {
+    setInstalling({ name, at: 'installing' })
+    const outcome = await run({ do: 'installPlugin', bot, name })
+    if (!openRef.current) return
+    if (outcome.ok) {
+      const next = await run({ do: 'plugins', bot })
+      if (!openRef.current) return
+      if (next.ok) setRead(next.value)
+    }
+    setInstalling(null)
+    setSaid(outcome.ok ? { ok: true, words: installedWords(outcome.value) } : { ok: false, words: outcome.refusal.message })
+  }
+
+  return { read, restart, ...switches, catalog, installing, said, readCatalog, ask, cancel: () => setInstalling(null), install }
 }
 
 interface CardProps {
@@ -175,10 +215,11 @@ interface CardProps {
   readonly toolNames?: string
   readonly state?: { readonly standing: string; readonly words: string }
   readonly later?: boolean
+  readonly below?: ReactNode
   readonly children?: ReactNode
 }
 
-function Card({ name, kind, logo = null, detail, mono = false, toolNames = '', state, later = false, children }: CardProps) {
+function Card({ name, kind, logo = null, detail, mono = false, toolNames = '', state, later = false, below, children }: CardProps) {
   const [broken, setBroken] = useState<string | null>(null)
   return (
     <li className="hub-card">
@@ -190,6 +231,7 @@ function Card({ name, kind, logo = null, detail, mono = false, toolNames = '', s
         {detail !== '' && <p className="hub-detail" data-mono={mono || undefined} title={detail}>{detail}</p>}
         {toolNames !== '' && <p className="hub-detail" data-mono title={toolNames}>{toolNames}</p>}
         {later && <p className="hub-later">Takes effect when Hermes restarts.</p>}
+        {below}
       </div>
       <div className="hub-side">
         {state !== undefined && <p className="hub-state" data-standing={state.standing}>{state.words}</p>}
@@ -312,25 +354,104 @@ function SkillsPanel({ name, switches }: { readonly name: string; readonly switc
   )
 }
 
-const sourceWords = (source: string) => source.charAt(0).toUpperCase() + source.slice(1)
+interface OfferProps {
+  readonly plugin: CatalogPlugin
+  readonly installing: Installing
+  readonly onAsk: () => void
+  readonly onInstall: () => void
+  readonly onCancel: () => void
+}
 
-function PluginsPanel({ name, plugins: { read, restart, problem, of } }: { readonly name: string; readonly plugins: ReturnType<typeof usePlugins> }) {
+export function OfferCard({ plugin, installing, onAsk, onInstall, onCancel }: OfferProps) {
+  const mine = installing?.name === plugin.name ? installing.at : null
+  const below = mine === 'confirming' && (
+    <>
+      {plugin.repo !== '' && <p className="hub-detail" data-mono title={plugin.repo}>{plugin.repo}</p>}
+      <p className="hub-ask">{askWords(plugin)}</p>
+    </>
+  )
+  return (
+    <Card name={plugin.name} kind={catalogKind(plugin)} detail={plugin.description} below={below} {...(mine === 'installing' ? { state: { standing: 'connecting', words: 'Installing…' } } : {})}>
+      <div className="hub-actions">
+        {mine === 'confirming' && <button type="button" aria-label={`Cancel installing ${plugin.name}`} onClick={onCancel}>Cancel</button>}
+        {mine === 'confirming' && <button type="button" aria-label={`Install ${plugin.name}`} onClick={onInstall}>Install</button>}
+        {mine === null && <button type="button" aria-label={`Install ${plugin.name}`} disabled={installing?.at === 'installing'} onClick={onAsk}>Install</button>}
+      </div>
+    </Card>
+  )
+}
+
+function PluginsPanel({ name, plugins }: { readonly name: string; readonly plugins: ReturnType<typeof usePlugins> }) {
+  const { read: installed, restart, problem, of, catalog, installing, said } = plugins
+  const [query, setQuery] = useState<ConnectorsQuery>({ text: '', filter: 'all' })
+  const [limit, setLimit] = useState(AVAILABLE_PAGE)
+  const items = installed.at === 'read' ? installed.items : null
+  const offered = catalog.at === 'read' ? catalog.items : null
+  const view = useMemo(() => (items === null ? null : pluginsView(items, offered ?? [], query)), [items, offered, query])
+  const onQuery = (next: ConnectorsQuery) => {
+    setQuery(next)
+    setLimit(AVAILABLE_PAGE)
+  }
+  const { text, filter } = query
+
   return (
     <>
-      {read.at === 'reading' && <p className="hub-note" role="status">Asking Hermes…</p>}
-      {read.at === 'refused' && <p className="hub-note" role="alert">{read.words}</p>}
-      {read.at === 'read' && read.items.length === 0 && <p className="hub-note">{name} has no plugins.</p>}
-      {read.at === 'read' && read.items.length > 0 && (
-        <ul className="hub-grid">
-          {read.items.map(plugin => (
-            <Card
-              key={plugin.key} name={plugin.name} kind={[plugin.version === '' ? null : `v${plugin.version}`, sourceWords(plugin.source)].filter(Boolean).join(' · ')}
-              detail={plugin.description} later={restart.has(plugin.key)}
-            >
-              <input type="checkbox" role="switch" className="hub-switch" aria-label={`Use ${plugin.name}`} {...of(plugin)} />
-            </Card>
-          ))}
-        </ul>
+      {installed.at === 'reading' && <p className="hub-note" role="status">Asking Hermes…</p>}
+      {installed.at === 'refused' && <p className="hub-note" role="alert">{installed.words}</p>}
+      {view !== null && (
+        <>
+          <div className="hub-search">
+            <Search />
+            <input
+              type="search" aria-label="Search plugins" placeholder={`Search ${view.total} ${view.total === 1 ? 'plugin' : 'plugins'}`}
+              spellCheck={false} autoComplete="off" value={text} onChange={event => onQuery({ text: event.target.value, filter })}
+            />
+          </div>
+          <p className="tool-said" role="status">{said?.ok === true ? said.words : ''}</p>
+          {said?.ok === false && <p className="tool-problem" role="alert">{said.words}</p>}
+          {catalog.at === 'reading' && <p className="hub-note" role="status">{"Loading Hermes's plugin catalog…"}</p>}
+          {catalog.at === 'refused' && (
+            <div className="hub-note">
+              <p role="alert">{catalog.words}</p>
+              <button type="button" onClick={plugins.readCatalog}>Try again</button>
+            </div>
+          )}
+          <div className="hub-chips" role="group" aria-label="Show">
+            {CONNECTOR_FILTERS.map(shown => (
+              <button key={shown} type="button" aria-pressed={filter === shown} onClick={() => onQuery({ text, filter: shown })}>
+                {FILTER_WORDS[shown]} <span className="hub-count">{view.counts[shown]}</span>
+              </button>
+            ))}
+          </div>
+          {view.added.length > 0 && (
+            <section aria-label={SHELF_WORDS.added}>
+              <h3 className="hub-heading">{SHELF_WORDS.added} <span className="hub-count">{view.added.length}</span></h3>
+              <ul className="hub-grid">
+                {view.added.map(plugin => (
+                  <Card key={plugin.key} name={plugin.name} kind={installedKind(plugin)} detail={plugin.description} later={restart.has(plugin.key)}>
+                    <input type="checkbox" role="switch" className="hub-switch" aria-label={`Use ${plugin.name}`} {...of(plugin)} />
+                  </Card>
+                ))}
+              </ul>
+            </section>
+          )}
+          {view.available.length > 0 && (
+            <section aria-label={SHELF_WORDS.available}>
+              <h3 className="hub-heading">{SHELF_WORDS.available} <span className="hub-count">{view.available.length}</span></h3>
+              <ul className="hub-grid">
+                {view.available.slice(0, limit).map(plugin => (
+                  <OfferCard
+                    key={plugin.name} plugin={plugin} installing={installing}
+                    onAsk={() => plugins.ask(plugin.name)} onInstall={() => void plugins.install(plugin.name)} onCancel={plugins.cancel}
+                  />
+                ))}
+              </ul>
+              {view.available.length > limit && <div className="hub-note"><button type="button" onClick={() => setLimit(limit + AVAILABLE_PAGE)}>Show more</button></div>}
+            </section>
+          )}
+          {view.total > 0 && view.counts.all === 0 && <p className="hub-note">No plugins match.</p>}
+          {view.total === 0 && catalog.at !== 'reading' && <p className="hub-note">{name} has no plugins.</p>}
+        </>
       )}
       {problem !== null && <p className="hub-note" role="alert">{problem}</p>}
     </>

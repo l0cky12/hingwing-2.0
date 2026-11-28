@@ -149,6 +149,13 @@ export interface Fixture {
      * the call as an unknown method, as a Hermes without it does, and so does a socket bound to one profile.
      */
     readonly plugins?: readonly PluginSeed[]
+    /**
+     * The rows of Hermes's public plugin catalog, as `docs/api/plugins.json` holds them, which the app reads in place of the network.
+     * `plugins.manage` `install` takes a `catalog_name` listed here. Absent: the app's read of the catalog fails, and every install is refused as not in the catalog.
+     */
+    readonly pluginCatalog?: readonly Json[]
+    /** catalog name -> the words Hermes refuses its install with, as error 5026. */
+    readonly pluginRefusals?: Readonly<Record<string, string>>
     /** The toolsets `tools.list` answers for any chat or none. Absent: the gateway refuses the call as an unknown method, as a Hermes without it does, and so does a socket bound to one profile. */
     readonly tools?: readonly ToolsetSeed[]
     /** true: play an older Hermes that lists plugins and toolsets but can't turn them on or off. Default false. */
@@ -721,6 +728,9 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (plugins !== undefined && !(Array.isArray(plugins) && plugins.every(isPluginSeed))) {
     return '"plugins" must be a list of { name, key?, version, description, source, status, restart_required? }, with "source" bundled, user or entrypoint and "status" enabled, disabled or "not enabled"'
   }
+  const { pluginCatalog, pluginRefusals } = value
+  if (pluginCatalog !== undefined && !(Array.isArray(pluginCatalog) && pluginCatalog.every(row => isObject(row) && isText(row.name)))) return '"pluginCatalog" must be a list of catalog rows, each with a "name"'
+  if (pluginRefusals !== undefined && !(isObject(pluginRefusals) && Object.values(pluginRefusals).every(isText))) return '"pluginRefusals" must map a catalog name to the words Hermes refuses its install with'
   const { tools } = value
   if (tools !== undefined && !(Array.isArray(tools) && tools.every(isToolsetSeed))) return '"tools" must be a list of { name, description, enabled, tools }, with "tools" the names of its tools'
   const { listOnly } = value
@@ -805,6 +815,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(memory === undefined ? {} : { memory }),
     ...(mcp === undefined ? {} : { mcp }),
     ...(plugins === undefined ? {} : { plugins: plugins as readonly PluginSeed[] }),
+    ...(pluginCatalog === undefined ? {} : { pluginCatalog: pluginCatalog as Json[] }), ...(pluginRefusals === undefined ? {} : { pluginRefusals: pluginRefusals as Record<string, string> }),
     ...(tools === undefined ? {} : { tools: tools as readonly ToolsetSeed[] }),
     ...(listOnly === undefined ? {} : { listOnly }),
     ...(reach === undefined ? {} : { reach }), ...(homeBotChat === undefined ? {} : { homeBotChat }),

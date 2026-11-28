@@ -127,9 +127,11 @@ export async function readLocalFile(path: string, cap: number): Promise<Uint8Arr
 }
 
 /** `net.fetch` goes through Chromium's network stack, so it honours the system proxy and certificate store as the user's browser does. The global fetch does neither. */
+export const webFetch = (net: Pick<Electron.Net, 'fetch'>) => (url: string, signal: AbortSignal) => net.fetch(url, { signal, credentials: 'omit', redirect: 'follow' })
+
 export function desktopImageDeps(net: Pick<Electron.Net, 'fetch'>): ImageDeps {
   return {
-    fetchWeb: (url, signal) => net.fetch(url, { signal, credentials: 'omit', redirect: 'follow' }),
+    fetchWeb: webFetch(net),
     readLocal: readLocalFile,
     cap: IMAGE_CAP,
     timeoutMs: WEB_TIMEOUT_MS
