@@ -389,6 +389,14 @@ const STEPS = {
       throw new Error(ctx.secretLabels.has(label) ? `"${label}" does not hold the expected value` : `"${label}" holds ${JSON.stringify(held)}, not ${JSON.stringify(text)}`)
     }
   },
+  placeholder: {
+    arity: 2,
+    run: async (ctx, label, text) => {
+      const field = ctx.page.getByLabel(label, { exact: true })
+      const shown = await pollUntil(ctx, () => field.getAttribute('placeholder', { timeout: ctx.timeout }), held => held === text).catch(() => null)
+      if (shown !== text) throw new Error(`"${label}" shows the placeholder ${JSON.stringify(await field.getAttribute('placeholder'))}, not ${JSON.stringify(text)}`)
+    }
+  },
   focused: {
     arity: 2,
     run: async (ctx, role, name) => {
