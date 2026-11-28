@@ -1460,7 +1460,7 @@ describe('the routine edit calls', () => {
   it('runs the routine with a POST of the trigger route, and answers the routine Hermes holds', async () => {
     const rig = harness()
     rig.answers({ status: 200, body: JOB })
-    await expect(rig.handlers.get(CHANNEL.editRoutine)!(rig.event(), 'rae', 'a1', { do: 'run' }, 0)).resolves.toEqual({ ok: true, value: NOW })
+    await expect(rig.handlers.get(CHANNEL.editRoutine)!(rig.event(), 'rae', 'a1', { do: 'run' }, 0)).resolves.toEqual({ ok: true, value: { routine: NOW, ran: null } })
     expect(rig.writes).toEqual([{ method: 'POST', path: '/api/cron/jobs/a1/trigger?profile=rae', ms: 86_400_000 }])
   })
 

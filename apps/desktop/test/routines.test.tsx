@@ -1,4 +1,4 @@
-import type { BotId, CommandOutcome, Routine, RoutineEdit, RoutineId, RoutineRun, SessionId } from '@highwing/hermes/domain'
+import type { BotId, CommandOutcome, Edited, Ran, Routine, RoutineEdit, RoutineId, RoutineRun, SessionId } from '@highwing/hermes/domain'
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
@@ -228,7 +228,7 @@ describe('run now and edit schedule', () => {
     const run: RoutineEdit = { do: 'run' }
     expect(afterEditKnown(known, run, refusal('unsupported', 'x'))).toEqual({ offered: true, withdrawn: ['run'] })
     expect(afterEditKnown({ offered: true, withdrawn: ['run'] }, run, refusal('unsupported', 'x'))).toEqual({ offered: true, withdrawn: ['run'] })
-    for (const answered of [refusal('stale', 'x'), refusal('rejected', 'x'), refusal('offline', 'x'), { ok: true, value: DIGEST } as const]) expect(afterEditKnown(known, run, answered)).toBe(known)
+    for (const answered of [refusal('stale', 'x'), refusal('rejected', 'x'), refusal('offline', 'x'), { ok: true, value: { routine: DIGEST, ran: null } } as const]) expect(afterEditKnown(known, run, answered)).toBe(known)
   })
 
   it('offers Run now on a routine that is not paused, and never on a paused one, which Hermes would also resume', () => {
@@ -256,15 +256,27 @@ describe('run now and edit schedule', () => {
     ])
   })
 
-  it('folds Hermes\'s answer to a run into the row, and says Ran with the name Hermes holds', () => {
+  it('folds Hermes\'s answer to a run into the row, and says how the run went with the name Hermes holds', () => {
     const ran = { ...DIGEST, name: 'Morning digest (new)', nextRunAt: '2026-11-30T09:00:00+00:00' }
-    expect(afterEdit(LISTED, 'a1' as RoutineId, { do: 'run' }, { ok: true, value: ran }, CLOCK)).toEqual({ listed: { ok: true, value: [ran, BACKUP] }, said: null, note: 'Ran Morning digest (new).' })
-    expect(ranWords(DIGEST)).toBe('Ran Morning digest.')
+    expect(afterEdit(LISTED, 'a1' as RoutineId, { do: 'run' }, { ok: true, value: { routine: ran, ran: { is: 'succeeded' } } }, CLOCK)).toEqual({
+      listed: { ok: true, value: [ran, BACKUP] }, said: null, note: 'Ran Morning digest (new). It succeeded.'
+    })
+  })
+
+  it.each<[Ran | null, string]>([
+    [{ is: 'succeeded' }, 'Ran Morning digest. It succeeded.'],
+    [{ is: 'failed', why: 'Provider returned 429' }, 'Ran Morning digest. It failed: Provider returned 429'],
+    [{ is: 'failed', why: null }, 'Ran Morning digest. It failed, and Hermes gave no reason.'],
+    [{ is: 'undelivered' }, "Ran Morning digest. It ran, but its result didn't reach where it goes."],
+    [{ is: 'cancelled' }, 'Ran Morning digest. It was stopped before it finished.'],
+    [null, 'Ran Morning digest.']
+  ])('says what Hermes stamped on the run, %j', (ran, words) => {
+    expect(ranWords(DIGEST, ran)).toBe(words)
   })
 
   it('folds Hermes\'s answer to a new schedule into the row, with the next run as Hermes gives it', () => {
     const saved = { ...DIGEST, schedule: '0 8 * * 1-5', nextRunAt: '2026-11-30T08:00:00+00:00' }
-    expect(afterEdit(LISTED, 'a1' as RoutineId, { do: 'reschedule', schedule: '0 8 * * 1-5' }, { ok: true, value: saved }, CLOCK)).toEqual({
+    expect(afterEdit(LISTED, 'a1' as RoutineId, { do: 'reschedule', schedule: '0 8 * * 1-5' }, { ok: true, value: { routine: saved, ran: null } }, CLOCK)).toEqual({
       listed: { ok: true, value: [saved, BACKUP] }, said: null, note: 'Saved. Hermes runs it next Mon 30 Nov 2026 08:00.'
     })
   })
@@ -293,12 +305,12 @@ describe('run now and edit schedule', () => {
 
   it('leaves a list Hermes refused to give as it is, when an edit lands', () => {
     const refused = refusal('offline', 'gone')
-    expect(afterEdit(refused, 'a1' as RoutineId, { do: 'run' }, { ok: true, value: DIGEST }, CLOCK)).toEqual({ listed: refused, said: null, note: 'Ran Morning digest.' })
+    expect(afterEdit(refused, 'a1' as RoutineId, { do: 'run' }, { ok: true, value: { routine: DIGEST, ran: null } }, CLOCK)).toEqual({ listed: refused, said: null, note: 'Ran Morning digest.' })
   })
 
   it('reads the list again after Hermes says the routine is not there', () => {
     expect(isGone(refusal('stale', 'x'))).toBe(true)
-    for (const answered of [refusal('rejected', 'x'), refusal('unsupported', 'x'), { ok: true, value: DIGEST } as const]) expect(isGone(answered)).toBe(false)
+    for (const answered of [refusal('rejected', 'x'), refusal('unsupported', 'x'), { ok: true, value: { routine: DIGEST, ran: null } } as const]) expect(isGone(answered)).toBe(false)
   })
 })
 
@@ -346,8 +358,8 @@ describe('the schedule field', () => {
 
   it('stays open for a refusal that can be tried again, and closes for Hermes taking it or for a control or routine that is gone', () => {
     const saving = { ...typedInto(OPEN, '0 8 * * 1-5'), saving: true }
-    const answer = (answered: CommandOutcome<Routine>) => afterSave(saving, answered)
-    expect(answer({ ok: true, value: routine('a1', 'Morning digest', '0 8 * * 1-5') })).toBeNull()
+    const answer = (answered: CommandOutcome<Edited>) => afterSave(saving, answered)
+    expect(answer({ ok: true, value: { routine: routine('a1', 'Morning digest', '0 8 * * 1-5'), ran: null } })).toBeNull()
     expect(answer({ ok: false, refusal: { kind: 'offline', message: 'x' } })).toEqual({ ...saving, saving: false, words: 'x' })
     expect(answer({ ok: false, refusal: { kind: 'unsupported', message: 'x' } })).toBeNull()
     expect(answer({ ok: false, refusal: { kind: 'stale', message: 'x' } })).toBeNull()

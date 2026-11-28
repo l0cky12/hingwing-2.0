@@ -60,20 +60,31 @@ describe('routineEditsOffered', () => {
 describe('editRoutine', () => {
   it('sends a run as a POST of the trigger route in the bot profile, and answers the routine as Hermes now holds it', async () => {
     const sent: HermesRequest[] = []
-    expect(await editRoutine(answering({ status: 200, body: JOB }, sent), BOT, ROUTINE, RUN)).toEqual({ ok: true, value: ROUTINE_NOW })
+    expect(await editRoutine(answering({ status: 200, body: JOB }, sent), BOT, ROUTINE, RUN)).toEqual({ ok: true, value: { routine: ROUTINE_NOW, ran: { is: 'succeeded' } } })
     expect(sent).toEqual([{ method: 'POST', path: '/api/cron/jobs/4f1c2a9e0b7d/trigger?profile=rae', ms: 86_400_000 }])
   })
 
   it('sends a new schedule as a PUT whose body is the schedule alone, and answers the routine with the schedule and next run Hermes gives', async () => {
     const sent: HermesRequest[] = []
-    expect(await editRoutine(answering({ status: 200, body: JOB }, sent), BOT, ROUTINE, RESCHEDULE)).toEqual({ ok: true, value: ROUTINE_NOW })
+    expect(await editRoutine(answering({ status: 200, body: JOB }, sent), BOT, ROUTINE, RESCHEDULE)).toEqual({ ok: true, value: { routine: ROUTINE_NOW, ran: null } })
     expect(sent).toEqual([{ method: 'PUT', path: '/api/cron/jobs/4f1c2a9e0b7d?profile=rae', json: { updates: { schedule: '0 8 * * 1-5' } }, ms: 30_000 }])
     expect(JSON.stringify(sent[0]?.json)).toBe('{"updates":{"schedule":"0 8 * * 1-5"}}')
   })
 
+  it.each<[string, object, unknown]>([
+    ['a failure with its error', { last_status: 'error', last_error: 'Provider returned 429' }, { is: 'failed', why: 'Provider returned 429' }],
+    ['a failure with no error', { last_status: 'error', last_error: null }, { is: 'failed', why: null }],
+    ['a result that was not delivered', { last_status: 'delivery_failed' }, { is: 'undelivered' }],
+    ['a stop', { last_status: 'cancelled' }, { is: 'cancelled' }],
+    ['a status Highwing does not know', { last_status: 'quota_hold' }, null]
+  ])('answers how a run went from the job Hermes stamped: %s', async (_what, stamped, ran) => {
+    const answered = await editRoutine(answering({ status: 200, body: { ...JOB, ...stamped } }), BOT, ROUTINE, RUN)
+    expect(answered.ok && answered.value.ran).toEqual(ran)
+  })
+
   it('answers a paused routine as paused', async () => {
     expect(await editRoutine(answering({ status: 200, body: { ...JOB, enabled: false, state: 'paused', next_run_at: null } }), BOT, ROUTINE, RESCHEDULE))
-      .toEqual({ ok: true, value: { ...ROUTINE_NOW, paused: true, nextRunAt: null } })
+      .toEqual({ ok: true, value: { routine: { ...ROUTINE_NOW, paused: true, nextRunAt: null }, ran: null } })
   })
 
   it.each<[string, RoutineEdit, HttpAnswer | Error, keyof typeof REFUSALS]>([

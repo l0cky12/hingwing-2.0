@@ -1,5 +1,5 @@
 import { parseCronJob, type ReadHermes, type WriteHermes } from '@highwing/hermes'
-import { parseRoutineRuns, requestOf, runsPath, type BotId, type CommandOutcome, type Refusal, type Routine, type RoutineEdit, type RoutineId } from '@highwing/hermes/domain'
+import { parseRoutineRuns, ranOf, requestOf, runsPath, type BotId, type CommandOutcome, type Edited, type Refusal, type RoutineEdit, type RoutineId } from '@highwing/hermes/domain'
 
 const refused = (kind: Refusal['kind'], message: string) => ({ ok: false, refusal: { kind, message } }) as const
 const ALREADY_RUNNING = refused('rejected', 'This routine is already running.')
@@ -46,10 +46,10 @@ function refusalOf(edit: RoutineEdit, status: number, body: unknown): CommandOut
  * Asks Hermes to run `routine` now, or to give it another schedule, and answers the routine as Hermes now holds it. A run
  * answers only once the job has run, so it can take as long as the job does.
  */
-export async function editRoutine(write: WriteHermes, bot: BotId, routine: RoutineId, edit: RoutineEdit): Promise<CommandOutcome<Routine>> {
+export async function editRoutine(write: WriteHermes, bot: BotId, routine: RoutineId, edit: RoutineEdit): Promise<CommandOutcome<Edited>> {
   const answer = await write(requestOf(edit, routine, bot)).catch(() => null)
   if (answer === null) return UNREACHED(TRIED[edit.do])
   if (answer.status !== 200) return refusalOf(edit, answer.status, answer.body)
   const now = parseCronJob(answer.body)
-  return now === null || now.id !== routine ? UNREADABLE : { ok: true, value: now }
+  return now === null || now.id !== routine ? UNREADABLE : { ok: true, value: { routine: now, ran: edit.do === 'run' ? ranOf(answer.body) : null } }
 }

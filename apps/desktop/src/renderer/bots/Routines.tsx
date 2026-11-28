@@ -1,4 +1,4 @@
-import { SCHEDULE_MAX, type BotId, type CommandOutcome, type Routine, type RoutineAction, type RoutineEdit, type RoutineId, type RoutineRun, type SessionId } from '@highwing/hermes/domain'
+import { SCHEDULE_MAX, type BotId, type CommandOutcome, type Edited, type Routine, type RoutineAction, type RoutineEdit, type RoutineId, type RoutineRun, type SessionId } from '@highwing/hermes/domain'
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { TIME_ZONE } from '../chat/wake'
 import { DeleteDialog } from './DeleteDialog'
@@ -22,7 +22,7 @@ export interface RoutinesProps {
   /** Whether this Hermes serves the routes that run a routine now and change its schedule. `routine` is any routine of the bot. */
   readonly onOffered: (bot: BotId, routine: RoutineId) => Promise<boolean>
   /** Asks Hermes to run the routine now, which it answers once the job has run, or to change its schedule. Answers the routine as Hermes then holds it. */
-  readonly onEdit: (bot: BotId, routine: RoutineId, edit: RoutineEdit) => Promise<CommandOutcome<Routine>>
+  readonly onEdit: (bot: BotId, routine: RoutineId, edit: RoutineEdit) => Promise<CommandOutcome<Edited>>
 }
 
 type Listed = { readonly bot: BotId; readonly outcome: CommandOutcome<readonly Routine[]>; readonly said: string | null; readonly note: string | null }
@@ -126,7 +126,7 @@ export interface RowEdits {
   readonly running: readonly RoutineId[]
   readonly onRun: (row: RoutineRow) => void
   /** Sends the schedule as typed. Answers what Hermes said, so the field can show a refusal. */
-  readonly onReschedule: (row: RoutineRow, schedule: string) => Promise<CommandOutcome<Routine>>
+  readonly onReschedule: (row: RoutineRow, schedule: string) => Promise<CommandOutcome<Edited>>
 }
 
 export interface RoutinesListProps {

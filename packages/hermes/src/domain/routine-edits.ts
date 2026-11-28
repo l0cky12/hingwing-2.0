@@ -4,10 +4,36 @@
  * these values cross Electron IPC.
  */
 import type { BotId } from './bots'
-import type { RoutineId } from './routines'
+import type { Routine, RoutineId } from './routines'
 
 /** `run`: `POST .../trigger`, which runs the whole job inside the request. `reschedule`: `PUT` of the schedule alone, which keeps the job's id, skills, model, delivery and history. */
 export type RoutineEdit = { readonly do: 'run' } | { readonly do: 'reschedule'; readonly schedule: string }
+
+/** How the run Hermes just did went, as it stamps the job's `last_status` and `last_error` (cron/jobs.py:2371-2373). */
+export type Ran =
+  | { readonly is: 'succeeded' }
+  | { readonly is: 'failed'; readonly why: string | null }
+  /** The job ran, and its result didn't reach where it goes. */
+  | { readonly is: 'undelivered' }
+  | { readonly is: 'cancelled' }
+
+/** The routine as Hermes holds it after an edit, and for a run how it went. `ran` null: a schedule change, or a status Highwing doesn't know. */
+export interface Edited { readonly routine: Routine; readonly ran: Ran | null }
+
+const RAN: { readonly [status: string]: (error: string | null) => Ran } = {
+  ok: () => ({ is: 'succeeded' }),
+  error: why => ({ is: 'failed', why }),
+  delivery_failed: () => ({ is: 'undelivered' }),
+  cancelled: () => ({ is: 'cancelled' })
+}
+
+/** How a run went, from the raw job record Hermes answers a trigger with. */
+export function ranOf(job: unknown): Ran | null {
+  if (job === null || typeof job !== 'object' || Array.isArray(job)) return null
+  const { last_status: status, last_error: error } = job as { readonly last_status?: unknown; readonly last_error?: unknown }
+  const verdict = typeof status === 'string' && Object.hasOwn(RAN, status) ? RAN[status] : undefined
+  return verdict === undefined ? null : verdict(typeof error === 'string' && error.trim() !== '' ? error.trim() : null)
+}
 
 /** Hermes answers a trigger only once the job has run, and its own desktop app waits up to a day for it (apps/desktop/src/api/cron.ts:20-24). */
 export const RUN_NOW_MS = 24 * 60 * 60 * 1000

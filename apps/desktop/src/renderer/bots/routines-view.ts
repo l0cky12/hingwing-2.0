@@ -1,4 +1,4 @@
-import type { BotId, CommandOutcome, Routine, RoutineEdit, RoutineId, RoutineRun, RunOutcome, SessionId } from '@highwing/hermes/domain'
+import type { BotId, CommandOutcome, Edited, Ran, Routine, RoutineEdit, RoutineId, RoutineRun, RunOutcome, SessionId } from '@highwing/hermes/domain'
 import { whenWords, type ViewClock } from '@highwing/thread'
 
 export interface RoutineRow {
@@ -182,14 +182,25 @@ export const editControlsOf = (known: EditsKnown | null): EditControls => ({
 })
 
 /** `answered` is Hermes's reply to `edit`, and a refusal of kind `unsupported` is its word that it cannot do that edit at all. */
-export const afterEditKnown = <K extends EditsKnown>(known: K, edit: RoutineEdit, answered: CommandOutcome<Routine>): K =>
+export const afterEditKnown = <K extends EditsKnown>(known: K, edit: RoutineEdit, answered: CommandOutcome<Edited>): K =>
   answered.ok || answered.refusal.kind !== 'unsupported' || known.withdrawn.includes(edit.do) ? known : { ...known, withdrawn: [...known.withdrawn, edit.do] }
 
 /** A paused routine has no Run now: Hermes would run it and resume it, which is more than the word says. */
 export const canRun = (row: Pick<RoutineRow, 'paused'>, controls: EditControls): boolean => controls.run && !row.paused
 
 export const RUNNING_WORDS = 'Running now…'
-export const ranWords = (routine: Routine): string => `Ran ${routine.name}.`
+const RAN_WORDS: { readonly [R in Ran['is']]: (ran: Extract<Ran, { is: R }>) => string } = {
+  succeeded: () => 'It succeeded.',
+  failed: ({ why }) => (why === null ? 'It failed, and Hermes gave no reason.' : `It failed: ${why}`),
+  undelivered: () => "It ran, but its result didn't reach where it goes.",
+  cancelled: () => 'It was stopped before it finished.'
+}
+
+/** What Hermes said of the run it just did. Past runs holds the run itself. */
+export function ranWords(routine: Routine, ran: Ran | null): string {
+  const said = ran === null ? null : (RAN_WORDS[ran.is] as (held: Ran) => string)(ran)
+  return said === null ? `Ran ${routine.name}.` : `Ran ${routine.name}. ${said}`
+}
 
 /**
  * What Hermes's answer to a new schedule says of the next run, in Hermes's own words: its `next_run_at`, as the time line of a turn says it.
@@ -216,10 +227,10 @@ export const canSave = (editor: Editor, row: Pick<RoutineRow, 'schedule'>): bool
   !editor.saving && editor.text.trim() !== '' && editor.text.trim() !== row.schedule.trim()
 
 /** A refusal of a save that the open field shows, since the text can be changed and sent again. Any other, `unsupported` or `stale`, means the control or the routine is gone. */
-const staysInField = (answered: CommandOutcome<Routine>): boolean => !answered.ok && (answered.refusal.kind === 'rejected' || answered.refusal.kind === 'offline')
+const staysInField = (answered: CommandOutcome<Edited>): boolean => !answered.ok && (answered.refusal.kind === 'rejected' || answered.refusal.kind === 'offline')
 
 /** The editor once Hermes answered the save: closed after Hermes took it, or open with its words after one that `staysInField`. */
-export const afterSave = (editor: Editor, answered: CommandOutcome<Routine>): Editor | null =>
+export const afterSave = (editor: Editor, answered: CommandOutcome<Edited>): Editor | null =>
   !answered.ok && staysInField(answered) ? { ...editor, saving: false, words: answered.refusal.message } : null
 
 /**
@@ -227,15 +238,15 @@ export const afterSave = (editor: Editor, answered: CommandOutcome<Routine>): Ed
  * keeps the list. A refusal the schedule field shows, as it stays open with it, is not also said above the list.
  */
 export function afterEdit(
-  listed: CommandOutcome<readonly Routine[]>, id: RoutineId, edit: RoutineEdit, answered: CommandOutcome<Routine>, clock: ViewClock
+  listed: CommandOutcome<readonly Routine[]>, id: RoutineId, edit: RoutineEdit, answered: CommandOutcome<Edited>, clock: ViewClock
 ): { readonly listed: CommandOutcome<readonly Routine[]>; readonly said: string | null; readonly note: string | null } {
   if (!answered.ok) {
     return { listed, said: edit.do === 'reschedule' && staysInField(answered) ? null : answered.refusal.message, note: null }
   }
-  const now = answered.value
+  const { routine: now, ran } = answered.value
   const next = listed.ok ? { ok: true, value: listed.value.map(held => (held.id === id ? now : held)) } as const : listed
-  return { listed: next, said: null, note: edit.do === 'run' ? ranWords(now) : savedWords(now, clock) }
+  return { listed: next, said: null, note: edit.do === 'run' ? ranWords(now, ran) : savedWords(now, clock) }
 }
 
 /** A routine Hermes says is not there, so the list is read again. */
-export const isGone = (answered: CommandOutcome<Routine>): boolean => !answered.ok && answered.refusal.kind === 'stale'
+export const isGone = (answered: CommandOutcome<Edited>): boolean => !answered.ok && answered.refusal.kind === 'stale'

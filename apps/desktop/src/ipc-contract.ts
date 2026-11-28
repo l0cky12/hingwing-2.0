@@ -1,9 +1,9 @@
 import {
   APPROVAL_MODES, BOT_MARKS, BOT_TEMPLATES, BOT_TONES, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isManagerName, isPetSlug, onThisComputer, PICK_MODES, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, ROUTINE_ACTIONS, SCHEDULE_MAX, targetOf,
   type About, type AdmissionId, type AvatarTone, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type Bots, type BranchId, type BusyMode, type ChatRef,
-  type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupChat, type GroupDraft, type GroupId, type Groups, type Header, type HelperId, type Item, type Link, type ModelOption,
+  type CheckpointId, type CheckStep, type Command, type CommandOutcome, type Edited, type ControlAction, type GroupChat, type GroupDraft, type GroupId, type Groups, type Header, type HelperId, type Item, type Link, type ModelOption,
   type BotActivities, type CatalogPlugin, type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type Quote, type Recording, type RelayDesk, type RequestId, type RequestReply,
-  type PickMode, type RestoreScope, type ResultOf, type Routine, type RoutineEdit, type RoutineId, type ScreenView, type Server, type ServerId, type ServerSetup, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SkillLibrary, type SlashCatalog, type RoutineRun, type Target, type TaskBoard, type TaskChat, type Timed, type TurnId, type Unstarted
+  type PickMode, type RestoreScope, type ResultOf, type RoutineEdit, type RoutineId, type ScreenView, type Server, type ServerId, type ServerSetup, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SkillLibrary, type SlashCatalog, type RoutineRun, type Target, type TaskBoard, type TaskChat, type Timed, type TurnId, type Unstarted
 } from '@highwing/hermes/domain'
 import { isAppearance, type Appearance } from './appearance'
 import type { Intro } from './intro'
@@ -293,7 +293,7 @@ export interface Bridge {
    * Asks Hermes to run the routine now, or to change its schedule, and answers the routine as Hermes then holds it. A run answers
    * only when the job has run. `epoch` is as for `run`: main refuses a routine of an older connection.
    */
-  editRoutine(bot: BotId, routine: RoutineId, edit: RoutineEdit, epoch: number): Promise<CommandOutcome<Routine>>
+  editRoutine(bot: BotId, routine: RoutineId, edit: RoutineEdit, epoch: number): Promise<CommandOutcome<Edited>>
   /** Opens the file dialog and holds each file picked, in the order picked. Nothing picked: an empty list. */
   attachPick(): Promise<readonly StageResult[]>
   /** Holds the image on the clipboard. No image there: an empty list. */
