@@ -1,0 +1,12 @@
+# npm is left out: pnpm 12 writes pnpm-lock.yaml as two YAML documents, which GitHub's
+# dependency graph cannot read, so Dependabot cannot update it. Run `pnpm audit` instead.
+version: 2
+updates:
+  # The workflows pin actions to commit SHAs, so this is what moves them forward.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ['*']
