@@ -81,19 +81,6 @@ export const BOT_TEMPLATES: readonly BotTemplate[] = [
   }
 ]
 
-/** The prompt a nightly audit job sends the bot, for a repository folder on the machine Hermes runs on. */
-export const auditPrompt = (repoFolder: string): string =>
-  [
-    `Audit the repository at ${repoFolder}. Work read-only.`,
-    '1. Run `git fetch`. Never pull or merge.',
-    '2. Review the commits from the last 24 hours.',
-    "3. Run the project's tests and lint if it has them.",
-    '4. Check its dependencies for known security problems with the tools it already uses.',
-    '5. Look for passwords or keys committed by mistake.',
-    'Write a short report in this chat, ranked by severity, and compare it with your last report.',
-    'Never edit files, commit or push.'
-  ].join('\n')
-
 /** "02:00" as "2:00 AM". Text that is not HH:MM comes back as it was. */
 export function timeWords(time: string): string {
   const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(time)

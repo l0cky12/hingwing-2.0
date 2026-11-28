@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { APPROVAL_MODES } from '../src/domain/session'
-import { APPROVAL_WORDS, asksOf, auditPrompt, BOT_TEMPLATES, personaStart, scheduleWords, TEMPLATE_TOOLSETS, timeWords, toolWords } from '../src/domain/bot-templates'
+import { APPROVAL_WORDS, asksOf, BOT_TEMPLATES, personaStart, scheduleWords, TEMPLATE_TOOLSETS, timeWords, toolWords } from '../src/domain/bot-templates'
 
 const template = (id: string) => BOT_TEMPLATES.find(item => item.id === id)!
 
@@ -55,15 +55,5 @@ describe('the nightly schedule', () => {
 
   it('leaves a time it cannot read as it was, such as the empty box', () => {
     expect([timeWords(''), timeWords('25:00'), timeWords('2:00')]).toEqual(['', '25:00', '2:00'])
-  })
-})
-
-describe('the audit prompt', () => {
-  it('names the folder, fetches without pulling, and stays read-only', () => {
-    const prompt = auditPrompt('/srv/app')
-    expect(prompt).toContain('/srv/app')
-    expect(prompt).toContain('`git fetch`')
-    expect(prompt).toContain('Never pull')
-    expect(prompt).toContain('Never edit files, commit or push.')
   })
 })
