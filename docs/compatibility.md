@@ -233,26 +233,24 @@ no cache, plan, rate-limit or money field from any of them.
 - `session.context_breakdown` is served on the canonical route
   (`gateway/session_tui_ops.py:33`). Highwing ignores each category's `color`.
 
-- If Hermes doesn't send `yolo` with a chat's state, or answers `config.set`
-  with an unknown-method error, Highwing shows no YOLO pill and the chat works
-  as before. The pill sends `tune yolo`, which writes only the open chat's
-  setting: it names the chat and the key `yolo`, sends no `scope`, and says
-  "on" or "off" outright. Hermes refuses any scope but "global", which would
-  flip every chat of the profile, and takes a missing value to mean "toggle".
-  See `SWITCHES` in `packages/hermes/src/session-commands.ts`.
 - The bot's approval mode, `manual`, `smart` or `off`, is read with
   `config.get {session_id, key: "approval_mode"}` when a watched chat goes
   live, beside `show_reasoning` and `busy` (`gateway/session_config.py:87-108`).
-  A new bot starts on `smart` (`hermes_cli/config_defaults.py:1624`). On the
-  canonical route `info.yolo` is the chat's own flag alone
-  (`gateway/session_local.py:576-578`), yet a bot on `off` runs every chat's
-  commands without asking, so Highwing shows YOLO on when either holds. To
-  leave it, Highwing asks first, then sends `tune approvals smart`:
-  `config.set {session_id, key: "approval_mode", value: "smart"}`, which writes
-  the profile's `approvals.mode` as `/approvals smart` does and sends no
-  `session.info` (`gateway/session_tui_config.py:202-203,337-350`). It sends
-  `tune yolo off` after it only when the chat's own flag is on too. A Hermes
-  that refuses the read shows no mode beside the pill.
+  A new bot starts on `smart` (`hermes_cli/config_defaults.py:1624`). The
+  composer's approval menu sends `tune approvals <mode>`:
+  `config.set {session_id, key: "approval_mode", value}`, which writes the
+  profile's `approvals.mode` as `/approvals <mode>` does and sends no
+  `session.info` (`gateway/session_tui_config.py:202-203,337-350`). A Hermes
+  that refuses the read shows no menu, and the chat works as before.
+- A chat's own YOLO comes as `info.yolo`, which on the canonical route is that
+  flag alone (`gateway/session_local.py:576-578`). Highwing has no switch for
+  it: the menu reads Off while it is on. Picking Manual or Smart then sends
+  `tune yolo off` too, after the mode when the bot is on another one. That call
+  writes only the open chat's setting: it names the chat and the key `yolo`,
+  sends no `scope`, and says "off" outright. Hermes refuses any scope but
+  "global", which would flip every chat of the profile, and takes a missing
+  value to mean "toggle". See `SWITCHES` in
+  `packages/hermes/src/session-commands.ts`.
 
 ## Attachments
 

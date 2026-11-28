@@ -1333,8 +1333,9 @@ function withEdits(fixturePath, { dropAfter, models, catalog, connectors, guarde
   const wanted = step => (('answer' in step && 'result' in step) || ANSWER_CALLS.has(step.await)) && here.has(methods.get(answerTo(step)))
   const answered = answeredElsewhere ? recorded.filter(step => wanted(step) || (!('result' in step && 'answer' in step) && !ANSWER_CALLS.has(step.await))) : recorded
   const made = new Set(windowMakes?.split(',') ?? [])
-  const madeHere = step => made.has(step.await) || made.has(`${step.await}:${step.params?.action}`)
-  let steps = actedElsewhere ? answered.filter(step => !ACTED_CALLS.has(step.await) || madeHere(step)) : answered
+  const madeHere = step => made.has(step.await) || made.has(`${step.await}:${step.params?.action ?? step.params?.key}`)
+  const acted = step => ACTED_CALLS.has(step.await) || (step.await === 'config.set' && step.params?.key === 'yolo')
+  let steps = actedElsewhere ? answered.filter(step => !acted(step) || madeHere(step)) : answered
   if (origin) {
     serveInDeltas(steps, origin)
     steps.splice(0, steps.length, ...steps.map(step => JSON.parse(JSON.stringify(step).replaceAll(DEV_ORIGIN, origin))))
