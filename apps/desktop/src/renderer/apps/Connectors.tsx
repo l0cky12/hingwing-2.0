@@ -3,6 +3,7 @@ import {
 } from '@highwing/hermes/domain'
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { nameProblem } from '../bots/bot-form'
+import { useImage } from '../chat/Image'
 import { ICON } from '../chrome/PopupMenu'
 import { connectorsKeys } from '../keys'
 import { line } from '../setup/ConnectionCard'
@@ -357,6 +358,35 @@ function SkillsPanel({ name, switches }: { readonly name: string; readonly switc
   )
 }
 
+function useShownOnce(at: { readonly current: Element | null }, watching: boolean): boolean {
+  const [shown, setShown] = useState(false)
+  useEffect(() => {
+    if (!watching || at.current === null) return
+    const watch = new IntersectionObserver(entries => {
+      if (!entries.some(entry => entry.isIntersecting)) return
+      setShown(true)
+      watch.disconnect()
+    })
+    watch.observe(at.current)
+    return () => watch.disconnect()
+  }, [watching])
+  return shown
+}
+
+export function PluginTile({ name, image }: { readonly name: string; readonly image: string | null }) {
+  const at = useRef<HTMLSpanElement>(null)
+  const shown = useShownOnce(at, image !== null)
+  const [broken, setBroken] = useState<string | null>(null)
+  const art = useImage(shown && image !== null ? { kind: 'web', url: image } : null)
+  const letter = name.slice(0, 1).toUpperCase()
+  if (image === null) return letter
+  return (
+    <span ref={at} className="hub-art">
+      {!shown || art.s === 'loading' ? null : art.s === 'ready' && broken !== art.url ? <img alt="" src={art.url} onError={() => setBroken(art.url)} /> : letter}
+    </span>
+  )
+}
+
 interface OfferProps {
   readonly plugin: CatalogPlugin
   readonly installing: Installing
@@ -374,7 +404,10 @@ export function OfferCard({ plugin, installing, onAsk, onInstall, onCancel }: Of
     </>
   )
   return (
-    <Card name={plugin.name} kind={catalogKind(plugin)} detail={plugin.description} below={below} {...(mine === 'installing' ? { state: { standing: 'connecting', words: 'Installing…' } } : {})}>
+    <Card
+      name={plugin.name} kind={catalogKind(plugin)} tile={<PluginTile name={plugin.name} image={plugin.image} />} detail={plugin.description} below={below}
+      {...(mine === 'installing' ? { state: { standing: 'connecting', words: 'Installing…' } } : {})}
+    >
       <div className="hub-actions">
         {mine === 'confirming' && <button type="button" aria-label={`Cancel installing ${plugin.name}`} onClick={onCancel}>Cancel</button>}
         {mine === 'confirming' && <button type="button" aria-label={`Install ${plugin.name}`} onClick={onInstall}>Install</button>}
@@ -391,6 +424,7 @@ function PluginsPanel({ name, plugins }: { readonly name: string; readonly plugi
   const items = installed.at === 'read' ? installed.items : null
   const offered = catalog.at === 'read' ? catalog.items : null
   const view = useMemo(() => (items === null ? null : pluginsView(items, offered ?? [], query)), [items, offered, query])
+  const art = useMemo(() => new Map((offered ?? []).map(plugin => [plugin.name, plugin.image])), [offered])
   const onQuery = (next: ConnectorsQuery) => {
     setQuery(next)
     setLimit(AVAILABLE_PAGE)
@@ -429,9 +463,12 @@ function PluginsPanel({ name, plugins }: { readonly name: string; readonly plugi
           {view.added.length > 0 && (
             <section aria-label={SHELF_WORDS.added}>
               <h3 className="hub-heading">{SHELF_WORDS.added} <span className="hub-count">{view.added.length}</span></h3>
-              <ul className="hub-grid">
+              <ul className="hub-grid" data-art>
                 {view.added.map(plugin => (
-                  <Card key={plugin.key} name={plugin.name} kind={installedKind(plugin)} detail={plugin.description} later={restart.has(plugin.key)}>
+                  <Card
+                    key={plugin.key} name={plugin.name} kind={installedKind(plugin)} tile={<PluginTile name={plugin.name} image={art.get(plugin.catalogName ?? plugin.name) ?? null} />}
+                    detail={plugin.description} later={restart.has(plugin.key)}
+                  >
                     <input type="checkbox" role="switch" className="hub-switch" aria-label={`Use ${plugin.name}`} {...of(plugin)} />
                   </Card>
                 ))}
@@ -441,7 +478,7 @@ function PluginsPanel({ name, plugins }: { readonly name: string; readonly plugi
           {view.available.length > 0 && (
             <section aria-label={SHELF_WORDS.available}>
               <h3 className="hub-heading">{SHELF_WORDS.available} <span className="hub-count">{view.available.length}</span></h3>
-              <ul className="hub-grid">
+              <ul className="hub-grid" data-art>
                 {view.available.slice(0, limit).map(plugin => (
                   <OfferCard
                     key={plugin.name} plugin={plugin} installing={installing}

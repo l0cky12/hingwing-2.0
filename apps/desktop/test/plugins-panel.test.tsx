@@ -13,6 +13,7 @@ const offered = (fields: Partial<CatalogPlugin> = {}): CatalogPlugin => ({
 const card = (plugin: CatalogPlugin, installing: Parameters<typeof OfferCard>[0]['installing']) =>
   renderToStaticMarkup(<OfferCard plugin={plugin} installing={installing} onAsk={() => {}} onInstall={() => {}} onCancel={() => {}} />)
 const buttons = (html: string) => Array.from(html.matchAll(/<button[^>]*aria-label="([^"]*)"([^>]*)>/g), ([, label, rest]) => (rest!.includes('disabled') ? `${label} (disabled)` : label))
+const tile = (html: string) => /<span class="hub-tile"[^>]*>(.*?)<\/span><div class="hub-copy">/.exec(html)?.[1]
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/&#x27;/g, "'").replace(/\s+/g, ' ')
 
 describe('a catalog plugin’s card', () => {
@@ -30,6 +31,19 @@ describe('a catalog plugin’s card', () => {
     expect(official).toContain("It runs on Hermes's computer.")
     expect(official).not.toContain('reviewed')
     expect(text(card(offered(), null))).not.toContain("Hermes's computer")
+  })
+
+  it('shows its letter when it has no art', () => {
+    expect(tile(card(offered(), null))).toBe('M')
+  })
+
+  it('draws nothing and asks for no art until the card is shown', () => {
+    const image = vi.fn()
+    vi.stubGlobal('window', { highwing: { image } })
+    const html = card(offered({ image: 'https://raw.githubusercontent.com/mem0ai/mem0/main/banner.png' }), null)
+    vi.unstubAllGlobals()
+    expect(tile(html)).toBe('<span class="hub-art"></span>')
+    expect(image).not.toHaveBeenCalled()
   })
 
   it('says Installing… with no button while its install runs', () => {
