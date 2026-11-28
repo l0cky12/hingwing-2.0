@@ -17,7 +17,7 @@ const DIAGRAM_CONFIGS = [
 
 const token = (style: CSSStyleDeclaration, name: string) => style.getPropertyValue(name).trim()
 /**
- * Mermaid parses plain colors only, and a Contrast other than 100 draws the quiet colors as a mix. A canvas reads a mix back as
+ * Mermaid parses plain colors only, and a Contrast other than 100 or an accent draws some colors as a mix. A canvas reads a mix back as
  * `color(srgb …)`, so the mix is painted and its pixel read.
  */
 function plain(color: string): string {
@@ -53,7 +53,7 @@ function configFromPage(): MermaidConfig {
     // Mermaid derives its shades from hex values, so it gets the page's tokens resolved, not var() references.
     themeVariables: {
       background: token(style, '--sheet'),
-      primaryColor: token(style, '--signal-soft'),
+      primaryColor: plain(token(style, '--signal-soft')),
       primaryBorderColor: token(style, '--signal'),
       primaryTextColor: token(style, '--ink'),
       secondaryColor: token(style, '--caution-soft'),
@@ -91,16 +91,16 @@ function loadDrawer(): Promise<Drawer> {
 }
 
 const drawn = new Map<string, Drawing>()
-/** Beside the palette, the config reads the interface face and the line color, which Settings → Appearance sets on the root's style. */
+/** Beside the palette, the config reads the interface face, the line color and the accent, which Settings → Appearance sets on the root. */
 export const lookOf = (palette: Palette) => {
   const style = getComputedStyle(document.documentElement)
-  return `${palette}\n${token(style, '--sans')}\n${token(style, '--graphite')}`
+  return `${palette}\n${token(style, '--sans')}\n${token(style, '--graphite')}\n${token(style, '--signal')}`
 }
 export const lookNow = () => lookOf(paletteNow())
 export const watchLook = (listener: () => void) => {
   const stopPalette = watchPalette(listener)
   const observer = new MutationObserver(listener)
-  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] })
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'data-accent'] })
   return () => {
     stopPalette()
     observer.disconnect()
