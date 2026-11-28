@@ -195,6 +195,34 @@ describe('the accent in app.css', () => {
     })
     expect(short).toEqual([])
   })
+
+  const shared = rules.find(rule => rule.media.length === 0 && rule.selector === '[data-accent]')?.declarations ?? new Map<string, string>()
+  const withAccent = (palette: ReadonlyMap<string, string>, tone: string) => {
+    const accented = new Map([...palette, ['--accent', `var(--${tokenOf(tone)})`]])
+    const resolve = (value: string): string => {
+      const mix = /^color-mix\(in srgb, var\(--([\w-]+)\) ([\d.]+)%, var\(--([\w-]+)\)\)$/.exec(value)
+      if (mix === null) return value.replace(/^var\(--([\w-]+)\)$/, (_all, name: string) => colorIn(accented, name))
+      const [a, b, share] = [channels(colorIn(accented, mix[1]!)), channels(colorIn(accented, mix[3]!)), Number(mix[2]) / 100]
+      return '#' + a.map((c, at) => Math.round((c * share + b[at]! * (1 - share)) * 255).toString(16).padStart(2, '0')).join('')
+    }
+    return new Map([...accented, ...[...shared].map(([name, value]) => [name, resolve(value)] as const)])
+  }
+
+  it('recolors the highlight of the whole window, not only the header and the send button', () => {
+    expect([...shared.keys()].filter(name => ['--signal', '--signal-soft', '--surface-user', '--ring', '--syn-title'].includes(name)).sort())
+      .toEqual(['--ring', '--signal', '--signal-soft', '--surface-user', '--syn-title'])
+  })
+
+  it.each(SCHEMES)('keeps every text readable on every surface under every accent in %s', (_name, scheme) => {
+    const short = TONES.flatMap(tone => {
+      const palette = withAccent(paletteOf(scheme), tone)
+      return PAIRS.flatMap(([text, surface, min]) => {
+        const ratio = contrast(colorIn(palette, text), colorIn(palette, surface))
+        return ratio >= min ? [] : [`${tone}: ${text} on ${surface} ${ratio.toFixed(2)}, under ${min}`]
+      })
+    })
+    expect(short).toEqual([])
+  })
 })
 
 describe("the marks on a bot's face", () => {
