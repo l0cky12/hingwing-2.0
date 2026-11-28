@@ -49,6 +49,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   const bots = useTopic('bots')
   const bot = useMemo(() => (chat.bot === null ? null : botIn(bots, chat.bot)), [bots, chat.bot])
   const relays = useTopic('relay')?.bySession[id ?? ''] ?? NO_RELAYS
+  const showWork = useTopic('showWork') ?? 'all'
   const [tick, wake] = useReducer((count: number) => count + 1, 0)
   const view = useMemo(() => (session === undefined ? null : threadView(session, { now: Date.now(), timeZone: TIME_ZONE })), [session, tick])
   const closed = useClosedSides(id)
@@ -372,7 +373,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
                   <Thread
                     view={drawn.view} relays={drawn.relays} sides={drawn.sides} onAnswer={onAnswer} onAskAgain={live ? onAskAgain : null} onAnswerRequest={onAnswerRequest} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
                     canEdit={canEdit} regenerateTurnKey={regenerateTurnKey} canRegenerate={canEdit && editing === null} onEdit={onEdit} onRegenerate={onRegenerate}
-                    canBranch={canBranch} onBranch={onBranch} onNewChat={onNewChat} versions={versions} onVersion={onVersion} queue={queue} canReact={live === true} onReact={onReact} helpers={helpers}
+                    canBranch={canBranch} onBranch={onBranch} onNewChat={onNewChat} versions={versions} onVersion={onVersion} queue={queue} canReact={live === true} onReact={onReact} helpers={helpers} showWork={showWork}
                   />
                 </ChatBotContext>
               </ImageSessionContext>
