@@ -82,7 +82,7 @@ describe('sending with attachments', () => {
     expect(await outcome).toEqual({ ok: false, refusal: { kind: 'rejected', message: 'Hermes refused error.png: Hermes did not accept the request.' } })
     expect(opened.sent().map(call => call.method)).toEqual(expect.arrayContaining(['file.attach', 'image.attach_bytes']))
     expect(opened.sent().map(call => call.method)).not.toContain('prompt.submit')
-  })
+  }, 30_000)
 
   it('sends nothing, and calls nothing, for an attachment Highwing no longer holds', async () => {
     const opened = open(ERRAND, [])

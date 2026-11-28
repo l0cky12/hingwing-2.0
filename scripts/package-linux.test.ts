@@ -28,7 +28,8 @@ function builtApp(files: Record<string, string>) {
 const run = (app: string, stage: string, ...extra: string[]) =>
   spawnSync(process.execPath, [SCRIPT, stage, '--app', app, ...extra], { encoding: 'utf8' })
 
-describe('package-linux', () => {
+/** Each test runs the script in a new node, which a busy machine is slow to start. */
+describe('package-linux', { timeout: 30_000 }, () => {
   it('stages the build with a manifest that carries the product name and version', () => {
     const { app, stage } = builtApp({
       'main/index.js': 'import { app } from "electron"\nimport { join } from "node:path"\nconst fs = await import("fs/promises")',

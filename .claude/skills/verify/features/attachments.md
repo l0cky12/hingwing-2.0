@@ -1,6 +1,6 @@
 # Attachments
 
-The user adds a screenshot, a PDF or any file to a message: the paperclip at the left of the composer's toolbar row opens the file dialog, a paste puts a clipboard image in, and a drop anywhere on the window adds the dropped files. Each file sits above the box: an image as a large tile with its "Remove <name>" button over the top-right corner, and anything else as a chip with its type mark, its name and a "Remove <name>" button. Alt+Left and Alt+Right move a focused chip. A file over Hermes's limit is refused in words under the chips that name the file and the limit, and the rest stay. While files are dragged over the window, the composer's border turns to the signal color and a line says "Drop to attach". The chips belong to the chat's draft, so they follow a switch and a restart. Send still needs text. A sent request shows its attachments above it in the thread, and pressing an image there opens the larger view. The paperclip is disabled while the link is down.
+The user adds a screenshot, a PDF or any file to a message: the round add button at the left of the composer's pill opens the file dialog, a paste puts a clipboard image in, and a drop anywhere on the window adds the dropped files. Each file sits above the box: an image as a large tile with its "Remove <name>" button over the top-right corner, and anything else as a chip with its type mark, its name and a "Remove <name>" button. Alt+Left and Alt+Right move a focused chip. A file over Hermes's limit is refused in words under the chips that name the file and the limit, and the rest stay. While files are dragged over the window, the composer's border turns to the signal color and a line says "Drop to attach". The chips belong to the chat's draft, so they follow a switch and a restart. Send still needs text. A sent request shows its attachments above it in the thread, and pressing an image there opens the larger view. The paperclip is disabled while the link is down.
 
 ## Sub-features
 
@@ -10,12 +10,12 @@ The user adds a screenshot, a PDF or any file to a message: the paperclip at the
 - `attach-drop` shows "Drop to attach" while files are dragged over the window, and stages what is dropped.
 - `attach-order` moves a focused chip with Alt+Left and Alt+Right, and keeps focus on it.
 - `attach-thread` shows a sent request's attachments above it, and opens an image in the larger view.
-- `attach-offline` disables the paperclip while the link is down.
+- `attach-offline` disables the add button while the link is down.
 - `attach-draft` keeps the chips across a restart, clears exactly the sent ones on Send, and deletes stored files no draft names at the next launch.
 
 ## How to get to it (user POV)
 
-- Press the paperclip ("Attach files") at the left of the toolbar row under the message box, paste an image into the box, or drop files on the window.
+- Press the add button ("Attach files") at the left of the message box, paste an image into the box, or drop files on the window.
 - Type a message and press Send.
 
 ## Driving it with highwing-verify
@@ -23,7 +23,7 @@ The user adds a screenshot, a PDF or any file to a message: the paperclip at the
 Preconditions:
 
 - `fixtures/attach/` holds `error.png` (127 bytes), `error-big.png` (about 27 KB) and `contract.pdf`. `python3 -I fixtures/make_attach_files.py` writes them again.
-- `--pick <path[,path]>` answers every press of the paperclip with those files, and no dialog opens.
+- `--pick <path[,path]>` answers every press of the add button with those files, and no dialog opens.
 - `--attach-limit <bytes>` sets the app's largest image and largest file to that many bytes.
 - Any fixture whose first step awaits `prompt.submit` takes a message with attachments. The recipes use `fixtures/markdown.jsonl`, which settles with no approval.
 - A run's `gateway-calls.jsonl` holds the attach calls and the submit, in the order sent.

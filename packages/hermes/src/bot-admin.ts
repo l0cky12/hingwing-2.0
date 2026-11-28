@@ -285,13 +285,16 @@ const skillMarkdown = async (conn: SkillWire, name: string): Promise<string> => 
 /** A skill's description is the catalog's, which lists enabled skills only. One the catalog skips (a disabled one) has the `description:` of its own SKILL.md on the launch bot, and none on another. */
 export const readSkills = (conn: SkillWire, bot: BotId | null): Promise<Outcome<readonly Skill[]>> =>
   guarded(SKILL_REASONS, async () => {
-    const [launch, catalog] = await Promise.all([
-      launchBot(conn),
+    const launched = launchBot(conn)
+    // Asked before the catalog: Hermes answers a socket's calls in arrival order and waits out `commands.catalog`, but hands `profiles.*` to a worker pool (tui_gateway/ws.py:95, server.py:187).
+    const describing = bot === null ? launched.then(name => (name === null ? null : conn.call('profiles.describe', { name }))) : conn.call('profiles.describe', { name: bot })
+    const [launch, described, catalog] = await Promise.all([
+      launched,
+      describing,
       (bot === null ? conn : conn.as(bot)).call('commands.catalog', {}).then(parseCatalog).catch(() => [])
     ])
+    if (described === null) return UNNAMED
     const profile = bot ?? launch
-    if (profile === null) return UNNAMED
-    const described = await conn.call('profiles.describe', { name: profile })
     const said = new Map(catalog.flatMap(entry => (entry.kind === 'skill' ? [[entry.name.toLowerCase(), entry.description] as const] : [])))
     const skills = await Promise.all(parseSkillStates(described).map(async ({ name, enabled }) => ({
       name, enabled, description: said.get(name.toLowerCase()) ?? (profile === launch ? descriptionOf(await skillMarkdown(conn, name).catch(() => '')) : '')

@@ -1,4 +1,4 @@
-import { shownChat, type Shown, type ShownGroup, type Target } from '@highwing/hermes/domain'
+import { shownChat, type AvatarTone, type Shown, type ShownGroup, type Target } from '@highwing/hermes/domain'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { appearanceStyle, type Appearance } from '../appearance'
 import { introInFront } from '../intro'
@@ -163,7 +163,7 @@ function useAside(pane: string | null, keys: boolean) {
 function ChatWindow({ hidden, settings, target, mode, theme, accent, width, onSearch }: ChatWindowProps) {
   const preview = useTopic('preview')
   const screen = useTopic('screen')
-  const tone = accentTone(accent, toneOfBot(useTopic('bots'), shownChat(useTopic('open'))?.bot ?? null))
+  useAccentOnRoot(accentTone(accent, toneOfBot(useTopic('bots'), shownChat(useTopic('open'))?.bot ?? null)))
   useSettingsChord(target, settings !== null)
   const { root, pick } = useSwitchModeKeepingFocus(mode)
   const { settingsButton, close } = useCloseSettings(settings !== null)
@@ -188,7 +188,7 @@ function ChatWindow({ hidden, settings, target, mode, theme, accent, width, onSe
     <div ref={root} className="window" hidden={hidden} data-preview={paned ? (computer === null && preview?.state === 'open' ? preview.layout : 'beside') : undefined} data-compact={compact || undefined} data-settings={settings !== null || undefined}>
       {mode === 'bots' && <BotsSidebar head={<NewChatButton />} compact={compact} foot={foot} />}
       {mode === 'chats' && <ChatsSidebar head={<><SearchField onSearch={onSearch} /><NewChatButton /><BotPicker /></>} foot={foot} />}
-      <div key="screen" className="screen" data-accent={tone ?? undefined} hidden={covered}>
+      <div key="screen" className="screen" hidden={covered}>
         <ChatScreen target={target} />
       </div>
       {aside?.at === 'tasks' && settings === null && <Tasks onClose={closeAside} />}
@@ -200,6 +200,15 @@ function ChatWindow({ hidden, settings, target, mode, theme, accent, width, onSe
       {computer !== null ? <ComputerView view={computer} /> : paned && preview?.state === 'open' && <Preview preview={preview} />}
     </div>
   )
+}
+
+/** On the root, so the palette, dialogs portaled to the body and the diagrams' palette all take the accent. */
+function useAccentOnRoot(tone: AvatarTone | null) {
+  useLayoutEffect(() => {
+    if (tone === null) return
+    document.documentElement.dataset.accent = tone
+    return () => { delete document.documentElement.dataset.accent }
+  }, [tone])
 }
 
 function useAppearance(appearance: Appearance | undefined) {

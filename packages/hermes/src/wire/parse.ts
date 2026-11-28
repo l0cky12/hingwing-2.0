@@ -1639,6 +1639,9 @@ export function undeliveredWords(reason: string | null, name: string): string | 
 }
 
 const RECEIPT_WORDS: { readonly [status: string]: (name: string, receipt: Obj) => RelayState } = {
+  /** Admitted, its turn not ended yet (`_admission_outcome`, gateway/session_bot.py:426), or failed with its one retry still owed (`_delivery_result`). */
+  queued: () => ({ s: 'waiting' }),
+  claimed: () => ({ s: 'waiting' }),
   settled: (name, { reply }) => (isString(reply) && reply.trim() !== '' ? { s: 'answered', reply } : { s: 'failed', words: `${name} sent back an empty reply.` }),
   failed: (name, { error, reason }) => {
     const said = words(error) ?? words(reason)
@@ -1647,7 +1650,7 @@ const RECEIPT_WORDS: { readonly [status: string]: (name: string, receipt: Obj) =
   cancelled: name => ({ s: 'failed', words: `${name}'s turn was stopped before it answered.` })
 }
 
-/** The receipt of `bot_relay.deliver` as the one answer of `name`. A receipt that is not final when the call returns carries no answer. */
+/** The receipt of `bot_relay.deliver` as the answer of `name`: `waiting` while Hermes still owes one. Any status Highwing does not know is final and carries no answer. */
 export function parseDelivery(reply: CanonicalBotDeliverResult, name: string): RelayState {
   const receipt: Obj = isObject(reply) ? reply : {}
   const read = isString(receipt.status) && Object.hasOwn(RECEIPT_WORDS, receipt.status) ? RECEIPT_WORDS[receipt.status] : undefined

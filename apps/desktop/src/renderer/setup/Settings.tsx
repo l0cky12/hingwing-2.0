@@ -13,7 +13,6 @@ import { Models } from './Models'
 import { PasswordManagers } from './PasswordManagers'
 import type { CardSetup } from './screens'
 import { PAGES, settingsViewOf, whereOf, type Check, type Page, type RowId } from './settings-view'
-import { Skills } from './Skills'
 import { UNREPORTED, usageNeedsRead, usageView, type UsageAsk, type UsageView } from './usage-view'
 
 const Chip = () => <svg {...line(16, 1.8)}><rect x="6" y="6" width="12" height="12" rx="2.5" /><path d="M9.5 2.5v3.5M14.5 2.5v3.5M9.5 18v3.5M14.5 18v3.5M2.5 9.5H6M2.5 14.5H6M18 9.5h3.5M18 14.5h3.5" /></svg>
@@ -24,7 +23,6 @@ const Search = () => <svg {...line(16, 1.8)}><circle cx="11" cy="11" r="7" /><pa
 const WindowIcon = () => <svg {...line(16, 1.8)}><rect x="3" y="4" width="18" height="16" rx="2.5" /><path d="M3 9h18" /></svg>
 const Bell = () => <svg {...line(16, 1.8)}><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z" /><path d="M10 20.5a2 2 0 0 0 4 0" /></svg>
 const Key = () => <svg {...line(16, 1.8)}><circle cx="8" cy="15" r="4" /><path d="m11 12 8.5-8.5M16 7l2.5 2.5M14 9l2 2" /></svg>
-const Spark = () => <svg {...line(16, 1.8)}><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6.3 6.3l2.5 2.5M15.2 15.2l2.5 2.5M6.3 17.7l2.5-2.5M15.2 8.8l2.5-2.5" /></svg>
 const Shield = () => <svg {...line(16, 1.8)}><path d="M12 3 5 5.8v5.4c0 4.4 3 8 7 9.8 4-1.8 7-5.4 7-9.8V5.8z" /></svg>
 const Gauge = () => <svg {...line(16, 1.8)}><path d="M4 18a8 8 0 1 1 16 0" /><path d="m12 18 4-5" /></svg>
 const Pen = () => <svg {...line(16, 1.8)}><path d="M4 20h4L19 9l-4-4L4 16z" /><path d="m13.5 6.5 4 4" /></svg>
@@ -35,7 +33,7 @@ const Wrench = () => <svg {...line(15, 1.9)}><path d="M14.7 6.3a1 1 0 0 0 0 1.4l
 const List = () => <svg {...line(15, 1.9)}><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" /></svg>
 
 const PAGE_ICONS: { readonly [P in Page]: () => ReactNode } = {
-  connection: () => <Server size={16} width={1.8} />, models: Chip, appearance: Contrast, composer: Pen, window: WindowIcon, notifications: Bell, passwords: Key, skills: Spark, permissions: Shield,
+  connection: () => <Server size={16} width={1.8} />, models: Chip, appearance: Contrast, composer: Pen, window: WindowIcon, notifications: Bell, passwords: Key, permissions: Shield,
   keys: Keyboard, usage: Gauge, about: Info
 }
 
@@ -311,7 +309,6 @@ export function Settings({ setup, mode, theme, accent, onRequestClose, onShowSho
     ),
     notifications: <div className="card rows"><NoticeRows off={off} /></div>,
     passwords: shown('passwords') && <PasswordManagers labelledBy={`${ids}-passwords`} />,
-    skills: shown('skills') && <Skills />,
     permissions: (
       <div className="card rows">
         <div className="row" hidden={off('permissions')}>

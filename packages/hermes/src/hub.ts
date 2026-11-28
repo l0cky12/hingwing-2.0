@@ -392,7 +392,7 @@ export function openHermes(options: HermesOptions): Hermes {
     return () => void skillWatchers.delete(listener)
   }
 
-  const relays = relayBook(conn, () => relay.set(relays.desk))
+  const relays = relayBook(conn, clock, () => relay.set(relays.desk))
   const relay = feed<RelayDesk>(relays.desk)
   let relayRead: Promise<void> = Promise.resolve()
 
